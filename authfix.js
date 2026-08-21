@@ -30,7 +30,7 @@
   }
   function otpForm(email){
     const b=document.querySelector('#afbody');
-    b.innerHTML=`<div class="authfix-note"><b>Check your email.</b><br>We sent a 6-digit verification code to <b>${esc(email)}</b>. Enter it below. If you do not see it, check Spam/Promotions.</div><form class="form" onsubmit="return window.bcAuthFixVerify(event)"><label>Verification code<input id="afotp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="123456" class="authfix-code"></label><button class="primary" type="submit">Verify email</button><div class="authfix-actions"><button type="button" onclick="window.bcAuthFixResend()">Resend code</button><button type="button" onclick="window.bcAuthFixMode('in')">Back to sign in</button></div><div id="afstatus"></div></form>`;
+    b.innerHTML=`<div class="authfix-note"><b>Check your email.</b><br>We sent a verification code to <b>${esc(email)}</b>. Enter the code exactly as shown in the email. If you do not see it, check Spam/Promotions.</div><form class="form" onsubmit="return window.bcAuthFixVerify(event)"><label>Verification code<input id="afotp" inputmode="numeric" autocomplete="one-time-code" maxlength="10" pattern="[0-9]{6,10}" required placeholder="Enter your code" class="authfix-code"></label><button class="primary" type="submit">Verify email</button><div class="authfix-actions"><button type="button" onclick="window.bcAuthFixResend()">Resend code</button><button type="button" onclick="window.bcAuthFixMode('in')">Back to sign in</button></div><div id="afstatus"></div></form>`;
   }
   window.bcAuthFixMode=(m)=>{mode=m;box()};
   window.bcAuthFixClose=()=>{modal().innerHTML=''};
