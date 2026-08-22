@@ -56,6 +56,10 @@ jobs:
       PGDATABASE: brickcircle_loadtest
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_loadtest
 
+    defaults:
+      run:
+        shell: bash
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -67,14 +71,18 @@ jobs:
 
       - name: Install PostgreSQL client
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
       - name: Install Python dependencies
-        run: python -m pip install -r loadtest/requirements.txt
+        run: |
+          set -euo pipefail
+          python -m pip install -r loadtest/requirements.txt
 
       - name: Wait for PostgreSQL
         run: |
+          set -euo pipefail
           for i in {1..30}; do
             pg_isready -h 127.0.0.1 -p 5432 -U brickcircle -d brickcircle_loadtest && exit 0
             sleep 2
@@ -82,10 +90,13 @@ jobs:
           exit 1
 
       - name: Initialize load-test schema
-        run: psql "$DSN" -v ON_ERROR_STOP=1 -f loadtest/schema.sql
+        run: |
+          set -euo pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -f loadtest/schema.sql
 
       - name: Generate synthetic dataset
         run: |
+          set -euo pipefail
           python loadtest/generate.py \
             --users "${{ inputs.users }}" \
             --sets "${{ inputs.sets }}" \
@@ -93,13 +104,34 @@ jobs:
             --wishlist-per-user "${{ inputs.wishlist_per_user }}" \
             --dsn "$DSN" 2>&1 | tee loadtest-generation.log
 
+      - name: Verify dataset counts
+        run: |
+          set -euo pipefail
+          expected_users=${{ inputs.users }}
+          expected_sets=${{ inputs.sets }}
+          expected_collection=$(( ${{ inputs.users }} * ${{ inputs.collection_per_user }} ))
+          expected_wishlist=$(( ${{ inputs.users }} * ${{ inputs.wishlist_per_user }} ))
+          actual_users=$(psql "$DSN" -Atc 'select count(*) from profiles')
+          actual_sets=$(psql "$DSN" -Atc 'select count(*) from lego_sets')
+          actual_collection=$(psql "$DSN" -Atc 'select count(*) from collection_items')
+          actual_wishlist=$(psql "$DSN" -Atc 'select count(*) from wishlists')
+          printf 'profiles=%s/%s\nsets=%s/%s\ncollection_items=%s/%s\nwishlists=%s/%s\n' \
+            "$actual_users" "$expected_users" "$actual_sets" "$expected_sets" \
+            "$actual_collection" "$expected_collection" "$actual_wishlist" "$expected_wishlist" | tee dataset-counts.txt
+          test "$actual_users" -eq "$expected_users"
+          test "$actual_sets" -eq "$expected_sets"
+          test "$actual_collection" -eq "$expected_collection"
+          test "$actual_wishlist" -eq "$expected_wishlist"
+
       - name: Analyze database
         run: |
-          psql "$DSN" -c 'ANALYZE;'
-          psql "$DSN" -c "select relname, pg_size_pretty(pg_total_relation_size(relid)) total_size from pg_catalog.pg_statio_user_tables order by pg_total_relation_size(relid) desc;" | tee database-sizes.txt
+          set -euo pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -c 'ANALYZE;'
+          psql "$DSN" -v ON_ERROR_STOP=1 -c "select relname, pg_size_pretty(pg_total_relation_size(relid)) total_size from pg_catalog.pg_statio_user_tables order by pg_total_relation_size(relid) desc;" | tee database-sizes.txt
 
       - name: Run reciprocal-match benchmark
         run: |
+          set -euo pipefail
           python loadtest/benchmark.py \
             --users "${{ inputs.users }}" \
             --concurrency "${{ inputs.concurrency }}" \
@@ -119,6 +151,7 @@ jobs:
           path: |
             benchmark-results.txt
             loadtest-generation.log
+            dataset-counts.txt
             database-sizes.txt
             index-stats.txt
           retention-days: 30
