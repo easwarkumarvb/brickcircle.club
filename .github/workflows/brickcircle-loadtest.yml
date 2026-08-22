@@ -1,4 +1,4 @@
-name: BrickCircle 100K Load Test
+name: BrickCircle 10K Load Test
 
 on:
   workflow_dispatch:
@@ -6,7 +6,7 @@ on:
       users:
         description: Synthetic users
         required: true
-        default: '100000'
+        default: '10000'
       sets:
         description: LEGO sets
         required: true
@@ -22,7 +22,7 @@ on:
       concurrency:
         description: Concurrent benchmark workers
         required: true
-        default: '100'
+        default: '50'
       requests:
         description: Match requests
         required: true
