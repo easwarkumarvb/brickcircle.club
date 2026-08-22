@@ -1,51 +1,54 @@
-/* BrickCircle stable-home guard. Prevents the legacy renderer from ever becoming visible on Home. */
+/* BrickCircle Home first-paint controller. This is the only Home visibility controller. */
 (()=>{
-  const app=()=>document.getElementById('app');
   const isHome=()=>((location.hash||'#home').slice(1)||'home')==='home';
-  const style=()=>{
-    if(document.getElementById('bc-home-stable-style')) return;
+  const getApp=()=>document.getElementById('app');
+  const ensureStyle=()=>{
+    if(document.getElementById('bc-home-firstpaint-style')) return;
     const s=document.createElement('style');
-    s.id='bc-home-stable-style';
-    s.textContent=`#app.bc-home-booting{visibility:hidden!important}#app.bc-home-live{visibility:visible!important}`;
+    s.id='bc-home-firstpaint-style';
+    s.textContent=`html.bc-home-boot #app,body.bc-home-boot #app{visibility:hidden!important}html.bc-home-boot #app{min-height:calc(100vh - 64px)}`;
     document.head.appendChild(s);
   };
-  let scheduled=false;
-  const requestRender=()=>{
-    if(scheduled) return;
-    scheduled=true;
-    setTimeout(()=>{
-      scheduled=false;
-      if(isHome()) window.dispatchEvent(new Event('hashchange'));
-    },0);
+  let observer=null, timer=null, lastChange=performance.now();
+  const hide=()=>{ if(isHome()){document.documentElement.classList.add('bc-home-boot');document.body?.classList.add('bc-home-boot');} };
+  const show=()=>{document.documentElement.classList.remove('bc-home-boot');document.body?.classList.remove('bc-home-boot');};
+  const ready=()=>{const a=getApp();return isHome()&&!!a&&!!a.querySelector('.bc23');};
+  const settle=()=>{
+    if(timer) clearTimeout(timer);
+    timer=setTimeout(()=>{
+      timer=null;
+      if(!isHome()) return;
+      if(ready() && performance.now()-lastChange>=100){
+        requestAnimationFrame(()=>{ if(ready() && performance.now()-lastChange>=100) show(); });
+      }
+    },110);
   };
-  const sync=(rerender=true)=>{
-    style();
-    const a=app(); if(!a) return;
-    if(!isHome()){
-      a.classList.remove('bc-home-booting','bc-home-live');
-      return;
-    }
-    if(a.querySelector('.bc23')){
-      a.classList.remove('bc-home-booting');
-      a.classList.add('bc-home-live');
-    }else{
-      a.classList.add('bc-home-booting');
-      a.classList.remove('bc-home-live');
-      if(rerender) requestRender();
-    }
+  const attach=()=>{
+    const a=getApp();
+    if(!a || observer) return;
+    observer=new MutationObserver(()=>{
+      if(!isHome()) return;
+      lastChange=performance.now();
+      // If the legacy renderer replaces the premium tree, hide it before the next paint.
+      if(!a.querySelector('.bc23')) hide();
+      settle();
+    });
+    observer.observe(a,{childList:true});
   };
   const start=()=>{
-    style();
-    sync(false);
-    const a=app();
-    if(!a) return;
-    // Only observe direct child replacement. We do not mutate the observed tree
-    // from the observer callback, preventing the previous feedback-loop bug.
-    const observer=new MutationObserver(()=>sync(true));
-    observer.observe(a,{childList:true});
-    window.addEventListener('hashchange',()=>setTimeout(()=>sync(true),0));
-    setInterval(()=>{if(isHome()) sync(true);},500);
+    ensureStyle();
+    if(!isHome()){show();return;}
+    hide();
+    attach();
+    lastChange=performance.now();
+    settle();
   };
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
-  else start();
+  // This script executes after the legacy renderer and homepage script, so it can
+  // establish the final first-paint gate synchronously before their requestAnimationFrame callbacks.
+  ensureStyle();
+  start();
+  window.addEventListener('hashchange',()=>{
+    if(isHome()){ hide(); lastChange=performance.now(); attach(); settle(); }
+    else show();
+  });
 })();
