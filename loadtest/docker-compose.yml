@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: brickcircle-loadtest-postgres
+    environment:
+      POSTGRES_USER: brickcircle
+      POSTGRES_PASSWORD: brickcircle
+      POSTGRES_DB: brickcircle_loadtest
+    ports:
+      - "55432:5432"
+    volumes:
+      - brickcircle_loadtest_pg:/var/lib/postgresql/data
+volumes:
+  brickcircle_loadtest_pg:
