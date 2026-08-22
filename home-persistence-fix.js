@@ -9,6 +9,15 @@
     s.textContent=`#app.bc-home-booting{visibility:hidden!important}#app.bc-home-live{visibility:visible!important}`;
     document.head.appendChild(s);
   };
+  let scheduled=false;
+  const requestRender=()=>{
+    if(scheduled) return;
+    scheduled=true;
+    setTimeout(()=>{
+      scheduled=false;
+      if(isHome()) window.dispatchEvent(new Event('hashchange'));
+    },0);
+  };
   const sync=(rerender=true)=>{
     style();
     const a=app(); if(!a) return;
@@ -22,7 +31,7 @@
     }else{
       a.classList.add('bc-home-booting');
       a.classList.remove('bc-home-live');
-      if(rerender) window.dispatchEvent(new Event('bc23:render'));
+      if(rerender) requestRender();
     }
   };
   const start=()=>{
@@ -30,14 +39,11 @@
     sync(false);
     const a=app();
     if(!a) return;
-    // Observe ONLY direct children of #app. We never mutate the observed DOM here,
-    // so there is no observer feedback loop.
+    // Only observe direct child replacement. We do not mutate the observed tree
+    // from the observer callback, preventing the previous feedback-loop bug.
     const observer=new MutationObserver(()=>sync(true));
     observer.observe(a,{childList:true});
     window.addEventListener('hashchange',()=>setTimeout(()=>sync(true),0));
-    window.addEventListener('bc23:ready',()=>sync(false));
-    // Auth/profile initialization can finish later and replace the app shell.
-    // Keep watching while the user remains on Home.
     setInterval(()=>{if(isHome()) sync(true);},500);
   };
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true});
