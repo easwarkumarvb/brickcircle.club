@@ -1,0 +1,10 @@
+create extension if not exists pgcrypto;
+create table if not exists profiles(id uuid primary key, username text, display_name text, country text, city text);
+create table if not exists lego_sets(set_number text primary key, name text not null, theme text, year int, piece_count int);
+create table if not exists collection_items(id uuid primary key, user_id uuid not null references profiles(id), set_number text not null references lego_sets(set_number), available_for_exchange boolean default true, unique(user_id,set_number));
+create table if not exists wishlists(id uuid primary key, user_id uuid not null references profiles(id), set_number text not null references lego_sets(set_number), priority int default 3, unique(user_id,set_number));
+create index if not exists collection_user_set_idx on collection_items(user_id,set_number);
+create index if not exists collection_set_user_idx on collection_items(set_number,user_id);
+create index if not exists collection_available_set_user_idx on collection_items(set_number,user_id) where available_for_exchange;
+create index if not exists wishlist_user_set_idx on wishlists(user_id,set_number);
+create index if not exists wishlist_set_user_idx on wishlists(set_number,user_id);
