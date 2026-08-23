@@ -1,81 +1,90 @@
-/* BrickCircle global signup locations.
-   Expands the signup country/city controls using CountriesNow's public dataset.
-   Countries are loaded globally; cities are fetched only for the selected country.
-   Existing authfix.js data remains a graceful offline fallback. */
+/* BrickCircle signup locations — streamlined for fast mobile registration.
+   Countries stay global, but city choices use the concise major-city shortlist
+   already provided by authfix.js. Users whose city is not listed can enter it.
+*/
 (()=>{
   const API='https://countriesnow.space/api/v0.1/countries';
-  const COUNTRY_CACHE='bc_global_countries_v1';
-  const CITY_PREFIX='bc_global_cities_v1:';
-  const MAX_AGE=7*24*60*60*1000;
+  const COUNTRY_CACHE='bc_global_countries_v2';
+  const MAX_AGE=14*24*60*60*1000;
+  const OTHER='__bc_other_city__';
   const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let attachedCountry=null;
+  let attachedCountry=null,attachedCity=null;
 
-  function readCache(key){
-    try{const x=JSON.parse(localStorage.getItem(key)||'null');return x&&Date.now()-x.t<MAX_AGE?x.v:null}catch{return null}
-  }
+  function readCache(key){try{const x=JSON.parse(localStorage.getItem(key)||'null');return x&&Date.now()-x.t<MAX_AGE?x.v:null}catch{return null}}
   function writeCache(key,v){try{localStorage.setItem(key,JSON.stringify({t:Date.now(),v}))}catch{}}
 
   async function getCountries(){
-    const cached=readCache(COUNTRY_CACHE); if(cached?.length)return cached;
+    const cached=readCache(COUNTRY_CACHE);if(cached?.length)return cached;
     const r=await fetch(`${API}/iso`,{headers:{Accept:'application/json'}});
     if(!r.ok)throw new Error('Country service unavailable');
-    const j=await r.json();
-    const rows=Array.isArray(j.data)?j.data:[];
+    const j=await r.json(),rows=Array.isArray(j.data)?j.data:[];
     const names=[...new Set(rows.map(x=>x.name||x.country).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
     if(!names.length)throw new Error('No countries returned');
-    writeCache(COUNTRY_CACHE,names); return names;
+    writeCache(COUNTRY_CACHE,names);return names;
   }
 
-  async function getCities(country){
-    const key=CITY_PREFIX+country;
-    const cached=readCache(key); if(cached?.length)return cached;
-    const r=await fetch(`${API}/cities/q?country=${encodeURIComponent(country)}`,{headers:{Accept:'application/json'}});
-    if(!r.ok)throw new Error('City service unavailable');
-    const j=await r.json();
-    const raw=Array.isArray(j.data)?j.data:(Array.isArray(j.data?.cities)?j.data.cities:[]);
-    const cities=[...new Set(raw.map(x=>typeof x==='string'?x:(x?.name||x?.city)).filter(Boolean))].sort((a,b)=>a.localeCompare(b));
-    if(!cities.length)throw new Error('No cities returned');
-    writeCache(key,cities); return cities;
+  function fillCountries(select,items,selected=''){
+    select.innerHTML='<option value="">Select country</option>'+items.map(x=>`<option value="${esc(x)}"${x===selected?' selected':''}>${esc(x)}</option>`).join('');
   }
 
-  function fill(select,items,prompt,selected=''){
-    select.innerHTML=`<option value="">${esc(prompt)}</option>`+items.map(x=>`<option value="${esc(x)}"${x===selected?' selected':''}>${esc(x)}</option>`).join('');
+  function removeCustomUI(){
+    document.getElementById('bcCustomCityWrap')?.remove();
   }
 
-  async function loadCities(country,keep=''){
-    const city=document.querySelector('#afcity'); if(!city)return;
-    if(!country){city.disabled=true;city.innerHTML='<option value="">Select country first</option>';return;}
-    city.disabled=true; city.innerHTML='<option value="">Loading cities…</option>';
-    try{
-      const cities=await getCities(country);
-      fill(city,cities,'Select city',keep);
+  function appendOther(city){
+    if(!city||!city.closest('.modalbox'))return;
+    [...city.options].filter(o=>o.dataset.bcCustom==='1'||o.value===OTHER).forEach(o=>o.remove());
+    const opt=document.createElement('option');opt.value=OTHER;opt.textContent='My city is not listed…';city.appendChild(opt);
+  }
+
+  function showCustomCity(city){
+    removeCustomUI();
+    const wrap=document.createElement('div');wrap.id='bcCustomCityWrap';wrap.style.cssText='margin-top:8px';
+    wrap.innerHTML='<label for="bcCustomCity" style="display:block;font-size:12px;font-weight:800;color:#667085;margin-bottom:5px">Enter your city</label><input id="bcCustomCity" type="text" autocomplete="address-level2" placeholder="Type your city name" style="width:100%;min-height:46px;padding:11px 12px;border:1px solid #d0d5dd;border-radius:10px;font:inherit">';
+    city.insertAdjacentElement('afterend',wrap);
+    const input=wrap.querySelector('input');
+    input.addEventListener('input',()=>{
+      const val=input.value.trim();
+      [...city.options].filter(o=>o.dataset.bcCustom==='1').forEach(o=>o.remove());
+      if(val){const o=document.createElement('option');o.value=val;o.textContent=val;o.selected=true;o.dataset.bcCustom='1';city.appendChild(o)}
+      else city.value=OTHER;
+    });
+    setTimeout(()=>input.focus(),50);
+  }
+
+  function refreshCityShortlist(){
+    const country=document.querySelector('#afcountry'),city=document.querySelector('#afcity');
+    if(!country||!city)return;
+    // authfix.js owns the curated major-city shortlist. Let its change handler run first.
+    setTimeout(()=>{
+      if(!country.value){removeCustomUI();return}
       city.disabled=false;
-    }catch(e){
-      // authfix.js has already populated its built-in fallback list. Re-run it if available.
-      try{window.bcAuthFixCities?.()}catch{}
-      city.disabled=false;
-      if(!city.options.length)city.innerHTML='<option value="">City list unavailable — try again</option>';
-      console.warn('BrickCircle global city lookup:',e);
-    }
+      appendOther(city);
+    },20);
   }
 
   async function enhance(){
-    const country=document.querySelector('#afcountry');
-    const city=document.querySelector('#afcity');
+    const country=document.querySelector('#afcountry'),city=document.querySelector('#afcity');
     if(!country||!city)return;
-    if(country===attachedCountry)return;
-    attachedCountry=country;
-    const selected=country.value;
-    try{
-      const countries=await getCountries();
-      fill(country,countries,'Select country',selected);
-      if(selected)await loadCities(selected,city.value);
-    }catch(e){console.warn('BrickCircle global country lookup:',e)}
-    // Capture phase runs before authfix's inline onchange, then refreshes with the complete city list.
-    country.addEventListener('change',()=>{
-      const chosen=country.value;
-      setTimeout(()=>loadCities(chosen),0);
-    },true);
+
+    if(country!==attachedCountry){
+      attachedCountry=country;
+      const selected=country.value;
+      try{
+        const countries=await getCountries();
+        fillCountries(country,countries,selected);
+      }catch(e){console.warn('BrickCircle country lookup:',e)}
+      country.addEventListener('change',()=>{removeCustomUI();refreshCityShortlist()},true);
+      refreshCityShortlist();
+    }
+
+    if(city!==attachedCity){
+      attachedCity=city;
+      city.addEventListener('change',()=>{
+        if(city.value===OTHER)showCustomCity(city);
+        else if(!city.querySelector('option:checked')?.dataset.bcCustom)removeCustomUI();
+      });
+    }
   }
 
   new MutationObserver(enhance).observe(document.documentElement,{childList:true,subtree:true});
