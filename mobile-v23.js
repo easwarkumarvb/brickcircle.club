@@ -3,82 +3,13 @@
   const U='https://nsxtromjdpdscknadxez.supabase.co',K='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
   const db=window.supabase?.createClient?window.supabase.createClient(U,K):null;
   const isMobile=()=>matchMedia('(max-width: 760px)').matches;
-  const css=`
-  :root{--bc-safe-bottom:env(safe-area-inset-bottom,0px);--bc-safe-top:env(safe-area-inset-top,0px)}
-  html{-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-behavior:smooth}
-  body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}
-  button,a,input,select,textarea{touch-action:manipulation}
-  input,select,textarea{font-size:16px!important}
-  button,.button,.bcprof-btn,.v23actions button{min-height:44px}
-  img{max-width:100%;height:auto}
-  .wrap,#app{max-width:100%;overflow-x:hidden}
-  @media(max-width:760px){
-    body{padding-bottom:calc(74px + var(--bc-safe-bottom))}
-    .nav{min-height:64px;padding-left:12px!important;padding-right:12px!important;position:sticky;top:0;z-index:60}
-    .nav .logo img,.bc-brand img{max-height:50px!important;width:auto!important}
-    #authnav{max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .xnav,.bcprof-nav{display:flex!important;overflow-x:auto!important;gap:7px!important;padding:10px 12px!important;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:sticky;top:64px;background:#fff;z-index:45;border-bottom:1px solid #e5e7eb}
-    .xnav::-webkit-scrollbar,.bcprof-nav::-webkit-scrollbar{display:none}
-    .xnav button,.bcprof-nav button{flex:0 0 auto!important;min-height:42px!important;padding:9px 12px!important;font-size:14px!important}
-    .card,.v23card,.bcprof-card{border-radius:16px!important}
-    .grid,.v23grid,.bcprof-grid{grid-template-columns:1fr!important}
-    .v23hero{margin:0 10px 12px!important;padding:18px!important;border-radius:16px!important}
-    .v23hero h1{font-size:30px!important;line-height:1.05!important;margin:0 0 8px!important}
-    .v23hero p{font-size:15px!important;line-height:1.45!important}
-    .v23card{margin:0 10px;padding:16px!important}
-    .v23safe{font-size:14px;line-height:1.45}
-    .v23actions{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
-    .v23actions button{width:100%!important;font-size:16px!important;padding:12px 14px!important;border-radius:12px!important}
-    .v23step{padding:14px!important;border-radius:14px!important}
-    .v23step b{font-size:16px}.v23step small{font-size:13px}
-    .bcprof{padding:14px 10px 30px!important}
-    .bcprof-hero{padding:22px 18px!important;border-radius:20px!important}
-    .bcprof-main{gap:15px!important}.bcprof h1{font-size:28px!important}
-    .bcprof-actions{display:grid!important;grid-template-columns:1fr 1fr!important;width:100%}
-    .bcprof-actions .bcprof-btn:last-of-type{grid-column:1/-1}
-    .bcprof-card{padding:18px!important}.bcprof-tip{margin-bottom:8px}
-    .bc23{padding-left:12px!important;padding-right:12px!important;padding-bottom:30px!important}
-    .bc23-hero{margin-left:-12px!important;margin-right:-12px!important;padding:44px 14px 34px!important}
-    .bc23 h1{font-size:42px!important;line-height:.98!important}
-    .bc23-lead{font-size:17px!important}.bc23-actions{display:grid!important;grid-template-columns:1fr!important}
-    .bc23-actions .bc23-btn{width:100%!important;min-height:48px!important}
-    .bc23-collage{min-height:330px!important}.bc23-main{height:245px!important}.bc23-small1{height:140px!important}.bc23-small2{height:120px!important}
-    .bc23-strip{grid-template-columns:1fr 1fr!important}.bc23-strip div{padding:16px!important}
-    .bc23-section{padding-top:48px!important}.bc23-section h2{font-size:34px!important}
-    .bc23-cta{padding:28px 20px!important;margin-top:48px!important}
-    .modal,.dialog,[role=dialog]{max-width:calc(100vw - 24px)!important;max-height:86vh!important;overflow:auto!important}
-    table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}
-  }
-  .bc-mobilebar{display:none}
-  @media(max-width:760px){.bc-mobilebar{position:fixed;left:0;right:0;bottom:0;z-index:100;display:grid;grid-template-columns:repeat(5,1fr);background:rgba(17,24,39,.97);border-top:1px solid #ffffff18;padding:7px 5px calc(7px + var(--bc-safe-bottom));backdrop-filter:blur(12px)}.bc-mobilebar button{appearance:none;border:0;background:transparent;color:#cbd5e1;min-height:54px;padding:4px 2px;font-size:10px;font-weight:750;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}.bc-mobilebar button span{font-size:20px;line-height:1}.bc-mobilebar button.active{color:#f4c542}.bc-mobilebar button:active{transform:scale(.96)}}
-  .bc-field-modal{position:fixed;inset:0;z-index:250;background:#0009;display:grid;align-items:end;padding:12px}
-  .bc-field-sheet{background:#fff;border-radius:22px 22px 18px 18px;padding:20px;max-width:560px;width:100%;margin:0 auto calc(var(--bc-safe-bottom) + 4px);box-shadow:0 25px 80px #0006}
-  .bc-field-sheet h2{margin:0 0 4px;font-size:24px}.bc-field-sheet p{margin:0 0 16px;color:#667085;font-size:14px}.bc-field-sheet label{display:block;font-size:13px;font-weight:800;margin:12px 0 5px}.bc-field-sheet input{width:100%;height:48px;border:1px solid #d0d5dd;border-radius:12px;padding:0 12px;background:#fff;color:#111827}.bc-field-sheet .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}.bc-field-sheet button{min-height:48px;border-radius:12px;border:1px solid #d0d5dd;background:#fff;font-weight:850}.bc-field-sheet .primary{background:#111827;color:#fff;border-color:#111827}
-  `;
+  const css=`:root{--bc-safe-bottom:env(safe-area-inset-bottom,0px);--bc-safe-top:env(safe-area-inset-top,0px)}html{-webkit-text-size-adjust:100%;text-size-adjust:100%;scroll-behavior:smooth}body{overflow-x:hidden;-webkit-tap-highlight-color:transparent}button,a,input,select,textarea{touch-action:manipulation}input,select,textarea{font-size:16px!important}button,.button,.bcprof-btn,.v23actions button{min-height:44px}img{max-width:100%;height:auto}.wrap,#app{max-width:100%;overflow-x:hidden}@media(max-width:760px){body{padding-bottom:calc(74px + var(--bc-safe-bottom))}.nav{min-height:64px;padding-left:12px!important;padding-right:12px!important;position:sticky;top:0;z-index:60}.nav .logo img,.bc-brand img{max-height:50px!important;width:auto!important}#authnav{max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.xnav,.bcprof-nav{display:flex!important;overflow-x:auto!important;gap:7px!important;padding:10px 12px!important;scrollbar-width:none;-webkit-overflow-scrolling:touch;position:sticky;top:64px;background:#fff;z-index:45;border-bottom:1px solid #e5e7eb}.xnav::-webkit-scrollbar,.bcprof-nav::-webkit-scrollbar{display:none}.xnav button,.bcprof-nav button{flex:0 0 auto!important;min-height:42px!important;padding:9px 12px!important;font-size:14px!important}.card,.v23card,.bcprof-card{border-radius:16px!important}.grid,.v23grid,.bcprof-grid{grid-template-columns:1fr!important}.v23hero{margin:0 10px 12px!important;padding:18px!important;border-radius:16px!important}.v23hero h1{font-size:30px!important;line-height:1.05!important;margin:0 0 8px!important}.v23hero p{font-size:15px!important;line-height:1.45!important}.v23card{margin:0 10px;padding:16px!important}.v23safe{font-size:14px;line-height:1.45}.v23actions{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}.v23actions button{width:100%!important;font-size:16px!important;padding:12px 14px!important;border-radius:12px!important}.v23step{padding:14px!important;border-radius:14px!important}.v23step b{font-size:16px}.v23step small{font-size:13px}.bcprof{padding:14px 10px 30px!important}.bcprof-hero{padding:22px 18px!important;border-radius:20px!important}.bcprof-main{gap:15px!important}.bcprof h1{font-size:28px!important}.bcprof-actions{display:grid!important;grid-template-columns:1fr 1fr!important;width:100%}.bcprof-actions .bcprof-btn:last-of-type{grid-column:1/-1}.bcprof-card{padding:18px!important}.bcprof-tip{margin-bottom:8px}.bc23{padding-left:12px!important;padding-right:12px!important;padding-bottom:30px!important}.bc23-hero{margin-left:-12px!important;margin-right:-12px!important;padding:44px 14px 34px!important}.bc23 h1{font-size:42px!important;line-height:.98!important}.bc23-lead{font-size:17px!important}.bc23-actions{display:grid!important;grid-template-columns:1fr!important}.bc23-actions .bc23-btn{width:100%!important;min-height:48px!important}.bc23-collage{min-height:330px!important}.bc23-main{height:245px!important}.bc23-small1{height:140px!important}.bc23-small2{height:120px!important}.bc23-strip{grid-template-columns:1fr 1fr!important}.bc23-strip div{padding:16px!important}.bc23-section{padding-top:48px!important}.bc23-section h2{font-size:34px!important}.bc23-cta{padding:28px 20px!important;margin-top:48px!important}.modal,.dialog,[role=dialog]{max-width:calc(100vw - 24px)!important;max-height:86vh!important;overflow:auto!important}table{display:block;max-width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch}}.bc-mobilebar{display:none}@media(max-width:760px){.bc-mobilebar{position:fixed;left:0;right:0;bottom:0;z-index:100;display:grid;grid-template-columns:repeat(6,1fr);background:rgba(17,24,39,.97);border-top:1px solid #ffffff18;padding:7px 5px calc(7px + var(--bc-safe-bottom));backdrop-filter:blur(12px)}.bc-mobilebar button{appearance:none;border:0;background:transparent;color:#cbd5e1;min-height:54px;padding:4px 1px;font-size:9px;font-weight:750;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}.bc-mobilebar button span{font-size:19px;line-height:1}.bc-mobilebar button.active{color:#f4c542}.bc-mobilebar button:active{transform:scale(.96)}}.bc-field-modal{position:fixed;inset:0;z-index:250;background:#0009;display:grid;align-items:end;padding:12px}.bc-field-sheet{background:#fff;border-radius:22px 22px 18px 18px;padding:20px;max-width:560px;width:100%;margin:0 auto calc(var(--bc-safe-bottom) + 4px);box-shadow:0 25px 80px #0006}.bc-field-sheet h2{margin:0 0 4px;font-size:24px}.bc-field-sheet p{margin:0 0 16px;color:#667085;font-size:14px}.bc-field-sheet label{display:block;font-size:13px;font-weight:800;margin:12px 0 5px}.bc-field-sheet input{width:100%;height:48px;border:1px solid #d0d5dd;border-radius:12px;padding:0 12px;background:#fff;color:#111827}.bc-field-sheet .row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:18px}.bc-field-sheet button{min-height:48px;border-radius:12px;border:1px solid #d0d5dd;background:#fff;font-weight:850}.bc-field-sheet .primary{background:#111827;color:#fff;border-color:#111827}`;
   const s=document.createElement('style');s.id='bc-mobile-v23';s.textContent=css;document.head.appendChild(s);
-
-  const tabs=[['home','⌂','Home'],['collection','🧱','Collection'],['matches','🔄','Matches'],['meetup','🤝','Meet'],['messages','💬','Messages']];
+  const tabs=[['home','⌂','Home'],['collection','🧱','Collection'],['matches','🔄','Matches'],['meetup','🤝','Meet'],['returns','↩','Returns'],['messages','💬','Messages']];
   function nav(p){if(typeof window.bcNav==='function')window.bcNav(p);else location.hash=p}
-  function ensureBar(){
-    let b=document.querySelector('.bc-mobilebar');if(!b){b=document.createElement('nav');b.className='bc-mobilebar';b.setAttribute('aria-label','Mobile navigation');document.body.appendChild(b)}
-    const cur=(location.hash||'#home').slice(1);b.innerHTML=tabs.map(([p,i,l])=>`<button data-page="${p}" class="${cur===p?'active':''}" aria-label="${l}"><span>${i}</span>${l}</button>`).join('');
-    b.querySelectorAll('button').forEach(x=>x.onclick=()=>nav(x.dataset.page));
-  }
+  function ensureBar(){let b=document.querySelector('.bc-mobilebar');if(!b){b=document.createElement('nav');b.className='bc-mobilebar';b.setAttribute('aria-label','Mobile navigation');document.body.appendChild(b)}const cur=(location.hash||'#home').slice(1);b.innerHTML=tabs.map(([p,i,l])=>`<button data-page="${p}" class="${cur===p?'active':''}" aria-label="${l}"><span>${i}</span>${l}</button>`).join('');b.querySelectorAll('button').forEach(x=>x.onclick=()=>nav(x.dataset.page));}
   function activeBar(){const cur=(location.hash||'#home').slice(1);document.querySelectorAll('.bc-mobilebar button').forEach(b=>b.classList.toggle('active',b.dataset.page===cur))}
   document.addEventListener('DOMContentLoaded',ensureBar);window.addEventListener('load',ensureBar);window.addEventListener('hashchange',()=>{ensureBar();activeBar();scrollTo({top:0,behavior:'instant'})});setTimeout(ensureBar,250);
-
-  // Replace prompt-based meetup scheduling with phone-friendly native date/time inputs.
-  function installMobileMeetupScheduler(){
-    if(!isMobile()||!db)return;
-    window.bc23Schedule=async exchangeId=>{
-      document.querySelector('.bc-field-modal')?.remove();
-      const overlay=document.createElement('div');overlay.className='bc-field-modal';
-      const now=new Date(Date.now()+60*60*1000);const local=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);
-      overlay.innerHTML=`<form class="bc-field-sheet"><h2>Plan your meetup</h2><p>Choose a public, well-lit place. Both collectors will see these details instantly.</p><label>Venue</label><input name="venue" required autocomplete="organization" placeholder="Café, mall, hobby store…"><label>Area / neighbourhood</label><input name="area" autocomplete="address-level3" placeholder="Sanjay Nagar"><label>Date & time</label><input name="when" type="datetime-local" required min="${local}" value="${local}"><div class="row"><button type="button" data-cancel>Cancel</button><button class="primary" type="submit">Share meetup</button></div><div data-msg style="font-size:13px;margin-top:10px;color:#667085"></div></form>`;
-      document.body.appendChild(overlay);const form=overlay.querySelector('form'),msg=overlay.querySelector('[data-msg]');
-      overlay.querySelector('[data-cancel]').onclick=()=>overlay.remove();overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
-      form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),d=new Date(fd.get('when'));if(isNaN(d)){msg.textContent='Choose a valid date and time.';return}const btn=form.querySelector('.primary');btn.disabled=true;btn.textContent='Saving…';const {error}=await db.rpc('setup_meetup',{p_exchange_id:exchangeId,p_venue_name:String(fd.get('venue')||''),p_venue_area:String(fd.get('area')||'')||null,p_meetup_at:d.toISOString()});if(error){msg.textContent=error.message;btn.disabled=false;btn.textContent='Share meetup'}else{overlay.remove();await window.bc23Refresh?.()}};
-    };
-  }
+  function installMobileMeetupScheduler(){if(!isMobile()||!db)return;window.bc23Schedule=async exchangeId=>{document.querySelector('.bc-field-modal')?.remove();const overlay=document.createElement('div');overlay.className='bc-field-modal';const now=new Date(Date.now()+60*60*1000);const local=new Date(now.getTime()-now.getTimezoneOffset()*60000).toISOString().slice(0,16);overlay.innerHTML=`<form class="bc-field-sheet"><h2>Plan your meetup</h2><p>Choose a public, well-lit place. Both collectors will see these details instantly.</p><label>Venue</label><input name="venue" required autocomplete="organization" placeholder="Café, mall, hobby store…"><label>Area / neighbourhood</label><input name="area" autocomplete="address-level3" placeholder="Sanjay Nagar"><label>Date & time</label><input name="when" type="datetime-local" required min="${local}" value="${local}"><div class="row"><button type="button" data-cancel>Cancel</button><button class="primary" type="submit">Share meetup</button></div><div data-msg style="font-size:13px;margin-top:10px;color:#667085"></div></form>`;document.body.appendChild(overlay);const form=overlay.querySelector('form'),msg=overlay.querySelector('[data-msg]');overlay.querySelector('[data-cancel]').onclick=()=>overlay.remove();overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};form.onsubmit=async e=>{e.preventDefault();const fd=new FormData(form),d=new Date(fd.get('when'));if(isNaN(d)){msg.textContent='Choose a valid date and time.';return}const btn=form.querySelector('.primary');btn.disabled=true;btn.textContent='Saving…';const {error}=await db.rpc('setup_meetup',{p_exchange_id:exchangeId,p_venue_name:String(fd.get('venue')||''),p_venue_area:String(fd.get('area')||'')||null,p_meetup_at:d.toISOString()});if(error){msg.textContent=error.message;btn.disabled=false;btn.textContent='Share meetup'}else{overlay.remove();await window.bc23Refresh?.()}};};}
   window.addEventListener('load',()=>setTimeout(installMobileMeetupScheduler,400));window.addEventListener('resize',installMobileMeetupScheduler);setTimeout(installMobileMeetupScheduler,700);
 })();
