@@ -22,4 +22,4 @@ Allow: /
 User-agent: Claude-SearchBot
 Allow: /
 
-Sitemap: https://brickcircle.club/sitemap.xml
+Sitemap: https://www.brickcircle.club/sitemap.xml
