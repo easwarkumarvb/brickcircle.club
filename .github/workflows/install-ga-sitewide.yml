@@ -1,0 +1,44 @@
+name: Install GA4 sitewide
+
+on:
+  push:
+    paths:
+      - '.github/workflows/install-ga-sitewide.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install-ga:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Add shared analytics loader to HTML pages
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          marker = '<script src="/analytics.js"></script>'
+          changed = []
+          for p in Path('.').rglob('*.html'):
+              if '.git' in p.parts:
+                  continue
+              text = p.read_text(encoding='utf-8')
+              if marker in text or '<head>' not in text:
+                  continue
+              text = text.replace('<head>', '<head><script src="/analytics.js"></script>', 1)
+              p.write_text(text, encoding='utf-8')
+              changed.append(str(p))
+          print('Updated:', ', '.join(changed) if changed else 'none')
+          PY
+      - name: Commit analytics installation
+        run: |
+          if git diff --quiet; then
+            echo "No HTML changes needed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add '*.html' 'city/*.html' || true
+          git commit -m "Analytics: install GA4 loader sitewide"
+          git push
