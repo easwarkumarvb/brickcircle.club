@@ -3,7 +3,7 @@
   "private":true,
   "scripts":{
     "typecheck":"tsc --noEmit",
-    "syntax-check":"for f in v2prod.js authfix.js auth-email-link-fix.js global-locations.js v22b.js v22reviews.js v22match.js catalog-images.js email-status-fix.js profile-verification-hotfix.js profile-avatar-fix.js home-v23.js home-video.js home-persistence-fix.js brand-logo.js v23-meetup.js v23-persistence.js profile-v23.js mobile-v23.js beta-community.js v24-return.js v24-return-reminders.js growth-automation.js observability-v26.js catalogue-cache-sw.js; do node --check \"$f\"; done",
+    "syntax-check":"for f in v2prod.js authfix.js auth-email-link-fix.js global-locations.js social-auth.js v22b.js v22reviews.js v22match.js catalog-images.js email-status-fix.js profile-verification-hotfix.js profile-avatar-fix.js home-v23.js home-video.js home-persistence-fix.js brand-logo.js v23-meetup.js v23-persistence.js profile-v23.js mobile-v23.js beta-community.js v24-return.js v24-return-reminders.js growth-automation.js observability-v26.js catalogue-cache-sw.js; do node --check \"$f\"; done",
     "test:e2e":"playwright test"
   },
   "dependencies":{
