@@ -29,3 +29,6 @@ The next frontend module must treat LEGO catalogue data as cacheable public refe
 
 ## Matching evolution
 Keep the current on-demand reciprocal matcher until real telemetry shows it is approaching latency/cost limits. Then introduce event-driven/precomputed candidates; do not add that complexity before usage warrants it.
+
+## Deployment baseline
+This hardening branch is rebased onto the current production `main` before merge so newer UX, analytics and SEO changes are preserved.
