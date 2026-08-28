@@ -6,22 +6,16 @@
   "start_url": "/v2.html?source=pwa",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "display_override": ["standalone", "minimal-ui"],
   "background_color": "#111827",
   "theme_color": "#111827",
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/assets/brickcircle-logo.webp",
-      "sizes": "512x512",
-      "type": "image/webp",
-      "purpose": "any"
-    },
-    {
-      "src": "/assets/brickcircle-logo.webp",
-      "sizes": "512x512",
-      "type": "image/webp",
-      "purpose": "maskable"
+      "src": "/assets/pwa-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
     }
   ],
   "shortcuts": [
@@ -29,5 +23,5 @@
     {"name":"Find Matches","short_name":"Matches","url":"/v2.html#matches"},
     {"name":"Wishlist","short_name":"Wishlist","url":"/v2.html#wishlist"}
   ],
-  "categories": ["social", "lifestyle", "shopping"]
+  "categories": ["social", "lifestyle"]
 }
