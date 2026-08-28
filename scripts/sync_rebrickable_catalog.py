@@ -5,7 +5,7 @@ Safety: validates downloads, upserts in bounded batches, never deletes catalogue
 never touches BrickCircle valuation/community fields, and marks disappeared source rows
 inactive only after a successful import.
 """
-import csv, gzip, io, json, os, sys, urllib.request
+import csv, gzip, io, json, os, sys, urllib.request, urllib.parse
 from datetime import datetime, timezone
 
 SUPABASE_URL=os.environ["SUPABASE_URL"].rstrip("/")
@@ -15,7 +15,7 @@ THEMES_URL="https://cdn.rebrickable.com/media/downloads/themes.csv.gz"
 BATCH=250
 
 def download_csv(url):
-    req=urllib.request.Request(url,headers={"User-Agent":"BrickCircle-Catalog-Sync/2.0"})
+    req=urllib.request.Request(url,headers={"User-Agent":"BrickCircle-Catalog-Sync/2.1"})
     with urllib.request.urlopen(req,timeout=90) as r: raw=r.read()
     with gzip.GzipFile(fileobj=io.BytesIO(raw)) as gz:
         return list(csv.DictReader(io.TextIOWrapper(gz,encoding="utf-8")))
@@ -43,16 +43,15 @@ def main():
           "theme":theme_names.get(int(s["theme_id"]),"Unknown"),"rebrickable_set_num":s["set_num"],
           "rebrickable_theme_id":int(s["theme_id"]),"catalog_source":"Rebrickable",
           "catalog_active":True,"catalog_updated_at":stamp})
-    # Import all official-set records. Conflict handling preserves columns omitted above,
-    # including estimated_value and future BrickCircle demand/exchange intelligence.
     for i in range(0,len(rows),BATCH):
         sb("lego_sets?on_conflict=set_number",method="POST",body=rows[i:i+BATCH],
            extra={"Prefer":"resolution=merge-duplicates,return=minimal"})
         if i and i%5000==0: print(f"upserted {i}/{len(rows)}")
-    # Only after the complete validated upsert, retire Rebrickable records not seen today.
-    # Never DELETE: member collections/wishlists and historical exchanges remain referentially safe.
-    sb(f"lego_sets?catalog_source=eq.Rebrickable&catalog_updated_at=lt.{stamp}",method="PATCH",
-       body={"catalog_active":False})
+    # Encode the timestamp used in the PostgREST filter. ISO UTC offsets contain '+';
+    # unescaped '+' is decoded as a space in a query string and causes HTTP 400.
+    cutoff=urllib.parse.quote(stamp,safe="-:T.")
+    sb(f"lego_sets?catalog_source=eq.Rebrickable&catalog_updated_at=lt.{cutoff}",method="PATCH",
+       body={"catalog_active":False},extra={"Prefer":"return=minimal"})
     print(json.dumps({"source_sets":len(sets),"upserted":len(rows),"source":"Rebrickable","completed_at":stamp},indent=2))
 
 if __name__=="__main__":
