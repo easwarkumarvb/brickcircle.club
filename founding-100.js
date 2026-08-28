@@ -23,6 +23,7 @@
   const currentPage=()=>((location.hash||'#home').slice(1)||'home').split('?')[0];
   const nav=p=>{if(typeof window.bcNav==='function')window.bcNav(p);else location.hash=p;};
   function toast(msg){document.querySelector('.bc-f100-toast')?.remove();const e=document.createElement('div');e.className='bc-f100-toast';e.textContent=msg;document.body.appendChild(e);setTimeout(()=>e.remove(),2600);}
+  function scheduleRender(){[40,180,500,1100].forEach(ms=>setTimeout(render,ms));}
 
   async function load(){
     if(loading)return;loading=true;
@@ -32,15 +33,15 @@
       state.session=sd?.session||null;
       state.liquidity=null;
       if(state.session){const {data:ld}=await db.rpc('bc_liquidity_status');state.liquidity=Array.isArray(ld)?ld[0]:ld;}
-    }catch(err){console.warn('Founding 100 status unavailable',err);}finally{loading=false;render();}
+    }catch(err){console.warn('Founding 100 status unavailable',err);}finally{loading=false;scheduleRender();}
   }
 
   function founderCopy(){
     const f=state.founder;if(!f)return null;
     const claimed=Number(f.founding_slots_claimed||0),remaining=Math.max(0,Number(f.founding_slots_remaining||0));
-    if(f.my_is_founder&&f.my_number)return {title:`You’re Founding Member #${f.my_number}`,body:'Your future BrickCircle marketplace membership fee is waived. Help build liquidity by adding sets, wishlisting sets and inviting collectors in your city.',remaining,claimed,founder:true};
-    if(remaining>0)return {title:`${remaining} Founding 100 spots remain`,body:'The first 100 BrickCircle members receive complimentary marketplace membership. Join now, build your collection and help your city reach exchange-ready liquidity.',remaining,claimed,founder:false};
-    return {title:'The Founding 100 is complete',body:'BrickCircle’s first 100 collectors helped seed the marketplace. New membership pricing will be introduced separately before any charge applies.',remaining:0,claimed:100,founder:false};
+    if(f.my_is_founder&&f.my_number)return {title:`You’re Founding Member #${f.my_number}`,body:'Your BrickCircle marketplace membership is complimentary as a Founding Member. Help build liquidity by adding sets, wishlisting sets and inviting collectors in your city.',remaining,claimed};
+    if(remaining>0)return {title:`${remaining} Founding 100 spots remain`,body:'The first 100 BrickCircle members receive complimentary marketplace membership. Join now, build your collection and help your city reach exchange-ready liquidity.',remaining,claimed};
+    return {title:'The Founding 100 is complete',body:'BrickCircle’s first 100 collectors helped seed the marketplace. New membership pricing will be introduced separately before any charge applies.',remaining:0,claimed:100};
   }
 
   function renderFounder(){
@@ -49,10 +50,11 @@
     if(!home){document.querySelector('.bc-f100')?.remove();return;}
     const host=document.querySelector('#app .bc23')||document.querySelector('#app');if(!host)return;
     let el=host.querySelector('.bc-f100');if(!el){el=document.createElement('section');el.className='bc-f100';const first=host.firstElementChild;first?.after?first.after(el):host.prepend(el);}
-    const progress=Math.min(100,Math.round((copy.claimed/100)*100));
+    const progress=Math.min(100,Math.round(copy.claimed));
+    const sig=[copy.title,copy.claimed,!!state.session].join('|');if(el.dataset.sig===sig)return;el.dataset.sig=sig;
     el.innerHTML=`<div class="bc-f100in"><div><div class="bc-f100-kicker">Founding 100</div><h3>${copy.title}</h3><p>${copy.body}</p><div class="bc-f100-meter"><span style="width:${progress}%"></span></div><p class="bc-f100-small">${copy.claimed} of 100 founding memberships claimed</p></div><div class="bc-f100-actions">${state.session?'<button type="button" data-f100-invite>Invite an AFOL</button>':'<button type="button" data-f100-join>Join free</button>'}<button type="button" class="secondary" data-f100-collection>${state.session?'Build collection':'How it works'}</button></div></div>`;
-    el.querySelector('[data-f100-join]')?.addEventListener('click',()=>{window.bcAuth?.open?.()||document.querySelector('[data-auth],button')?.click?.();});
-    el.querySelector('[data-f100-collection]')?.addEventListener('click',()=>nav(state.session?'collection':'home'));
+    el.querySelector('[data-f100-join]')?.addEventListener('click',()=>window.bcAuth?.());
+    el.querySelector('[data-f100-collection]')?.addEventListener('click',()=>{if(state.session)nav('collection');else document.querySelector('.bc23-section')?.scrollIntoView({behavior:'smooth'});});
     el.querySelector('[data-f100-invite]')?.addEventListener('click',shareInvite);
   }
 
@@ -72,19 +74,20 @@
     const host=document.querySelector('#app .bc23')||document.querySelector('#app');if(!host)return;
     let el=host.querySelector('.bc-liquidity');if(!el){el=document.createElement('section');el.className='bc-liquidity';const founder=host.querySelector('.bc-f100');founder?.after?founder.after(el):host.prepend(el);}
     const l=state.liquidity,score=Math.max(0,Math.min(100,Number(l.liquidity_readiness||0))),next=nextAction(l),place=l.city?`${l.city}${l.country?`, ${l.country}`:''}`:'Your city';
+    const sig=[score,l.city_members,l.city_exchangeable_sets,l.city_wishlist_items,next.label].join('|');if(el.dataset.sig===sig)return;el.dataset.sig=sig;
     el.innerHTML=`<div class="bc-liquidity-in"><div class="bc-liquidity-head"><div><h3>Make ${place} exchange-ready</h3><p>Marketplace liquidity improves when members add exchangeable sets, wishlists and nearby collectors.</p></div><div class="bc-liquidity-score">${score}% ready</div></div><div class="bc-liquidity-progress"><span style="width:${score}%"></span></div><div class="bc-liquidity-stats"><div class="bc-liquidity-stat"><b>${Number(l.city_members||0)}</b><span>local members</span></div><div class="bc-liquidity-stat"><b>${Number(l.city_exchangeable_sets||0)}</b><span>exchangeable sets</span></div><div class="bc-liquidity-stat"><b>${Number(l.city_wishlist_items||0)}</b><span>wishlist signals</span></div></div><div class="bc-liquidity-next"><b>Best next step: ${next.label}</b><button type="button" data-liquidity-next>${next.invite?'Invite collector':'Do this now'}</button></div></div>`;
     el.querySelector('[data-liquidity-next]')?.addEventListener('click',()=>next.invite?shareInvite():nav(next.page));
   }
 
   function renderBadge(){
-    document.querySelectorAll('.bc-founder-badge').forEach(x=>x.remove());
-    if(!state.founder?.my_is_founder||!state.founder?.my_number)return;
+    if(!state.founder?.my_is_founder||!state.founder?.my_number){document.querySelector('.bc-founder-badge')?.remove();return;}
     const hero=document.querySelector('.bcprof-hero');if(!hero)return;
-    const badge=document.createElement('div');badge.className='bc-founder-badge';badge.textContent=`★ Founding Member #${state.founder.my_number}`;hero.appendChild(badge);
+    const text=`★ Founding Member #${state.founder.my_number}`;
+    let badge=hero.querySelector('.bc-founder-badge');if(!badge){badge=document.createElement('div');badge.className='bc-founder-badge';hero.appendChild(badge);}if(badge.textContent!==text)badge.textContent=text;
   }
 
   async function shareInvite(){
-    if(!state.session){window.bcAuth?.open?.();return;}
+    if(!state.session){window.bcAuth?.();return;}
     try{
       const {data,error}=await db.rpc('bc_my_referral_code');if(error)throw error;
       const code=String(data||'').trim();if(!code)throw new Error('No referral code');
@@ -100,7 +103,6 @@
   function render(){renderFounder();renderLiquidity();renderBadge();}
   document.addEventListener('DOMContentLoaded',load);
   window.addEventListener('load',()=>setTimeout(load,350));
-  window.addEventListener('hashchange',()=>setTimeout(render,80));
+  window.addEventListener('hashchange',scheduleRender);
   db.auth.onAuthStateChange(()=>setTimeout(load,100));
-  new MutationObserver(()=>render()).observe(document.documentElement,{childList:true,subtree:true});
 })();
