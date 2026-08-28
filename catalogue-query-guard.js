@@ -1,0 +1,3 @@
+/* BrickCircle catalogue query guard: cap legacy broad lego_sets reads.
+   V2.7 catalogue search performs its own paginated server-side queries. */
+(()=>{'use strict';if(!window.supabase?.createClient)return;const original=window.supabase.createClient.bind(window.supabase);window.supabase.createClient=function(...args){const client=original(...args),from=client.from.bind(client);client.from=function(table){const q=from(table);if(table!=='lego_sets')return q;const select=q.select.bind(q);q.select=function(columns,...rest){const b=select(columns,...rest);if(columns==='*'&&b&&typeof b.limit==='function')return b.limit(48);return b};return q};return client};})();
