@@ -1,0 +1,33 @@
+{
+  "name": "BrickCircle — LEGO Set Exchange",
+  "short_name": "BrickCircle",
+  "description": "Catalogue collectible LEGO sets, find reciprocal matches nearby, and exchange sets with the BrickCircle community.",
+  "id": "/v2.html",
+  "start_url": "/v2.html?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/assets/brickcircle-logo.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brickcircle-logo.webp",
+      "sizes": "512x512",
+      "type": "image/webp",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {"name":"My Collection","short_name":"Collection","url":"/v2.html#collection"},
+    {"name":"Find Matches","short_name":"Matches","url":"/v2.html#matches"},
+    {"name":"Wishlist","short_name":"Wishlist","url":"/v2.html#wishlist"}
+  ],
+  "categories": ["social", "lifestyle", "shopping"]
+}
