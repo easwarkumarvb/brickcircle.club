@@ -1,6 +1,6 @@
-const SHELL_CACHE='brickcircle-shell-v3-20260829-authfix1';
+const SHELL_CACHE='brickcircle-shell-v3-20260829-authfix2';
 const DATA_CACHE='brickcircle-catalogue-v3';
-const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/app-v3.js?v=20260829-v3','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-3','/membership-v31.js?v=20260829-1','/catalog-search-v32.js?v=20260829-1','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
+const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/app-v3.js?v=20260829-v3','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/catalog-search-v32.js?v=20260829-1','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();

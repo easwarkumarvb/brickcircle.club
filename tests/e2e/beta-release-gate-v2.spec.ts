@@ -94,28 +94,30 @@ test('PWA manifest and service worker are release-ready', async ({request})=>{
   expect(sw).toContain('/v2.html');
 });
 
-test('Google sign-in helper parses OAuth URL and reaches Supabase ID-token handoff', async ({page})=>{
+test('Google sign-in hands off to the Supabase OAuth authorize URL', async ({page})=>{
   const errors=collectErrors(page);
+  // A same-document hash handoff lets this test verify the call contract before
+  // an actual OAuth navigation replaces the JavaScript execution context.
+  const oauthUrl='https://qa.brickcircle.test/auth#oauth-start';
   await page.route('https://qa.brickcircle.test/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<button class="bc-auth-provider google" data-oauth="google">Continue with Google</button>'}));
   await page.goto('https://qa.brickcircle.test/auth');
-  await page.evaluate(()=>{
-    (window as any).__idTokenCalled=false;
+  await page.evaluate((url)=>{
+    (window as any).__oauthCalled=false;
     (window as any).supabase={createClient:()=>({
       auth:{
         getUser:async()=>({data:{user:null},error:null}),
-        signInWithOAuth:async()=>({data:{url:'https://accounts.google.com/o/oauth2/v2/auth?client_id=qa-client.apps.googleusercontent.com'},error:null}),
-        signInWithIdToken:async()=>{(window as any).__idTokenCalled=true;return new Promise(()=>{})}
+        signInWithOAuth:async(options:any)=>{
+          (window as any).__oauthCalled=options?.provider==='google'&&options?.options?.skipBrowserRedirect===true;
+          return {data:{url},error:null};
+        }
       },
       from:()=>({upsert:async()=>({error:null})})
     })};
-    (window as any).google={accounts:{id:{
-      initialize:(cfg:any)=>{(window as any).__gisCallback=cfg.callback},
-      prompt:()=>setTimeout(()=>{(window as any).__gisCallback({credential:'qa-token'})},0)
-    }}};
-  });
+  },oauthUrl);
   await page.addScriptTag({path:authHotfixPath});
   await page.locator('button').click();
-  await expect.poll(()=>page.evaluate(()=>(window as any).__idTokenCalled),{timeout:3000}).toBeTruthy();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__oauthCalled),{timeout:3000}).toBeTruthy();
+  await expect(page).toHaveURL(oauthUrl,{timeout:3000});
   expect(materialErrors(errors)).toEqual([]);
 });
 

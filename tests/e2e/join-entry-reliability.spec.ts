@@ -10,9 +10,9 @@ test('public Join free links use the explicit join intent',()=>{
 
 test('join entry reliability layer loads immediately after the app',()=>{
   const html=read('v2.html');
-  const app=html.indexOf('/app-v3.js?v=20260829-v3');
-  const join=html.indexOf('/join-entry-v33.js?v=20260829-1');
-  const auth=html.indexOf('/v3-auth-onboarding-hotfix.js?v=20260829-3');
+  const app=html.indexOf('/app-v3.js?');
+  const join=html.indexOf('/join-entry-v33.js?');
+  const auth=html.indexOf('/v3-auth-onboarding-hotfix.js?');
   expect(app).toBeGreaterThan(-1);
   expect(join).toBeGreaterThan(app);
   expect(auth).toBeGreaterThan(join);
@@ -30,7 +30,7 @@ test('join entry opens auth without waiting for remote hydration',()=>{
 
 test('PWA cache includes the join reliability and current auth assets',()=>{
   const sw=read('catalogue-cache-sw.js');
-  expect(sw).toContain("brickcircle-shell-v3-20260829-authfix1");
+  expect(sw).toContain("brickcircle-shell-v3-20260829-authfix2");
   expect(sw).toContain("/join-entry-v33.js?v=20260829-1");
-  expect(sw).toContain("/v3-auth-onboarding-hotfix.js?v=20260829-3");
+  expect(sw).toContain("/v3-auth-onboarding-hotfix.js?v=20260829-4");
 });
