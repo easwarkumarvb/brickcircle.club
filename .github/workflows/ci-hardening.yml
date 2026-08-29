@@ -6,6 +6,7 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -14,7 +15,13 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm run syntax-check
-      - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Chromium regression + functional UI suite
+        run: npm run test:e2e
+        env:
+          BC_BASE_URL: https://www.brickcircle.club
+      - name: Firefox + WebKit cross-browser, visual and accessibility suite
+        run: npm run test:cross-browser
         env:
           BC_BASE_URL: https://www.brickcircle.club
