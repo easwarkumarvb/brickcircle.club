@@ -139,6 +139,27 @@
     event.stopImmediatePropagation();event.preventDefault();schedule(q);
   },true);
 
+  // Beta reliability guard: the proposal form handler explicitly queries a
+  // button[type="submit"]. HTML defaults an untyped button to submit, but the
+  // selector does not. Normalize the primary proposal action as soon as the
+  // modal is inserted so both browser behavior and the handler agree.
+  function normalizeProposalSubmit(root=document){
+    const form=root?.matches?.('#bc-proposal')?root:root?.querySelector?.('#bc-proposal');
+    if(!form)return;
+    const button=form.querySelector('.bc-form-actions .bc-btn.primary');
+    if(button&&!button.hasAttribute('type'))button.setAttribute('type','submit');
+  }
+  const proposalObserver=new MutationObserver(mutations=>{
+    for(const mutation of mutations){
+      for(const node of mutation.addedNodes){
+        if(node.nodeType!==1)continue;
+        normalizeProposalSubmit(node);
+      }
+    }
+  });
+  proposalObserver.observe(document.documentElement,{childList:true,subtree:true});
+  normalizeProposalSubmit();
+
   window.addEventListener('hashchange',()=>{[40,180].forEach(ms=>setTimeout(decorate,ms));});
   document.addEventListener('DOMContentLoaded',()=>{[40,180,500].forEach(ms=>setTimeout(decorate,ms));});
   [100,400].forEach(ms=>setTimeout(decorate,ms));
