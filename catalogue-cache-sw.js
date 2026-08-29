@@ -1,7 +1,8 @@
-const SHELL_CACHE='brickcircle-shell-v3-20260829-imagefix1';
+const SHELL_CACHE='brickcircle-shell-v3-20260829-catalogue-v4';
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
-const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/set-image-fix-v34.js?v=20260829-1','/app-v3.js?v=20260829-v3','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/catalog-search-v32.js?v=20260829-2','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
+const NETWORK_TIMEOUT_MS=8000;
+const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/set-image-fix-v34.js?v=20260829-1','/app-v3.js?v=20260829-catalogue-v4','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
@@ -20,10 +21,19 @@ self.addEventListener('activate',event=>{
 
 self.addEventListener('message',event=>{if(event.data?.type==='SKIP_WAITING')self.skipWaiting();});
 
+async function fetchWithTimeout(request,timeoutMs=NETWORK_TIMEOUT_MS){
+  const controller=new AbortController();
+  const abort=()=>controller.abort();
+  request.signal?.addEventListener?.('abort',abort,{once:true});
+  const timer=setTimeout(abort,timeoutMs);
+  try{return await fetch(request,{signal:controller.signal})}
+  finally{clearTimeout(timer);request.signal?.removeEventListener?.('abort',abort)}
+}
+
 async function networkFirst(request,fallback){
   const cache=await caches.open(SHELL_CACHE);
   try{
-    const response=await fetch(request);
+    const response=await fetchWithTimeout(request);
     if(response.ok)await cache.put(request,response.clone());
     return response;
   }catch(_){
@@ -34,7 +44,7 @@ async function networkFirst(request,fallback){
 async function staleWhileRevalidate(request,cacheName,allowOpaque=false){
   const cache=await caches.open(cacheName);
   const cached=await cache.match(request);
-  const network=fetch(request).then(async response=>{
+  const network=fetchWithTimeout(request).then(async response=>{
     if(response.ok||(allowOpaque&&response.type==='opaque'))await cache.put(request,response.clone());
     return response;
   }).catch(()=>null);

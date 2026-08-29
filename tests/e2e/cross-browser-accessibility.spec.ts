@@ -92,7 +92,7 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     await expect(page.locator('#bc-set-grid')).toContainText(/McLaren/i,{timeout:10000});
     await expect(page.locator('#bc-set-grid article').first()).toBeVisible();
 
-    const firstImage=page.locator('#bc-set-grid img[data-cs-image]').first();
+    const firstImage=page.locator('#bc-set-grid img[data-set-image]').first();
     await expect(firstImage).toHaveAttribute('loading','eager');
     await expect(firstImage).toHaveAttribute('fetchpriority','high');
     await expect(firstImage).not.toHaveAttribute('src',/-1-1\.jpg/);

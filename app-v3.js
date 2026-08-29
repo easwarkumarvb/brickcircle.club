@@ -23,6 +23,13 @@ const countries=()=>Object.keys(LOC()).sort((a,b)=>a.localeCompare(b));
 const popularSets=['42143','42115','42083','42056','42141','42172','10283','21309','10318','10307'];
 const primaryRoutes=[['home','⌂','Home'],['browse','⌕','Browse'],['sets','🧱','My Sets'],['matches','⇄','Matches'],['exchanges','🤝','Exchanges']];
 
+const CATALOGUE_PAGE_SIZE=24;
+const CATALOGUE_SEARCH_LIMIT=60;
+const CATALOGUE_TIMEOUT_MS=8000;
+let catalogueSequence=0;
+let catalogueController=null;
+let catalogueTimer=null;
+
 const S={
   user:null,profile:null,founder:null,liquidity:null,collection:[],wishlist:[],matches:[],
   requests:[],exchanges:[],notifications:[],messages:[],reviews:[],profiles:{},items:{},sets:{},
@@ -57,14 +64,15 @@ function avatar(p,size='mini'){
   return url?`<img src="${attr(url)}" alt="" loading="lazy">`:esc(initials(p?.display_name));
 }
 function publicAvatar(path){if(!path)return '';if(/^https?:\/\//.test(path))return path;return db.storage.from('avatars').getPublicUrl(path).data?.publicUrl||''}
-function setImage(set,name=''){
-  const src=`https://images.brickset.com/sets/images/${encodeURIComponent(set)}-1.jpg`;
-  return `<div class="bc-set-image"><img src="${src}" alt="LEGO set ${attr(set)}${name?' — '+attr(name):''}" loading="lazy" decoding="async" data-set-image="${attr(set)}"><div class="bc-set-placeholder" hidden>🧱</div></div>`;
+function imageSetNumber(set){return /-\d+$/.test(String(set||''))?String(set):`${String(set||'')}-1`}
+function setImage(set,name='',priority=false){
+  const src=`https://images.brickset.com/sets/images/${encodeURIComponent(imageSetNumber(set))}.jpg`;
+  return `<div class="bc-set-image"><img src="${src}" alt="LEGO set ${attr(set)}${name?' — '+attr(name):''}" loading="${priority?'eager':'lazy'}" ${priority?'fetchpriority="high"':''} decoding="async" data-set-image="${attr(set)}"><div class="bc-set-placeholder" hidden>🧱</div></div>`;
 }
 function wireImages(root=document){
   $$('img[data-set-image]',root).forEach(img=>{
     if(img.dataset.bound)return;img.dataset.bound='1';let retry=false;
-    img.addEventListener('error',()=>{if(!retry){retry=true;const s=img.dataset.setImage;img.src=`https://images.weserv.nl/?url=${encodeURIComponent(`images.brickset.com/sets/images/${s}-1.jpg`)}&w=700&fit=contain&output=jpg`;return}img.hidden=true;img.nextElementSibling?.removeAttribute('hidden')});
+    img.addEventListener('error',()=>{if(!retry){retry=true;const s=imageSetNumber(img.dataset.setImage);img.src=`https://images.weserv.nl/?url=${encodeURIComponent(`images.brickset.com/sets/images/${s}.jpg`)}&w=700&fit=contain&output=jpg`;return}img.hidden=true;img.nextElementSibling?.removeAttribute('hidden')});
   });
 }
 
@@ -188,6 +196,7 @@ async function hydrateExchangeItems(rows=S.exchanges){
 }
 async function renderRoute(){
   const token=++S.renderToken;const r=routeName();syncNav();
+  if(r!=='browse'&&r!=='catalogue')cancelCatalogueRequest();
   if(r==='home')return renderHome(token);
   if(r==='browse'||r==='catalogue')return renderBrowse(token);
   if(r==='sets'||r==='collection'||r==='wishlist')return renderSets(token,r);
@@ -209,16 +218,80 @@ async function renderHome(token){
   $$('[data-ready]',app()).forEach(b=>b.onclick=()=>b.dataset.ready==='invite'?shareInvite():navigate(b.dataset.ready));$$('[data-invite]',app()).forEach(b=>b.onclick=shareInvite);if(S.installPrompt&&S.collection.length){const target=$('.bc-welcome .bc-head-actions');if(target){const b=document.createElement('button');b.className='bc-btn ghost';b.style.cssText='color:#fff;border-color:#ffffff44';b.textContent='Install BrickCircle';b.onclick=installPWA;target.appendChild(b)}}
 }
 
+function cancelCatalogueRequest(){
+  catalogueSequence++;
+  clearTimeout(catalogueTimer);
+  catalogueController?.abort();
+  catalogueController=null;
+}
+function scheduleCatalogueLoad(delay=180){
+  cancelCatalogueRequest();
+  const grid=$('#bc-set-grid'),status=$('#bc-cat-status');
+  if(status)status.textContent=S.browse.q?'Preparing search…':'Loading page…';
+  grid?.setAttribute('aria-busy','true');
+  catalogueTimer=setTimeout(()=>loadCatalogue(S.renderToken),delay);
+}
 async function renderBrowse(token){
-  page(`<div class="bc-page-head"><div><h1>Browse LEGO sets</h1><p>Add what you own and wishlist what you want. Every action improves BrickCircle’s reciprocal matching.</p></div>${S.user?`<div class="bc-head-actions">${pill(`${S.collection.length} owned`,'green')}${pill(`${S.wishlist.length} wanted`,'blue')}</div>`:''}</div><div class="bc-popular"><h2>Popular collector sets</h2><div class="bc-popular-row">${[['42143','Ferrari Daytona'],['42115','Lamborghini Sián'],['42083','Bugatti Chiron'],['42056','Porsche GT3 RS'],['10283','Space Shuttle'],['21309','Saturn V']].map(([n,t])=>`<button class="bc-pop-chip" data-pop="${n}">${esc(t)}</button>`).join('')}</div></div><div class="bc-catalogue-tools"><div class="bc-searchrow"><input id="bc-q" class="bc-input" placeholder="Search set number, name or theme" value="${attr(S.browse.q)}" autocomplete="off"><select id="bc-theme" class="bc-select"><option value="">All themes</option>${['Technic','Icons','Ideas','Star Wars','Creator Expert','Architecture','Speed Champions','City','Castle','Space','Pirates','Harry Potter','Marvel Super Heroes'].map(t=>`<option ${S.browse.theme===t?'selected':''}>${t}</option>`).join('')}</select><select id="bc-year" class="bc-select"><option value="">Any year</option>${Array.from({length:new Date().getFullYear()-1948},(_,i)=>new Date().getFullYear()-i).map(y=>`<option ${String(S.browse.year)===String(y)?'selected':''}>${y}</option>`).join('')}</select></div></div><div class="bc-catalogue-meta"><div id="bc-cat-status" class="bc-small">Loading sets…</div><div class="bc-small">24 per page</div></div><div id="bc-set-grid" class="bc-set-grid">${loading('Loading catalogue…')}</div><div class="bc-pager"><button class="bc-btn" id="bc-prev">← Previous</button><span id="bc-page-label" class="bc-small">Page ${S.browse.page+1}</span><button class="bc-btn primary" id="bc-next">Next →</button></div>`);
-  const q=$('#bc-q'),theme=$('#bc-theme'),year=$('#bc-year');let timer;q.oninput=()=>{clearTimeout(timer);timer=setTimeout(()=>{S.browse.q=q.value.trim();S.browse.page=0;loadCatalogue()},300)};theme.onchange=()=>{S.browse.theme=theme.value;S.browse.page=0;loadCatalogue()};year.onchange=()=>{S.browse.year=year.value;S.browse.page=0;loadCatalogue()};$('#bc-prev').onclick=()=>{if(S.browse.page>0){S.browse.page--;loadCatalogue()}};$('#bc-next').onclick=()=>{if(S.browse.lastCount===24){S.browse.page++;loadCatalogue()}};$$('[data-pop]').forEach(b=>b.onclick=()=>{q.value=b.dataset.pop;S.browse.q=b.dataset.pop;S.browse.page=0;loadCatalogue()});await loadCatalogue(token);
+  page(`<div class="bc-page-head"><div><h1>Browse LEGO sets</h1><p>Add what you own and wishlist what you want. Every action improves BrickCircle’s reciprocal matching.</p></div>${S.user?`<div class="bc-head-actions">${pill(`${S.collection.length} owned`,'green')}${pill(`${S.wishlist.length} wanted`,'blue')}</div>`:''}</div><div class="bc-popular"><h2>Popular collector sets</h2><div class="bc-popular-row">${[['42143','Ferrari Daytona'],['42115','Lamborghini Sián'],['42083','Bugatti Chiron'],['42056','Porsche GT3 RS'],['10283','Space Shuttle'],['21309','Saturn V']].map(([n,t])=>`<button class="bc-pop-chip" data-pop="${n}">${esc(t)}</button>`).join('')}</div></div><div class="bc-catalogue-tools"><div class="bc-searchrow"><input id="bc-q" class="bc-input" placeholder="Search product name, set number or theme — e.g. McLaren, Ferrari, Saturn V" aria-label="Search LEGO products by product name, set number or theme" value="${attr(S.browse.q)}" autocomplete="off"><select id="bc-theme" class="bc-select"><option value="">All themes</option>${['Technic','Icons','Ideas','Star Wars','Creator Expert','Architecture','Speed Champions','City','Castle','Space','Pirates','Harry Potter','Marvel Super Heroes'].map(t=>`<option ${S.browse.theme===t?'selected':''}>${t}</option>`).join('')}</select><select id="bc-year" class="bc-select"><option value="">Any year</option>${Array.from({length:new Date().getFullYear()-1948},(_,i)=>new Date().getFullYear()-i).map(y=>`<option ${String(S.browse.year)===String(y)?'selected':''}>${y}</option>`).join('')}</select></div><div class="bc-name-search-help bc-small" style="margin-top:7px;color:#667085">Tip: type any part of the LEGO product name. “McLaren” will show every McLaren set in the catalogue.</div></div><div class="bc-catalogue-meta"><div id="bc-cat-status" class="bc-small" role="status">Loading sets…</div><div id="bc-cat-page-size" class="bc-small">${CATALOGUE_PAGE_SIZE} per page</div></div><div id="bc-set-grid" class="bc-set-grid" aria-busy="true">${loading('Loading catalogue…')}</div><div class="bc-pager"><button class="bc-btn" id="bc-prev">← Previous</button><span id="bc-page-label" class="bc-small">Page ${S.browse.page+1}</span><button class="bc-btn primary" id="bc-next">Next →</button></div>`);
+  const q=$('#bc-q'),theme=$('#bc-theme'),year=$('#bc-year');
+  q.oninput=()=>{S.browse.q=q.value.trim();S.browse.page=0;scheduleCatalogueLoad()};
+  theme.onchange=()=>{S.browse.theme=theme.value;S.browse.page=0;scheduleCatalogueLoad(0)};
+  year.onchange=()=>{S.browse.year=year.value;S.browse.page=0;scheduleCatalogueLoad(0)};
+  $('#bc-prev').onclick=()=>{if(S.browse.page>0){S.browse.page--;scheduleCatalogueLoad(0)}};
+  $('#bc-next').onclick=()=>{if(S.browse.lastCount===CATALOGUE_PAGE_SIZE){S.browse.page++;scheduleCatalogueLoad(0)}};
+  $$('[data-pop]').forEach(b=>b.onclick=()=>{q.value=b.dataset.pop;S.browse.q=b.dataset.pop;S.browse.page=0;scheduleCatalogueLoad(0)});
+  await loadCatalogue(token);
 }
 async function loadCatalogue(token=S.renderToken){
-  if(S.browse.busy)return;S.browse.busy=true;const grid=$('#bc-set-grid'),status=$('#bc-cat-status');if(status)status.textContent=S.browse.q?'Searching…':'Loading page…';
-  const from=S.browse.page*24,to=from+23;let req=db.from('lego_sets').select('set_number,name,year,piece_count,theme,estimated_value').eq('catalog_active',true);if(S.browse.theme)req=req.eq('theme',S.browse.theme);if(S.browse.year)req=req.eq('year',Number(S.browse.year));if(S.browse.q){const clean=String(S.browse.q).replace(/[,%()]/g,' ').trim(),p=`%${clean}%`;req=req.or(`set_number.ilike.${p},name.ilike.${p},theme.ilike.${p}`)}req=req.order('year',{ascending:false}).order('set_number',{ascending:true}).range(from,to);const {data,error}=await req;S.browse.busy=false;if(token!==S.renderToken||routeName()!=='browse'&&routeName()!=='catalogue')return;if(error){if(status)status.textContent='Catalogue temporarily unavailable.';if(grid)grid.innerHTML=empty('🧱','Catalogue unavailable','Please retry in a moment.');return}S.browse.rows=data||[];S.browse.lastCount=S.browse.rows.length;if(grid)grid.innerHTML=S.browse.rows.map(setCard).join('')||empty('🔎','No matching sets','Try a different set number, name, theme or year.');if(status)status.textContent=S.browse.rows.length?`Page ${S.browse.page+1} · ${S.browse.rows.length} sets${S.browse.q?` for “${S.browse.q}”`:''}`:'No matching sets';$('#bc-page-label')&&( $('#bc-page-label').textContent=`Page ${S.browse.page+1}` );$('#bc-prev')&&( $('#bc-prev').disabled=S.browse.page===0 );$('#bc-next')&&( $('#bc-next').disabled=S.browse.rows.length<24 );wireImages(grid);bindSetActions(grid);
+  clearTimeout(catalogueTimer);
+  catalogueController?.abort();
+  const requestId=++catalogueSequence,controller=new AbortController();
+  catalogueController=controller;S.browse.busy=true;
+  const snapshot={page:S.browse.page,q:String(S.browse.q||'').replace(/[,%()]/g,' ').trim(),theme:S.browse.theme||null,year:S.browse.year?Number(S.browse.year):null};
+  const grid=$('#bc-set-grid'),status=$('#bc-cat-status');
+  if(status)status.textContent=snapshot.q?`Searching for “${snapshot.q}”…`:'Loading page…';
+  grid?.setAttribute('aria-busy','true');
+  let timedOut=false,data=null,error=null;
+  const timeout=setTimeout(()=>{timedOut=true;controller.abort()},CATALOGUE_TIMEOUT_MS);
+  try{
+    let req;
+    if(snapshot.q){
+      req=db.rpc('bc_search_lego_sets',{p_query:snapshot.q,p_theme:snapshot.theme,p_year:snapshot.year,p_limit:CATALOGUE_SEARCH_LIMIT});
+    }else{
+      const from=snapshot.page*CATALOGUE_PAGE_SIZE,to=from+CATALOGUE_PAGE_SIZE-1;
+      req=db.from('lego_sets').select('set_number,name,year,piece_count,theme,estimated_value,image_url').eq('catalog_active',true);
+      if(snapshot.theme)req=req.eq('theme',snapshot.theme);
+      if(snapshot.year)req=req.eq('year',snapshot.year);
+      req=req.order('year',{ascending:false}).order('set_number',{ascending:true}).range(from,to);
+    }
+    if(typeof req.abortSignal==='function')req=req.abortSignal(controller.signal);
+    ({data,error}=await req);
+  }catch(caught){error=caught}
+  clearTimeout(timeout);
+  if(requestId!==catalogueSequence)return;
+  S.browse.busy=false;catalogueController=null;
+  if(token!==S.renderToken||(routeName()!=='browse'&&routeName()!=='catalogue'))return;
+  grid?.removeAttribute('aria-busy');
+  if(error||timedOut){
+    if(status)status.textContent=timedOut?'Catalogue request timed out.':'Catalogue temporarily unavailable.';
+    if(grid)grid.innerHTML=`<div class="bc-empty" style="grid-column:1/-1"><div class="bc-empty-icon">🧱</div><h2>${timedOut?'The catalogue took too long':'Catalogue unavailable'}</h2><p>Your search is safe. Retry the request without reloading the app.</p><button class="bc-btn primary" id="bc-cat-retry">Retry</button></div>`;
+    $('#bc-cat-retry')?.addEventListener('click',()=>loadCatalogue(S.renderToken));
+    return;
+  }
+  S.browse.rows=data||[];S.browse.lastCount=S.browse.rows.length;
+  if(grid)grid.innerHTML=S.browse.rows.map(setCard).join('')||empty('🔎','No matching sets','Try a different set number, name, theme or year.');
+  if(status)status.textContent=S.browse.rows.length?(snapshot.q?`${S.browse.rows.length} product${S.browse.rows.length===1?'':'s'} matching “${snapshot.q}”`:`Page ${snapshot.page+1} · ${S.browse.rows.length} sets`):'No matching sets';
+  const pager=$('.bc-pager'),pageSize=$('#bc-cat-page-size');
+  if(pager)pager.style.display=snapshot.q?'none':'';
+  if(pageSize)pageSize.textContent=snapshot.q?`Up to ${CATALOGUE_SEARCH_LIMIT} matches`:`${CATALOGUE_PAGE_SIZE} per page`;
+  $('#bc-page-label')&&( $('#bc-page-label').textContent=`Page ${snapshot.page+1}` );
+  $('#bc-prev')&&( $('#bc-prev').disabled=snapshot.page===0 );
+  $('#bc-next')&&( $('#bc-next').disabled=S.browse.rows.length<CATALOGUE_PAGE_SIZE );
+  wireImages(grid);bindSetActions(grid);
+  try{track(snapshot.q?'catalogue_product_name_search':'catalogue_page_loaded',{query:snapshot.q,page:snapshot.page,result_count:S.browse.rows.length})}catch(_){ }
 }
-function setCard(s){
-  const own=S.collection.find(x=>x.set_number===s.set_number),want=S.wishlist.find(x=>x.set_number===s.set_number);return `<article class="bc-set-card" data-set="${attr(s.set_number)}">${setImage(s.set_number,s.name)}<div style="margin-top:9px">${pill(s.theme||'LEGO')}</div><h3>${esc(s.name)}</h3><div class="bc-set-meta">Set ${esc(s.set_number)} · ${s.year||''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-small" style="margin-top:6px">${money(s.estimated_value)}</div><div class="bc-set-actions"><button class="${own?'on':''}" data-own>${own?'✓ I own this':'○ I own this'}</button><button class="want ${want?'on':''}" data-want>${want?'♥ Wishlist':'♡ I want this'}</button></div></article>`
+function setCard(s,index=99){
+  const own=S.collection.find(x=>x.set_number===s.set_number),want=S.wishlist.find(x=>x.set_number===s.set_number);return `<article class="bc-set-card" data-set="${attr(s.set_number)}">${setImage(s.set_number,s.name,index<6)}<div style="margin-top:9px">${pill(s.theme||'LEGO')}</div><h3>${esc(s.name)}</h3><div class="bc-set-meta">Set ${esc(s.set_number)} · ${s.year||''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-small" style="margin-top:6px">${money(s.estimated_value)}</div><div class="bc-set-actions"><button class="${own?'on':''}" data-own>${own?'✓ I own this':'○ I own this'}</button><button class="want ${want?'on':''}" data-want>${want?'♥ Wishlist':'♡ I want this'}</button></div></article>`
 }
 function bindSetActions(root=document){$$('[data-own]',root).forEach(b=>b.onclick=()=>toggleOwned(b.closest('[data-set]').dataset.set,b));$$('[data-want]',root).forEach(b=>b.onclick=()=>toggleWanted(b.closest('[data-set]').dataset.set,b))}
 async function toggleOwned(set,button){
