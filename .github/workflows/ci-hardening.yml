@@ -15,12 +15,18 @@ jobs:
       - run: npm install
       - run: npm run typecheck
       - run: npm run syntax-check
-      - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Install Chromium for regression suite
+        run: npx playwright install --with-deps chromium
       - name: Chromium regression + functional UI suite against production
         run: npm run test:e2e
         env:
           BC_BASE_URL: https://www.brickcircle.club
+      - name: Reclaim browser/test disk before cross-browser gate
+        run: |
+          rm -rf ~/.cache/ms-playwright/chromium-* ~/.cache/ms-playwright/chromium_headless_shell-* test-results playwright-report
+          df -h /
+      - name: Install Firefox + WebKit
+        run: npx playwright install --with-deps firefox webkit
       - name: Start branch-local static server
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/brickcircle-http.log 2>&1 &
