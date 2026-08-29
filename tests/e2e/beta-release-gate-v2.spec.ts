@@ -96,7 +96,9 @@ test('PWA manifest and service worker are release-ready', async ({request})=>{
 
 test('Google sign-in hands off to the Supabase OAuth authorize URL', async ({page})=>{
   const errors=collectErrors(page);
-  const oauthUrl='https://qa.brickcircle.test/oauth-start?provider=google';
+  // A same-document hash handoff lets this test verify the call contract before
+  // an actual OAuth navigation replaces the JavaScript execution context.
+  const oauthUrl='https://qa.brickcircle.test/auth#oauth-start';
   await page.route('https://qa.brickcircle.test/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<button class="bc-auth-provider google" data-oauth="google">Continue with Google</button>'}));
   await page.goto('https://qa.brickcircle.test/auth');
   await page.evaluate((url)=>{
