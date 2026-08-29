@@ -3,27 +3,50 @@ import fs from 'node:fs';
 
 const read=(path:string)=>fs.readFileSync(path,'utf8');
 
-test('home has a single stable renderer',()=>{
+test('V3 app shell loads one application runtime',()=>{
   const html=read('v2.html');
-  expect(html).toContain('/home-render-guard.js?v=20260829-stable1');
-  expect(html).toContain('/home-stable-v30.js?v=20260829-stable1');
-  expect(html).not.toContain('/home-v23.js');
-  expect(html).not.toContain('/home-video.js');
-  expect(html).not.toContain('/home-persistence-fix.js');
-  expect(html).not.toContain('/beta-community.js');
+  expect(html).toContain('/app-v3.css?v=20260829-v3');
+  expect(html).toContain('/locations-v3.js?v=20260829-v3');
+  expect(html).toContain('/app-v3.js?v=20260829-v3');
+  for (const legacy of [
+    'v2prod.js','authfix.js','global-locations.js','social-auth.js','home-render-guard.js',
+    'home-stable-v30.js','v22b.js','v22reviews.js','v22match.js','catalog-images.js',
+    'v23-meetup.js','profile-v23.js','mobile-v23.js','v24-return.js','founding-100.js',
+    'ux-v25.js','catalogue-search-v27.js','signout-switch-account.js'
+  ]) expect(html).not.toContain(legacy);
 });
 
-test('stable home is idempotent and observer-free',()=>{
-  const home=read('home-stable-v30.js');
-  expect(home).toContain('data-bc-home-stable="1"');
-  expect(home).toContain('if(existing){reveal();return true;}');
-  expect(home).not.toContain('new MutationObserver(');
-  expect(home).not.toContain('setInterval(');
+test('V3 has one client, one router and five primary destinations',()=>{
+  const app=read('app-v3.js');
+  expect((app.match(/createClient\?/g)||[]).length).toBe(1);
+  expect(app).toContain("['home','⌂','Home']");
+  expect(app).toContain("['browse','⌕','Browse']");
+  expect(app).toContain("['sets','🧱','My Sets']");
+  expect(app).toContain("['matches','⇄','Matches']");
+  expect(app).toContain("['exchanges','🤝','Exchanges']");
+  expect(app).not.toContain('new MutationObserver(');
+  expect(app).not.toContain('setInterval(');
 });
 
-test('legacy guard only targets the obsolete V2.1 home template',()=>{
-  const guard=read('home-render-guard.js');
-  expect(guard).toContain("text.includes('V2.1 · LIVE PRODUCTION')");
-  expect(guard).toContain("text.includes('Your LEGO collection.')");
-  expect(guard).toContain('isHome()&&stable&&isLegacyHome(value)');
+test('V3 presents the canonical local in-person exchange lifecycle',()=>{
+  const app=read('app-v3.js');
+  expect(app).toContain("db.rpc('respond_exchange_request'");
+  expect(app).toContain("db.rpc('cancel_in_person_exchange'");
+  expect(app).toContain("'setup_return_meetup'");
+  expect(app).toContain("'meetup_action'");
+  expect(app).toContain("'return_action'");
+  expect(app).toContain("'submit_exchange_review'");
+  expect(app).not.toContain("db.rpc('advance_exchange'");
+  expect(app).not.toContain("'return_shipping'");
+  expect(app).not.toContain("'deposit_pending'");
+});
+
+test('public join CTA opens V3 authentication and PWA shortcuts match V3 IA',()=>{
+  const index=read('index.html');
+  const manifest=read('manifest.webmanifest');
+  expect(index).toContain('/v2.html?join=1');
+  expect(index).not.toContain('data-pwa-install');
+  expect(manifest).toContain('/v2.html#sets');
+  expect(manifest).toContain('/v2.html#matches');
+  expect(manifest).toContain('/v2.html#exchanges');
 });
