@@ -11,6 +11,9 @@
   const money=x=>Number(x)>0?'$'+Number(x).toLocaleString():'Value not listed';
   const route=()=>decodeURIComponent((location.hash||'#home').slice(1).split('/')[0]||'home');
   const browse=()=>route()==='browse'||route()==='catalogue';
+  const setKey=set=>/-\d+$/.test(String(set||''))?String(set):`${String(set||'')}-1`;
+  const bricksetUrl=set=>`https://images.brickset.com/sets/images/${encodeURIComponent(setKey(set))}.jpg`;
+  const proxyUrl=set=>`https://images.weserv.nl/?url=${encodeURIComponent(`images.brickset.com/sets/images/${setKey(set)}.jpg`)}&w=700&fit=contain&output=jpg`;
 
   function decorate(){
     if(!browse())return;
@@ -36,16 +39,17 @@
     (w.data||[]).forEach(x=>state.wanted.add(x.set_number));
   }
 
-  function image(row){
-    const fallback=`https://images.brickset.com/sets/images/${encodeURIComponent(row.set_number)}-1.jpg`;
-    const src=/^https?:\/\//i.test(row.image_url||'')?row.image_url:fallback;
-    return `<div class="bc-set-image"><img src="${esc(src)}" alt="LEGO ${esc(row.name)} — set ${esc(row.set_number)}" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><div class="bc-set-placeholder" hidden>🧱</div></div>`;
+  function image(row,index=99){
+    const direct=bricksetUrl(row.set_number);
+    const alternate=/^https?:\/\//i.test(row.image_url||'')?String(row.image_url):'';
+    const priority=index<8;
+    return `<div class="bc-set-image"><img src="${esc(direct)}" alt="LEGO ${esc(row.name)} — set ${esc(row.set_number)}" loading="${priority?'eager':'lazy'}" ${priority?'fetchpriority="high"':''} decoding="async" data-cs-image="1" data-cs-set-number="${esc(row.set_number)}" data-cs-alternate="${esc(alternate)}"><div class="bc-set-placeholder" hidden>🧱</div></div>`;
   }
 
-  function card(row){
+  function card(row,index=99){
     const owned=state.owned.has(row.set_number),wanted=state.wanted.has(row.set_number);
     return `<article class="bc-set-card bc-name-search-card" data-cs-set="${esc(row.set_number)}">
-      ${image(row)}
+      ${image(row,index)}
       <div style="margin-top:9px"><span class="bc-pill">${esc(row.theme||'LEGO')}</span></div>
       <h3>${esc(row.name||row.set_number)}</h3>
       <div class="bc-set-meta">Set ${esc(row.set_number)}${row.year?' · '+esc(row.year):''}${row.piece_count?' · '+Number(row.piece_count).toLocaleString()+' pieces':''}</div>
@@ -57,13 +61,33 @@
     </article>`;
   }
 
+  function wireSearchImages(root=document){
+    root.querySelectorAll?.('img[data-cs-image]').forEach(img=>{
+      if(img.dataset.csImageBound)return;
+      img.dataset.csImageBound='1';
+      img.dataset.csStage='brickset';
+      img.addEventListener('error',()=>{
+        const set=img.dataset.csSetNumber||'';
+        const alternate=img.dataset.csAlternate||'';
+        if(img.dataset.csStage==='brickset'&&alternate&&alternate!==img.src){
+          img.dataset.csStage='alternate';img.src=alternate;return;
+        }
+        if(img.dataset.csStage!=='proxy'){
+          img.dataset.csStage='proxy';img.src=proxyUrl(set);return;
+        }
+        img.hidden=true;img.nextElementSibling?.removeAttribute('hidden');
+      });
+    });
+  }
+
   function render(rows,q){
     if(!browse()||q!==state.query)return;
     const grid=document.getElementById('bc-set-grid'),status=document.getElementById('bc-cat-status');if(!grid)return;
     grid.dataset.catalogSearch='name';
-    grid.innerHTML=rows.length?rows.map(card).join(''):`<div class="bc-empty" style="grid-column:1/-1"><div class="bc-empty-icon">⌕</div><h2>No products found for “${esc(q)}”</h2><p>Try a shorter product name, model name, set number or theme.</p></div>`;
+    grid.innerHTML=rows.length?rows.map((row,index)=>card(row,index)).join(''):`<div class="bc-empty" style="grid-column:1/-1"><div class="bc-empty-icon">⌕</div><h2>No products found for “${esc(q)}”</h2><p>Try a shorter product name, model name, set number or theme.</p></div>`;
     if(status)status.textContent=rows.length?`${rows.length} product${rows.length===1?'':'s'} matching “${q}”`:`No catalogue products match “${q}”`;
     const pager=document.querySelector('.bc-pager');if(pager)pager.style.display='none';
+    wireSearchImages(grid);
     grid.querySelectorAll('[data-cs-own]').forEach(b=>b.onclick=()=>addOwned(b.closest('[data-cs-set]').dataset.csSet,b));
     grid.querySelectorAll('[data-cs-want]').forEach(b=>b.onclick=()=>addWanted(b.closest('[data-cs-set]').dataset.csSet,b));
   }

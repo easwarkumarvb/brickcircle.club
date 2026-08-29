@@ -75,7 +75,7 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     expect(violations,JSON.stringify(violations,null,2)).toEqual([]);
   });
 
-  test('catalogue search works and controls are accessible',async({page})=>{
+  test('catalogue search works, loads the first set image and controls are accessible',async({page})=>{
     await page.setViewportSize({width:390,height:844});
     await page.goto('/v2.html#browse',{waitUntil:'domcontentloaded'});
     const input=page.locator('#bc-q');
@@ -91,6 +91,12 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     await expect(page.locator('#bc-cat-status')).toContainText(/McLaren/i,{timeout:10000});
     await expect(page.locator('#bc-set-grid')).toContainText(/McLaren/i,{timeout:10000});
     await expect(page.locator('#bc-set-grid article').first()).toBeVisible();
+
+    const firstImage=page.locator('#bc-set-grid img[data-cs-image]').first();
+    await expect(firstImage).toHaveAttribute('loading','eager');
+    await expect(firstImage).toHaveAttribute('fetchpriority','high');
+    await expect(firstImage).not.toHaveAttribute('src',/-1-1\.jpg/);
+    await expect.poll(async()=>firstImage.evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0),{timeout:12000}).toBeTruthy();
 
     const violations=await seriousA11y(page,'#bc-main');
     expect(violations,JSON.stringify(violations,null,2)).toEqual([]);
