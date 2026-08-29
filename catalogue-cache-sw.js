@@ -1,6 +1,6 @@
-const SHELL_CACHE='brickcircle-shell-v30-20260828';
+const SHELL_CACHE='brickcircle-shell-v31-20260829';
 const DATA_CACHE='brickcircle-catalogue-v2';
-const SHELL=['/','/v2.html','/seo.css','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
+const SHELL=['/','/v2.html','/seo.css','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg','/home-render-guard.js?v=20260829-stable1','/home-stable-v30.js?v=20260829-stable1'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
