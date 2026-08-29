@@ -15,6 +15,10 @@ jobs:
       - run: npm run typecheck
       - run: npm run syntax-check
       - run: npx playwright install --with-deps chromium
+      - name: Start local V3 site
+        run: |
+          python3 -m http.server 4173 > /tmp/brickcircle-http.log 2>&1 &
+          sleep 1
       - run: npm run test:e2e
         env:
-          BC_BASE_URL: https://www.brickcircle.club
+          BC_BASE_URL: http://127.0.0.1:4173
