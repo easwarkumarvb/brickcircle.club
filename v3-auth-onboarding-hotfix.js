@@ -5,9 +5,9 @@
 */
 (()=>{
   'use strict';
-  const URL='https://nsxtromjdpdscknadxez.supabase.co';
-  const KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
-  const db=window.supabase?.createClient?.(URL,KEY);if(!db)return;
+  const SUPABASE_URL='https://nsxtromjdpdscknadxez.supabase.co';
+  const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
+  const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY);if(!db)return;
   const timeout=(p,ms=12000)=>Promise.race([p,new Promise((_,reject)=>setTimeout(()=>reject(new Error('This is taking longer than expected. Please check your connection and try again.')),ms))]);
 
   function toast(msg,bad=false){
@@ -39,7 +39,8 @@
     // Ask Supabase only for the generated OAuth URL without redirecting the browser.
     // Its Google client_id is public configuration, not a secret.
     const {data,error}=await timeout(db.auth.signInWithOAuth({provider:'google',options:{skipBrowserRedirect:true,redirectTo:`${location.origin}/v2.html`}}),8000);if(error)throw error;
-    const u=new URL(data.url);clientId=u.searchParams.get('client_id')||'';if(!clientId)throw new Error('Google sign-in configuration could not be found.');return clientId;
+    if(!data?.url)throw new Error('Google sign-in configuration could not be found.');
+    const u=new window.URL(data.url,window.location.origin);clientId=u.searchParams.get('client_id')||'';if(!clientId)throw new Error('Google sign-in configuration could not be found.');return clientId;
   }
   async function directGoogle(button){
     const old=button.textContent;button.disabled=true;button.textContent='Opening Google…';
