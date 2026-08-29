@@ -28,9 +28,11 @@ test('join entry opens auth without waiting for remote hydration',()=>{
   expect(js).not.toContain('setInterval(');
 });
 
-test('PWA cache includes the join reliability and current auth assets',()=>{
+test('PWA cache includes the join reliability, auth and current image assets',()=>{
   const sw=read('catalogue-cache-sw.js');
-  expect(sw).toContain("brickcircle-shell-v3-20260829-authfix2");
+  expect(sw).toContain("brickcircle-shell-v3-20260829-imagefix1");
   expect(sw).toContain("/join-entry-v33.js?v=20260829-1");
   expect(sw).toContain("/v3-auth-onboarding-hotfix.js?v=20260829-4");
+  expect(sw).toContain("/set-image-fix-v34.js?v=20260829-1");
+  expect(sw).toContain("/catalog-search-v32.js?v=20260829-2");
 });
