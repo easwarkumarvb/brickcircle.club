@@ -96,7 +96,8 @@ test('PWA manifest and service worker are release-ready', async ({request})=>{
 
 test('Google sign-in helper parses OAuth URL and reaches Supabase ID-token handoff', async ({page})=>{
   const errors=collectErrors(page);
-  await page.setContent('<button class="bc-auth-provider google" data-oauth="google">Continue with Google</button>');
+  await page.route('https://qa.brickcircle.test/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<button class="bc-auth-provider google" data-oauth="google">Continue with Google</button>'}));
+  await page.goto('https://qa.brickcircle.test/auth');
   await page.evaluate(()=>{
     (window as any).__idTokenCalled=false;
     (window as any).supabase={createClient:()=>({
@@ -170,13 +171,13 @@ test('signed-in collector can add, wishlist, mark exchangeable, match and propos
   await expect(page.locator('#bc-q')).toBeVisible();
   await page.locator('#bc-q').fill('McLaren');
   await expect(page.locator('#bc-set-grid')).toContainText('McLaren P1',{timeout:3000});
-  await page.locator('[data-cs-own]').first().click();
+  await page.locator('[data-cs-set="42172"] [data-cs-own]').click();
   await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.collection.length)).toBe(1);
 
   await page.locator('#bc-q').fill('Ferrari');
   await expect(page.locator('#bc-set-grid')).toContainText('Ferrari Daytona SP3',{timeout:3000});
-  await page.locator('[data-cs-want]').first().click();
-  await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.wishlist.length)).toBe(1);
+  await page.locator('[data-cs-set="42143"] [data-cs-want]').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.wishlist[0]?.set_number)).toBe('42143');
 
   await page.locator('[data-nav="sets"]').first().click();
   await expect(page.locator('#bc-sets-body')).toContainText('McLaren P1');
