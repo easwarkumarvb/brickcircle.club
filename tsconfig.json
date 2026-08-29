@@ -4,5 +4,5 @@
     "lib":["ES2022","DOM"],"skipLibCheck":true,"esModuleInterop":true
   },
   "include":["src/**/*.ts","tests/**/*.ts","playwright.config.ts"],
-  "exclude":["tests/e2e/beta-release-gate.spec.ts"]
+  "exclude":["tests/e2e/beta-release-gate*.spec.ts"]
 }
