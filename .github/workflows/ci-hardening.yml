@@ -21,9 +21,9 @@ jobs:
         run: npm run test:e2e
         env:
           BC_BASE_URL: https://www.brickcircle.club
-      - name: Reclaim browser/test disk before cross-browser gate
+      - name: Reclaim test artifacts before cross-browser gate
         run: |
-          rm -rf ~/.cache/ms-playwright/chromium-* ~/.cache/ms-playwright/chromium_headless_shell-* test-results playwright-report
+          rm -rf test-results playwright-report
           df -h /
       - name: Install Firefox + WebKit
         run: npx playwright install --with-deps firefox webkit
@@ -33,7 +33,7 @@ jobs:
           for i in {1..20}; do curl -fsS http://127.0.0.1:4173/ >/dev/null && exit 0; sleep 1; done
           cat /tmp/brickcircle-http.log
           exit 1
-      - name: Firefox + WebKit cross-browser, visual and accessibility suite
+      - name: Chromium + Firefox + WebKit visual/accessibility suite
         run: npm run test:cross-browser
         env:
           BC_BASE_URL: http://127.0.0.1:4173
