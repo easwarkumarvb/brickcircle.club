@@ -90,7 +90,12 @@
     }
   }
 
-  function schedule(q){clearTimeout(state.timer);state.timer=setTimeout(()=>runSearch(q),220);}
+  function schedule(raw){
+    clearTimeout(state.timer);
+    state.query=String(raw||'').trim();
+    const q=state.query;
+    state.timer=setTimeout(()=>runSearch(q),220);
+  }
 
   async function restoreAfterAdd(){
     const q=state.query;
@@ -124,7 +129,7 @@
   document.addEventListener('input',event=>{
     if(event.target?.id!=='bc-q')return;
     const q=event.target.value.trim();
-    if(!q){state.query='';state.rows=[];state.seq++;const pager=document.querySelector('.bc-pager');if(pager)pager.style.display='';return}
+    if(!q){state.query='';state.rows=[];state.seq++;clearTimeout(state.timer);const pager=document.querySelector('.bc-pager');if(pager)pager.style.display='';return}
     event.stopImmediatePropagation();event.preventDefault();schedule(q);
   },true);
 
