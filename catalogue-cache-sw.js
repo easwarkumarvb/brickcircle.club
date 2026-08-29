@@ -1,6 +1,7 @@
-const SHELL_CACHE='brickcircle-shell-v3-20260829-authfix2';
+const SHELL_CACHE='brickcircle-shell-v3-20260829-imagefix1';
 const DATA_CACHE='brickcircle-catalogue-v3';
-const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/app-v3.js?v=20260829-v3','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/catalog-search-v32.js?v=20260829-1','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
+const IMAGE_CACHE='brickcircle-set-images-v1';
+const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/set-image-fix-v34.js?v=20260829-1','/app-v3.js?v=20260829-v3','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/catalog-search-v32.js?v=20260829-2','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
@@ -12,6 +13,7 @@ self.addEventListener('activate',event=>{
     const keys=await caches.keys();
     await Promise.all(keys.filter(k=>k.startsWith('brickcircle-shell-')&&k!==SHELL_CACHE).map(k=>caches.delete(k)));
     await Promise.all(keys.filter(k=>k.startsWith('brickcircle-catalogue-')&&k!==DATA_CACHE).map(k=>caches.delete(k)));
+    await Promise.all(keys.filter(k=>k.startsWith('brickcircle-set-images-')&&k!==IMAGE_CACHE).map(k=>caches.delete(k)));
     await self.clients.claim();
   })());
 });
@@ -29,10 +31,13 @@ async function networkFirst(request,fallback){
   }
 }
 
-async function staleWhileRevalidate(request,cacheName){
+async function staleWhileRevalidate(request,cacheName,allowOpaque=false){
   const cache=await caches.open(cacheName);
   const cached=await cache.match(request);
-  const network=fetch(request).then(async response=>{if(response.ok)await cache.put(request,response.clone());return response;}).catch(()=>null);
+  const network=fetch(request).then(async response=>{
+    if(response.ok||(allowOpaque&&response.type==='opaque'))await cache.put(request,response.clone());
+    return response;
+  }).catch(()=>null);
   return cached||(await network)||Response.error();
 }
 
@@ -42,8 +47,10 @@ self.addEventListener('fetch',event=>{
   const url=new URL(request.url);
   const sameOrigin=url.origin===self.location.origin;
   const isCatalogue=url.hostname.endsWith('.supabase.co')&&url.pathname==='/rest/v1/lego_sets';
+  const isSetImage=url.hostname==='images.brickset.com'||url.hostname==='images.weserv.nl';
 
   if(isCatalogue){event.respondWith(staleWhileRevalidate(request,DATA_CACHE));return;}
+  if(isSetImage){event.respondWith(staleWhileRevalidate(request,IMAGE_CACHE,true));return;}
   if(!sameOrigin)return;
 
   if(request.mode==='navigate'){
