@@ -95,7 +95,12 @@
   async function restoreAfterAdd(){
     const q=state.query;
     try{if(typeof window.bcV3Refresh==='function')await window.bcV3Refresh();}catch(_){ }
-    setTimeout(()=>{decorate();const input=document.getElementById('bc-q');if(input&&q){input.value=q;schedule(q)}},40);
+    setTimeout(()=>{
+      decorate();
+      const input=document.getElementById('bc-q');
+      // Do not overwrite a newer search the collector typed while the add/refresh was finishing.
+      if(input&&q&&state.query===q){input.value=q;schedule(q)}
+    },40);
   }
 
   async function addOwned(set,button){
