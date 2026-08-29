@@ -1,0 +1,77 @@
+name: BrickCircle Beta Release Gate
+on:
+  pull_request:
+
+jobs:
+  dependency-audit:
+    if: startsWith(github.head_ref, 'qa-beta-release-gate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - run: npm install
+      - name: Runtime dependency security gate
+        run: npm audit --omit=dev --audit-level=high
+      - name: Full dependency audit report
+        if: always()
+        run: npm audit --audit-level=high || true
+
+  founding-100-concurrency:
+    if: startsWith(github.head_ref, 'qa-beta-release-gate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_qa
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_qa"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_qa
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python -m pip install 'psycopg[binary]>=3.2,<4'
+      - name: Load minimal production prerequisites
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/membership_base.sql
+      - name: Apply the actual production membership migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260829_membership_program_v31.sql
+      - name: Simulate the first 100 simultaneous registrations
+        run: python qa/membership_100_concurrency.py
+
+  marketplace-100-load:
+    if: startsWith(github.head_ref, 'qa-beta-release-gate')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_loadtest
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_loadtest"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_loadtest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }
+      - run: python -m pip install -r loadtest/requirements.txt
+      - name: Initialize isolated marketplace schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f loadtest/schema.sql
+      - name: Generate 100-member marketplace
+        run: python loadtest/generate.py --users 100 --sets 500 --collection-per-user 10 --wishlist-per-user 10 --dsn "$DSN"
+      - name: Benchmark reciprocal matching under concurrent demand
+        run: python loadtest/benchmark.py --users 100 --concurrency 20 --requests 100 --dsn "$DSN"
