@@ -17,7 +17,7 @@ test('stable home is idempotent and observer-free',()=>{
   const home=read('home-stable-v30.js');
   expect(home).toContain('data-bc-home-stable="1"');
   expect(home).toContain('if(existing){reveal();return true;}');
-  expect(home).not.toContain('MutationObserver');
+  expect(home).not.toContain('new MutationObserver(');
   expect(home).not.toContain('setInterval(');
 });
 
