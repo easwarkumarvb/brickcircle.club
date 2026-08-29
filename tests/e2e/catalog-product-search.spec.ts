@@ -6,11 +6,36 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 test('V3 loads product-name catalogue search',()=>{
   const html=read('v2.html');
   const js=read('catalog-search-v32.js');
-  expect(html).toContain('/catalog-search-v32.js?v=20260829-1');
+  expect(html).toContain('/catalog-search-v32.js?v=20260829-2');
   expect(js).toContain("db.rpc('bc_search_lego_sets'");
   expect(js).toContain('e.g. McLaren, Ferrari, Saturn V');
   expect(js).toContain('＋ Add to My Sets');
   expect(js).toContain("db.from('collection_items').insert");
+});
+
+test('catalogue images normalize suffixed LEGO set numbers and prioritize the first viewport',()=>{
+  const html=read('v2.html');
+  const js=read('catalog-search-v32.js');
+  const imageGuard=read('set-image-fix-v34.js');
+  const sw=read('catalogue-cache-sw.js');
+
+  expect(js).toContain("/-\\d+$/.test(String(set||''))");
+  expect(js).toContain('rows.map((row,index)=>card(row,index))');
+  expect(js).toContain("const priority=index<8");
+  expect(js).toContain('fetchpriority="high"');
+  expect(js).toContain('images.weserv.nl');
+  expect(js).not.toContain('encodeURIComponent(row.set_number)}-1.jpg');
+
+  expect(html).toContain('rel="preconnect" href="https://images.brickset.com"');
+  expect(html).toContain('/set-image-fix-v34.js?v=20260829-1');
+  expect(html.indexOf('/set-image-fix-v34.js')).toBeLessThan(html.indexOf('/app-v3.js'));
+  expect(imageGuard).toContain("img[data-set-image]");
+  expect(imageGuard).toContain("fetchPriority='high'");
+
+  expect(sw).toContain("const IMAGE_CACHE='brickcircle-set-images-v1'");
+  expect(sw).toContain("url.hostname==='images.brickset.com'");
+  expect(sw).toContain("url.hostname==='images.weserv.nl'");
+  expect(sw).toContain("response.type==='opaque'");
 });
 
 test('catalogue search RPC is token-aware and case-insensitive',()=>{
