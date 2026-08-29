@@ -7,7 +7,7 @@
   if(!db)return;
 
   const state={query:'',rows:[],owned:new Set(),wanted:new Set(),user:null,seq:0,timer:null};
-  const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+  const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money=x=>Number(x)>0?'$'+Number(x).toLocaleString():'Value not listed';
   const route=()=>decodeURIComponent((location.hash||'#home').slice(1).split('/')[0]||'home');
   const browse=()=>route()==='browse'||route()==='catalogue';
