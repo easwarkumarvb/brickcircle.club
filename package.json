@@ -3,7 +3,7 @@
   "private":true,
   "scripts":{
     "typecheck":"tsc --noEmit",
-    "syntax-check":"for f in app-v3.js locations-v3.js membership-v31.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js; do node --check \"$f\"; done",
+    "syntax-check":"for f in app-v3.js locations-v3.js membership-v31.js catalog-search-v32.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js; do node --check \"$f\"; done",
     "test:e2e":"playwright test"
   },
   "dependencies":{
