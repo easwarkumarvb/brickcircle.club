@@ -3,7 +3,7 @@
   "short_name": "BrickCircle",
   "description": "Catalogue collectible LEGO sets, find reciprocal matches nearby, and exchange sets with the BrickCircle community.",
   "id": "/v2.html",
-  "start_url": "/v2.html?source=pwa",
+  "start_url": "/v2.html?source=pwa#home",
   "scope": "/",
   "display": "standalone",
   "display_override": ["standalone", "minimal-ui"],
@@ -19,9 +19,9 @@
     }
   ],
   "shortcuts": [
-    {"name":"My Collection","short_name":"Collection","url":"/v2.html#collection"},
+    {"name":"My Sets","short_name":"My Sets","url":"/v2.html#sets"},
     {"name":"Find Matches","short_name":"Matches","url":"/v2.html#matches"},
-    {"name":"Wishlist","short_name":"Wishlist","url":"/v2.html#wishlist"}
+    {"name":"Exchanges","short_name":"Exchanges","url":"/v2.html#exchanges"}
   ],
   "categories": ["social", "lifestyle"]
 }
