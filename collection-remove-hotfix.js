@@ -13,12 +13,16 @@ function toast(msg){
   el.className='bc-toast';
   el.textContent=msg;
   document.body.appendChild(el);
-  setTimeout(()=>el.remove(),3200);
+  setTimeout(()=>el.remove(),4200);
 }
 
 async function removeCollectionItem(id,name,button){
   if(!id)return;
-  const confirmed=window.confirm(`Remove ${name||'this set'} from My Collection?\n\nThis only removes it from your BrickCircle collection. It does not affect the LEGO set itself.`);
+  const confirmed=window.confirm(
+    `Remove ${name||'this set'} from My Collection?\n\n`+
+    'Pending proposals involving this set will be withdrawn. '+
+    'Sets used in an accepted or completed exchange must remain in your collection history.'
+  );
   if(!confirmed)return;
 
   button.disabled=true;
@@ -29,20 +33,26 @@ async function removeCollectionItem(id,name,button){
     const {data:{user},error:userError}=await db.auth.getUser();
     if(userError||!user)throw userError||new Error('Please sign in again before removing this set.');
 
-    const {error}=await db
+    const {data,error}=await db
       .from('collection_items')
       .delete()
       .eq('id',id)
-      .eq('user_id',user.id);
+      .eq('user_id',user.id)
+      .select('id')
+      .maybeSingle();
 
     if(error)throw error;
+    if(!data)throw new Error('This set was not found in your collection. Refresh the page and try again.');
 
     document.getElementById('bc-overlay')?.remove();
     toast(`${name||'Set'} removed from My Collection.`);
     setTimeout(()=>window.location.reload(),450);
   }catch(error){
     console.error('BrickCircle collection removal failed',error);
-    toast(error?.message||'Could not remove this set. Please try again.');
+    const message=error?.code==='23503'
+      ?'This set is part of an accepted or completed exchange and must remain in your collection history.'
+      :(error?.message||'Could not remove this set. Please try again.');
+    toast(message);
     button.disabled=false;
     button.textContent=oldText;
   }
