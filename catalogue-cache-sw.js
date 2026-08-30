@@ -1,8 +1,8 @@
-const SHELL_CACHE='brickcircle-shell-v3-20260829-catalogue-v4';
+const SHELL_CACHE='brickcircle-shell-v3-20260830-catalogue-v36';
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/set-image-fix-v34.js?v=20260829-1','/app-v3.js?v=20260830-wishlist-v36','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
+const SHELL=['/','/v2.html','/seo.css','/app-v3.css?v=20260829-v3','/locations-v3.js?v=20260829-v3','/set-image-fix-v34.js?v=20260829-1','/app-v3.js?v=20260830-wishlist-v36','/catalogue-stability-v36.js?v=20260830-1','/join-entry-v33.js?v=20260829-1','/v3-auth-onboarding-hotfix.js?v=20260829-4','/membership-v31.js?v=20260829-1','/manifest.webmanifest','/assets/brickcircle-logo.webp','/assets/pwa-icon.svg'];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
