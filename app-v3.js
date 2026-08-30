@@ -247,7 +247,10 @@ async function loadCatalogue(token=S.renderToken){
   catalogueController?.abort();
   const requestId=++catalogueSequence,controller=new AbortController();
   catalogueController=controller;S.browse.busy=true;
-  const snapshot={page:S.browse.page,q:String(S.browse.q||'').replace(/[,%()]/g,' ').trim(),theme:S.browse.theme||null,year:S.browse.year?Number(S.browse.year):null};
+  const cleanQuery=String(S.browse.q||'').replace(/[,%()]/g,' ').trim();
+  // An exact set number identifies one product, so stale theme/year filters must not hide it.
+  const isExactSetNumber=/^\d{3,7}(?:-\d+)?$/.test(cleanQuery);
+  const snapshot={page:S.browse.page,q:cleanQuery,theme:isExactSetNumber?null:(S.browse.theme||null),year:isExactSetNumber?null:(S.browse.year?Number(S.browse.year):null)};
   const grid=$('#bc-set-grid'),status=$('#bc-cat-status');
   if(status)status.textContent=snapshot.q?`Searching for “${snapshot.q}”…`:'Loading page…';
   grid?.setAttribute('aria-busy','true');
