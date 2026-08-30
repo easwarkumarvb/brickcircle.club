@@ -34,6 +34,6 @@ test('PWA cache includes the join reliability, auth and current image assets',()
   expect(sw).toContain("/join-entry-v33.js?v=20260829-1");
   expect(sw).toContain("/v3-auth-onboarding-hotfix.js?v=20260829-4");
   expect(sw).toContain("/set-image-fix-v34.js?v=20260829-1");
-  expect(sw).toContain("/app-v3.js?v=20260829-catalogue-v4");
+  expect(sw).toContain("/app-v3.js?v=20260830-wishlist-v36");
   expect(sw).not.toContain("/catalog-search-v32.js");
 });

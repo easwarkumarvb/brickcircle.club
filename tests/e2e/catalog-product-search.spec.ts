@@ -6,7 +6,7 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 test('V3 owns one cancellable product-name catalogue pipeline',()=>{
   const html=read('v2.html');
   const js=read('app-v3.js');
-  expect(html).toContain('/app-v3.js?v=20260830-set-number-v1');
+  expect(html).toContain('/app-v3.js?v=20260830-wishlist-v36');
   expect(html).not.toContain('/catalog-search-v32.js');
   expect(js).toContain("db.rpc('bc_search_lego_sets'");
   expect(js).toContain("const isExactSetNumber=/^\\d{3,7}(?:-\\d+)?$/.test(cleanQuery)");
