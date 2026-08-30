@@ -7,7 +7,8 @@ test('V3 app shell loads one application runtime',()=>{
   const html=read('v2.html');
   expect(html).toContain('/app-v3.css?v=20260829-v3');
   expect(html).toContain('/locations-v3.js?v=20260829-v3');
-  expect(html).toContain('/app-v3.js?v=20260829-catalogue-v4');
+  expect(html).toContain('/app-v3.js?v=20260830-set-number-v1');
+  expect(html).toContain('/catalogue-stability-v36.js?v=20260830-1');
   for (const legacy of [
     'v2prod.js','authfix.js','global-locations.js','social-auth.js','home-render-guard.js',
     'home-stable-v30.js','v22b.js','v22reviews.js','v22match.js','catalog-images.js',
@@ -26,6 +27,15 @@ test('V3 has one client, one router and five primary destinations',()=>{
   expect(app).toContain("['exchanges','🤝','Exchanges']");
   expect(app).not.toContain('new MutationObserver(');
   expect(app).not.toContain('setInterval(');
+});
+
+test('catalogue stability layer is event-driven and bounded',()=>{
+  const stability=read('catalogue-stability-v36.js');
+  expect(stability).toContain("e.stopImmediatePropagation()");
+  expect(stability).toContain("withTimeout(db.rpc('bc_search_lego_sets'");
+  expect(stability).toContain("data-catalogue-stability");
+  expect(stability).not.toContain('new MutationObserver(');
+  expect(stability).not.toContain('setInterval(');
 });
 
 test('V3 presents the canonical local in-person exchange lifecycle',()=>{
