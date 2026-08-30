@@ -144,6 +144,7 @@ test('signed-in collector can add, wishlist, mark exchangeable, match and propos
         maybeSingle:async()=>({data:table==='profiles'?profile:null,error:null}),
         then(resolve:any){let data:any=[];if(table==='profiles')data=[profile];else if(table==='collection_items')data=state.collection.map((x:any)=>({...x,lego_sets:sets.find((s:any)=>s.set_number===x.set_number)}));else if(table==='wishlists')data=state.wishlist.map((x:any)=>({...x,lego_sets:sets.find((s:any)=>s.set_number===x.set_number)}));else if(table==='exchange_requests')data=state.requests;else if(table==='lego_sets')data=sets;else if(table==='public_profiles')data=[{id:'00000000-0000-4000-8000-000000000099',display_name:'Match Collector',country:'India',city:'Bengaluru',rating:5,review_count:3,identity_verified:false,member_since:new Date().toISOString(),founding_member_number:9}];
           if(q.mode==='update'&&table==='collection_items'){for(const x of state.collection){if(q.filters.every(([k,v]:any[])=>x[k]===v))Object.assign(x,q.patch)}data=null}
+          if(q.mode==='delete'&&table==='wishlists'){const removed=state.wishlist.filter((x:any)=>q.filters.every(([k,v]:any[])=>x[k]===v));state.wishlist=state.wishlist.filter((x:any)=>!q.filters.every(([k,v]:any[])=>x[k]===v));data=removed.map((x:any)=>({id:x.id}))}
           return Promise.resolve({data,error:null}).then(resolve)}
       };return q;
     };
@@ -194,5 +195,12 @@ test('signed-in collector can add, wishlist, mark exchangeable, match and propos
   await page.locator('#bc-proposal button[type="submit"]').click();
   await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.requests.length)).toBe(1);
   await expect(page.locator('#bc-exchange-body')).toContainText(/Proposal sent/i,{timeout:3000});
+
+  await page.locator('[data-nav="sets"]').first().click();
+  await page.locator('[data-settab="wishlist"]').click();
+  await expect(page.locator('#bc-sets-body')).toContainText('Ferrari Daytona SP3');
+  await page.locator('[data-remove-wish="42143"]').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.wishlist.length)).toBe(0);
+  await expect(page.locator('#bc-sets-body')).toContainText('Build your wishlist');
   expect(materialErrors(errors)).toEqual([]);
 });
