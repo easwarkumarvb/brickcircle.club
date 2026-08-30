@@ -7,7 +7,7 @@ test('V3 app shell loads one application runtime',()=>{
   const html=read('v2.html');
   expect(html).toContain('/app-v3.css?v=20260829-v3');
   expect(html).toContain('/locations-v3.js?v=20260829-v3');
-  expect(html).toContain('/app-v3.js?v=20260829-catalogue-v4');
+  expect(html).toContain('/app-v3.js?v=20260830-wishlist-v36');
   for (const legacy of [
     'v2prod.js','authfix.js','global-locations.js','social-auth.js','home-render-guard.js',
     'home-stable-v30.js','v22b.js','v22reviews.js','v22match.js','catalog-images.js',
