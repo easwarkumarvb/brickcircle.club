@@ -33,7 +33,7 @@ test('catalogue stability layer is event-driven and bounded',()=>{
   const stability=read('catalogue-stability-v36.js');
   expect(stability).toContain("e.stopImmediatePropagation()");
   expect(stability).toContain("withTimeout(db.rpc('bc_search_lego_sets'");
-  expect(stability).toContain("data-catalogue-stability");
+  expect(stability).toContain("grid.dataset.catalogueStability='v36'");
   expect(stability).not.toContain('new MutationObserver(');
   expect(stability).not.toContain('setInterval(');
 });
