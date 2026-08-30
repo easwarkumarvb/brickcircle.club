@@ -41,20 +41,25 @@ function wire(root){
   root.querySelectorAll('[data-v36-want]').forEach(b=>b.onclick=()=>addWanted(b.closest('[data-v36-set]').dataset.v36Set,b));
   window.dispatchEvent(new CustomEvent('bc:catalogue-rendered',{detail:{query:state.query,count:state.rows.length}}));
 }
-function render(rows,q){
-  if(!browse()||q!==state.query)return;
+function paint(rows,q){
   const input=document.getElementById('bc-q'),grid=document.getElementById('bc-set-grid'),status=document.getElementById('bc-cat-status');
-  if(!grid||!input||input.value.trim()!==q)return;
+  if(!browse()||q!==state.query||!grid||!input)return false;
+  if(input.value.trim()!==q)input.value=q;
   grid.dataset.catalogueStability='v36';grid.removeAttribute('aria-busy');
   grid.innerHTML=rows.length?rows.map(card).join(''):`<div class="bc-empty" style="grid-column:1/-1"><div class="bc-empty-icon">🔎</div><h2>No matching sets</h2><p>Try a different set number, name, theme or year.</p></div>`;
   if(status)status.textContent=rows.length?`${rows.length} product${rows.length===1?'':'s'} matching “${q}”`:`No matching sets for “${q}”`;
   const pager=document.querySelector('.bc-pager');if(pager)pager.style.display='none';const size=document.getElementById('bc-cat-page-size');if(size)size.textContent='Up to 60 matches';
-  wire(grid);
+  wire(grid);return true;
+}
+function guardLatest(q){
   [120,500,1500,3000].forEach(ms=>setTimeout(()=>{
-    const g=document.getElementById('bc-set-grid'),i=document.getElementById('bc-q');
-    if(browse()&&i?.value.trim()===q&&state.query===q&&g?.dataset.catalogueStability!=='v36')render(state.rows,q);
+    if(!browse()||state.query!==q)return;
+    const grid=document.getElementById('bc-set-grid'),input=document.getElementById('bc-q');if(!grid||!input)return;
+    const stale=grid.dataset.catalogueStability!=='v36'||grid.querySelector('.bc-loading')||input.value.trim()!==q;
+    if(stale)paint(state.rows,q);
   },ms));
 }
+function render(rows,q){if(paint(rows,q))guardLatest(q)}
 async function search(raw){
   const q=String(raw||'').replace(/[,%()]/g,' ').trim();if(!q)return;state.query=q;const seq=++state.seq;
   const grid=document.getElementById('bc-set-grid'),status=document.getElementById('bc-cat-status');
@@ -63,10 +68,9 @@ async function search(raw){
   const exact=/^\d{3,7}(?:-\d+)?$/.test(q);
   const theme=exact?null:(document.getElementById('bc-theme')?.value||null),yearRaw=exact?'':(document.getElementById('bc-year')?.value||''),year=yearRaw?Number(yearRaw):null;
   try{
-    const [result]=await Promise.all([
-      withTimeout(db.rpc('bc_search_lego_sets',{p_query:q,p_theme:theme,p_year:year,p_limit:60}),7000),
-      loadFlags()
-    ]);
+    const flags=withTimeout(loadFlags(),2500).catch(()=>{});
+    const result=await withTimeout(db.rpc('bc_search_lego_sets',{p_query:q,p_theme:theme,p_year:year,p_limit:60}),7000);
+    await flags;
     if(seq!==state.seq||q!==state.query)return;if(result.error)throw result.error;
     state.rows=result.data||[];render(state.rows,q);
   }catch(error){
@@ -107,4 +111,5 @@ document.addEventListener('click',e=>{
   const b=e.target.closest?.('[data-pop]');if(!b||!browse())return;
   e.preventDefault();e.stopImmediatePropagation();const input=document.getElementById('bc-q');if(!input)return;input.value=b.dataset.pop||'';schedule(input.value,0);
 },true);
+window.addEventListener('hashchange',()=>{if(!browse()){state.query='';state.rows=[];state.seq++;clearTimeout(state.timer)}});
 })();
