@@ -250,7 +250,7 @@ async function loadCatalogue(token=S.renderToken){
   const cleanQuery=String(S.browse.q||'').replace(/[,%()]/g,' ').trim();
   // An exact set number identifies one product, so stale theme/year filters must not hide it.
   const isExactSetNumber=/^\d{3,7}(?:-\d+)?$/.test(cleanQuery);
-  const snapshot={page:S.browse.page,q:cleanQuery,theme:isExactSetNumber?null:(S.browse.theme||null),year:isExactSetNumber?null:(S.browse.year?Number(S.browse.year):null)};
+  const snapshot={page:S.browse.page,q:cleanQuery,theme:isExactSetNumber?null:(S.browse.theme||null),year:isExactSetNumber?null:(S.browse.year?Number(S.browse.year):null),broadened:false};
   const grid=$('#bc-set-grid'),status=$('#bc-cat-status');
   if(status)status.textContent=snapshot.q?`Searching for “${snapshot.q}”…`:'Loading page…';
   grid?.setAttribute('aria-busy','true');
@@ -269,6 +269,18 @@ async function loadCatalogue(token=S.renderToken){
     }
     if(typeof req.abortSignal==='function')req=req.abortSignal(controller.signal);
     ({data,error}=await req);
+    // A collector may type a specific model while an old theme/year filter is
+    // still selected. Preserve useful combined filtering when it finds rows,
+    // but never let a stale filter turn a valid product-name match into an
+    // unexplained empty state.
+    if(!error&&snapshot.q&&!(data||[]).length&&(snapshot.theme||snapshot.year)){
+      let fallback=db.rpc('bc_search_lego_sets',{p_query:snapshot.q,p_theme:null,p_year:null,p_limit:CATALOGUE_SEARCH_LIMIT});
+      if(typeof fallback.abortSignal==='function')fallback=fallback.abortSignal(controller.signal);
+      const broadened=await fallback;
+      if(!broadened.error&&(broadened.data||[]).length){
+        data=broadened.data;snapshot.broadened=true;
+      }
+    }
   }catch(caught){error=caught}
   clearTimeout(timeout);
   if(requestId!==catalogueSequence)return;
@@ -283,7 +295,7 @@ async function loadCatalogue(token=S.renderToken){
   }
   S.browse.rows=data||[];S.browse.lastCount=S.browse.rows.length;
   if(grid)grid.innerHTML=S.browse.rows.map(setCard).join('')||empty('🔎','No matching sets','Try a different set number, name, theme or year.');
-  if(status)status.textContent=S.browse.rows.length?(snapshot.q?`${S.browse.rows.length} product${S.browse.rows.length===1?'':'s'} matching “${snapshot.q}”`:`Page ${snapshot.page+1} · ${S.browse.rows.length} sets`):'No matching sets';
+  if(status)status.textContent=S.browse.rows.length?(snapshot.q?`${S.browse.rows.length} product${S.browse.rows.length===1?'':'s'} matching “${snapshot.q}”${snapshot.broadened?' across all themes and years':''}`:`Page ${snapshot.page+1} · ${S.browse.rows.length} sets`):'No matching sets';
   const pager=$('.bc-pager'),pageSize=$('#bc-cat-page-size');
   if(pager)pager.style.display=snapshot.q?'none':'';
   if(pageSize)pageSize.textContent=snapshot.q?`Up to ${CATALOGUE_SEARCH_LIMIT} matches`:`${CATALOGUE_PAGE_SIZE} per page`;
@@ -291,7 +303,7 @@ async function loadCatalogue(token=S.renderToken){
   $('#bc-prev')&&( $('#bc-prev').disabled=snapshot.page===0 );
   $('#bc-next')&&( $('#bc-next').disabled=S.browse.rows.length<CATALOGUE_PAGE_SIZE );
   wireImages(grid);bindSetActions(grid);
-  try{track(snapshot.q?'catalogue_product_name_search':'catalogue_page_loaded',{query:snapshot.q,page:snapshot.page,result_count:S.browse.rows.length})}catch(_){ }
+  try{track(snapshot.q?'catalogue_product_name_search':'catalogue_page_loaded',{query:snapshot.q,page:snapshot.page,result_count:S.browse.rows.length,broadened:snapshot.broadened})}catch(_){ }
 }
 function setCard(s,index=99){
   const own=S.collection.find(x=>x.set_number===s.set_number),want=S.wishlist.find(x=>x.set_number===s.set_number);return `<article class="bc-set-card" data-set="${attr(s.set_number)}">${setImage(s.set_number,s.name,index<6)}<div style="margin-top:9px">${pill(s.theme||'LEGO')}</div><h3>${esc(s.name)}</h3><div class="bc-set-meta">Set ${esc(s.set_number)} · ${s.year||''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-small" style="margin-top:6px">${money(s.estimated_value)}</div><div class="bc-set-actions"><button class="${own?'on':''}" data-own>${own?'✓ I own this':'○ I own this'}</button><button class="want ${want?'on':''}" data-want>${want?'♥ Wishlist':'♡ I want this'}</button></div></article>`
