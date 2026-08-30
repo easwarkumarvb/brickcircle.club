@@ -6,8 +6,11 @@ test('image performance assets are wired into the PWA shell',()=>{
   const sw=fs.readFileSync('catalogue-cache-sw.js','utf8');
   expect(html).toContain('/set-image-fix-v34.js?v=20260829-1');
   expect(html).toContain('/app-v3.js?v=20260830-wishlist-v36');
+  expect(html).toContain('/catalogue-stability-v36.js?v=20260830-1');
   expect(html).not.toContain('/catalog-search-v32.js');
+  expect(sw).toContain('brickcircle-shell-v3-20260830-catalogue-v36');
   expect(sw).toContain('/set-image-fix-v34.js?v=20260829-1');
   expect(sw).toContain('/app-v3.js?v=20260830-wishlist-v36');
+  expect(sw).toContain('/catalogue-stability-v36.js?v=20260830-1');
   expect(sw).not.toContain('/catalog-search-v32.js');
 });
