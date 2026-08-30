@@ -6,9 +6,12 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 test('V3 owns one cancellable product-name catalogue pipeline',()=>{
   const html=read('v2.html');
   const js=read('app-v3.js');
-  expect(html).toContain('/app-v3.js?v=20260829-catalogue-v4');
+  expect(html).toContain('/app-v3.js?v=20260830-set-number-v1');
   expect(html).not.toContain('/catalog-search-v32.js');
   expect(js).toContain("db.rpc('bc_search_lego_sets'");
+  expect(js).toContain("const isExactSetNumber=/^\\d{3,7}(?:-\\d+)?$/.test(cleanQuery)");
+  expect(js).toContain('theme:isExactSetNumber?null:');
+  expect(js).toContain('year:isExactSetNumber?null:');
   expect(js).toContain('e.g. McLaren, Ferrari, Saturn V');
   expect(js).toContain('catalogueController?.abort()');
   expect(js).toContain('req.abortSignal(controller.signal)');
