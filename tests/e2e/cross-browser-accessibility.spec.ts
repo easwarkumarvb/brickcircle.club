@@ -75,7 +75,7 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     expect(violations,JSON.stringify(violations,null,2)).toEqual([]);
   });
 
-  test('catalogue search works, loads the first set image and controls are accessible',async({page})=>{
+  test('mobile catalogue rapid search resolves to Ferrari instead of staying on spinner',async({page})=>{
     await page.setViewportSize({width:390,height:844});
     await page.goto('/v2.html#browse',{waitUntil:'domcontentloaded'});
     const input=page.locator('#bc-q');
@@ -87,10 +87,14 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     await expect(page.locator('#bc-theme')).toHaveAttribute('aria-label',/theme/i);
     await expect(page.locator('#bc-year')).toHaveAttribute('aria-label',/year/i);
 
-    await input.fill('McLaren');
-    await expect(page.locator('#bc-cat-status')).toContainText(/McLaren/i,{timeout:10000});
-    await expect(page.locator('#bc-set-grid')).toContainText(/McLaren/i,{timeout:10000});
+    await page.locator('#bc-theme').selectOption({label:'Technic'});
+    for(const value of ['4','42','421','4214','42143'])await input.fill(value);
+
+    await expect(page.locator('#bc-cat-status')).toContainText(/1 product matching.*42143/i,{timeout:10000});
+    await expect(page.locator('#bc-set-grid')).toContainText(/Ferrari Daytona SP3/i,{timeout:10000});
+    await expect(page.locator('#bc-set-grid .bc-loading')).toHaveCount(0);
     await expect(page.locator('#bc-set-grid article').first()).toBeVisible();
+    await expect(page.locator('#bc-set-grid')).toHaveAttribute('data-catalogue-stability','v36');
 
     const firstImage=page.locator('#bc-set-grid img[data-set-image]').first();
     await expect(firstImage).toHaveAttribute('loading','eager');
