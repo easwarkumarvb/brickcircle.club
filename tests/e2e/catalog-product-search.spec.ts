@@ -6,7 +6,7 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 test('V3 owns one cancellable product-name catalogue pipeline',()=>{
   const html=read('v2.html');
   const js=read('app-v3.js');
-  expect(html).toContain('/app-v3.js?v=20260830-wishlist-v36');
+  expect(html).toContain('/app-v3.js?v=20260830-text-search-v37');
   expect(html).not.toContain('/catalog-search-v32.js');
   expect(js).toContain("db.rpc('bc_search_lego_sets'");
   expect(js).toContain("const isExactSetNumber=/^\\d{3,7}(?:-\\d+)?$/.test(cleanQuery)");
@@ -17,6 +17,8 @@ test('V3 owns one cancellable product-name catalogue pipeline',()=>{
   expect(js).toContain('req.abortSignal(controller.signal)');
   expect(js).toContain('CATALOGUE_TIMEOUT_MS=8000');
   expect(js).toContain('id="bc-cat-retry"');
+  expect(js).toContain("p_query:snapshot.q,p_theme:null,p_year:null");
+  expect(js).toContain("across all themes and years");
   expect(js).not.toContain('if(S.browse.busy)return');
 });
 
@@ -52,4 +54,12 @@ test('catalogue search RPC is token-aware and case-insensitive',()=>{
   expect(sql).toContain('regexp_split_to_table');
   expect(sql).toContain("lower(coalesce(l.name,''))");
   expect(sql).toContain('grant execute on function public.bc_search_lego_sets');
+});
+
+test('duplicate cleanup preserves a model title that is the only complete text match',()=>{
+  const sql=read('supabase/migrations/20260830_catalog_text_search_model_names_v35.sql');
+  expect(sql).toContain("lx.set_number=l.set_number || '-1'");
+  expect(sql).toContain("regexp_split_to_table(p.q, '\\s+') duplicate_token");
+  expect(sql).toContain("lower(coalesce(lx.name,''))");
+  expect(sql).toContain('security invoker');
 });
