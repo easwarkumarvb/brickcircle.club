@@ -121,10 +121,14 @@ For each viable layout in a disposable Supabase environment:
   `c2bfb0382685dc948c6118a54ceee04a`, `triggers`
   `b27b49439486a0ac93ee8e3bf440b407`, `relation_acl`
   `9ece258e2d335f1ee1111714f4de5cb8`, `function_acl`
-  `7bc7fadc6367a86c11feebe82d0d45ce` and `cron_job`
-  `85914f39c6a0636b511783a26418bfe7`. The recorded `storage_bucket` value,
-  `ddf24db89e2ab9520b5c1360328511e`, has only 31 characters and is not a valid
-  MD5 fingerprint; it must be recaptured before it is used as approval evidence.
+  `7bc7fadc6367a86c11feebe82d0d45ce`, `storage_bucket`
+  `ddf24db89e2ab9520b5c1360328511e1`, and `cron_job`
+  `85914f39c6a0636b511783a26418bfe7`.
+- Local `db lint` reports two warnings that intentionally remain unchanged in
+  the truth baseline: unused variable `v_inserted` in
+  `bc_refresh_growth_for_user` and a possible no-return path in
+  `bc_my_referral_code`. Both are deferred to separately reviewed forward
+  migrations.
 - Local initialization, `migration list`, `db reset`, RLS role tests and history
   strategy prototypes: **BLOCKED — Docker is not installed on this host.**
 - Disposable hosted project: **NOT CREATED — project creation has cost and needs
