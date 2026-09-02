@@ -1,0 +1,22 @@
+{
+  "release": "20260902-phase1b",
+  "shell": [
+    "/",
+    "/v2.html",
+    "/app-v3.css",
+    "/analytics.js",
+    "/product-analytics.js",
+    "/observability-v26.js",
+    "/locations-v3.js",
+    "/set-image-fix-v34.js",
+    "/app-v3.js",
+    "/collection-remove-hotfix.js",
+    "/join-entry-v33.js",
+    "/v3-auth-onboarding-hotfix.js",
+    "/membership-v31.js",
+    "/a11y-v1.js",
+    "/manifest.webmanifest",
+    "/assets/brickcircle-logo.webp",
+    "/assets/pwa-icon.svg"
+  ]
+}

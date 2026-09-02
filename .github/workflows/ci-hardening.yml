@@ -2,7 +2,7 @@ name: BrickCircle CI
 on:
   pull_request:
   push:
-    branches: [hardening-v1]
+    branches: [main, hardening-v1]
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -12,9 +12,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: npm install
+      - run: npm ci
+      - run: npm run release:check
       - run: npm run typecheck
       - run: npm run syntax-check
+      - name: Non-destructive release and workflow regression suite
+        run: npm run test:static
       - name: Install Chromium for regression suite
         run: npx playwright install --with-deps chromium
       - name: Chromium regression + functional UI suite against production
