@@ -6,7 +6,7 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 test('V3 owns one cancellable product-name catalogue pipeline',()=>{
   const html=read('v2.html');
   const js=read('app-v3.js');
-  expect(html).toContain('/app-v3.js?v=20260830-text-search-v37');
+  expect(html).toContain('/app-v3.js?v=20260902-phase1b');
   expect(html).not.toContain('/catalog-search-v32.js');
   expect(js).toContain("db.rpc('bc_search_lego_sets'");
   expect(js).toContain("const isExactSetNumber=/^\\d{3,7}(?:-\\d+)?$/.test(cleanQuery)");
@@ -36,7 +36,7 @@ test('catalogue images normalize suffixed LEGO set numbers and prioritize the fi
   expect(js).not.toContain('encodeURIComponent(set)}-1.jpg');
 
   expect(html).toContain('rel="preconnect" href="https://images.brickset.com"');
-  expect(html).toContain('/set-image-fix-v34.js?v=20260829-1');
+  expect(html).toContain('/set-image-fix-v34.js?v=20260902-phase1b');
   expect(html.indexOf('/set-image-fix-v34.js')).toBeLessThan(html.indexOf('/app-v3.js'));
   expect(imageGuard).toContain("img[data-set-image]");
   expect(imageGuard).toContain("fetchPriority='high'");
