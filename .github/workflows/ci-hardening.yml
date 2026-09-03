@@ -20,16 +20,16 @@ jobs:
         run: npm run test:static
       - name: Install Chromium for regression suite
         run: npx playwright install --with-deps chromium
-      - name: Chromium regression + functional UI suite against production
-        run: npm run test:e2e
-        env:
-          BC_BASE_URL: https://www.brickcircle.club
+      - name: Chromium isolated functional suite
+        run: npm run test:isolated:chromium
       - name: Reclaim test artifacts before cross-browser gate
         run: |
           rm -rf test-results playwright-report
           df -h /
       - name: Install Firefox + WebKit
         run: npx playwright install --with-deps firefox webkit
+      - name: Firefox + WebKit isolated functional suite
+        run: npm run test:isolated -- --project=firefox --project=webkit
       - name: Start branch-local static server
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/brickcircle-http.log 2>&1 &
