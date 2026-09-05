@@ -180,6 +180,6 @@ test('signed-in collector can add, wishlist, mark exchangeable, match and propos
   await expect(page.locator('#bc-sets-body')).toContainText('Ferrari Daytona SP3');
   await page.locator('[data-remove-wish="42143"]').click();
   await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.wishlist.length)).toBe(0);
-  await expect(page.locator('#bc-sets-body')).toContainText('Build your wishlist');
+  await expect(page.locator('#bc-sets-body')).toContainText('Build Sets I Want');
   expect(materialErrors(errors)).toEqual([]);
 });
