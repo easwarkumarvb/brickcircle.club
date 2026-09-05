@@ -1,0 +1,60 @@
+import {test,expect} from './fixtures';
+
+test('signed-out homepage explains Own Want Match Exchange with the requested entry points',async({page})=>{
+  await page.goto('/v2.html?isolated=signed-out#home');
+  await expect(page.getByRole('heading',{name:'Experience more LEGO without buying every set.'})).toBeVisible();
+  await expect(page.locator('.bc-hero')).toContainText('Add the sets you own, choose the ones you’d like to try');
+  await expect(page.getByRole('button',{name:'Start with my collection'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'See how it works'})).toBeVisible();
+  await expect(page.locator('#how-it-works')).toContainText('Add your LEGO sets');
+  await expect(page.locator('#how-it-works')).toContainText('Build your wishlist');
+  await expect(page.locator('#how-it-works')).toContainText('Get reciprocal matches');
+  await expect(page.locator('.bc-concept')).toContainText('You have Ferrari Daytona SP3');
+  await expect(page.locator('.bc-concept')).toContainText('They have McLaren F1');
+  await expect(page.locator('.bc-concept')).toContainText('Reciprocal Match');
+  await expect(page.locator('.bc-reassurance')).toContainText('No shipping');
+  await page.waitForTimeout(400);
+  await expect(page.getByRole('button',{name:'Start with my collection'})).toBeVisible();
+  await page.getByRole('button',{name:'Start with my collection'}).click();
+  await expect(page.locator('#bc-overlay')).toBeVisible();
+});
+
+test('first-time signed-in homepage starts a deterministic path from existing client state',async({page})=>{
+  await page.goto('/v2.html#home');
+  const progress=page.locator('.bc-guided-progress');
+  await expect(progress).toContainText('Your path to your first match');
+  await expect(progress).toContainText('✓ Account created');
+  await expect(progress).toContainText('0/3 owned sets added');
+  await expect(page.locator('.bc-readiness-score')).toHaveText('20%');
+  await expect(page.getByRole('button',{name:'Add 3 more sets'}).first()).toBeVisible();
+});
+
+test('partial progress recommends the next missing owned set',async({page})=>{
+  await page.goto('/v2.html?isolated=partial#home');
+  await expect(page.locator('.bc-guided-progress')).toContainText('2/3 owned sets added');
+  await expect(page.locator('.bc-guided-progress')).toContainText('1/3 wanted sets added');
+  await expect(page.getByRole('button',{name:'Add one more set'}).first()).toBeVisible();
+  await expect(page.locator('.bc-readiness')).toContainText('1 more owned set and 2 wanted sets');
+});
+
+test('a reciprocal match becomes the primary next action',async({page})=>{
+  await page.goto('/v2.html?isolated=matched#home');
+  await expect(page.locator('.bc-guided-progress')).toContainText('1/2 sets available');
+  await expect(page.locator('.bc-guided-progress .bc-check').filter({hasText:'Available to Exchange'})).not.toHaveClass(/done/);
+  await expect(page.locator('.bc-readiness-score')).toHaveText('63%');
+  await expect(page.locator('.bc-guided-progress')).toContainText('✓ Reciprocal match');
+  await expect(page.getByRole('button',{name:'View my match'}).first()).toBeVisible();
+  await page.getByRole('button',{name:'View my match'}).first().click();
+  await expect(page).toHaveURL(/#matches$/);
+  await expect(page.locator('.bc-match')).toBeVisible();
+});
+
+test('guided homepage remains clear at a mobile viewport and keeps bottom navigation',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/v2.html?isolated=signed-out#home');
+  await expect(page.locator('.bc-hero')).toBeVisible();
+  await expect(page.locator('.bc-workflow-grid article')).toHaveCount(3);
+  await expect(page.locator('.bc-concept')).toBeVisible();
+  await expect(page.locator('.bc-mobile-nav')).toBeVisible();
+  await expect(page.locator('body')).not.toHaveCSS('overflow-x','scroll');
+});

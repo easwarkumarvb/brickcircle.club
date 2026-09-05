@@ -6,8 +6,10 @@ const user={id:'00000000-0000-4000-8000-000000000007',email:'collector@example.i
 const defaultProfile={id:user.id,display_name:'Isolated Collector',email:user.email,country:'India',city:'Bengaluru',bio:'Technic fan',avatar_url:null,rating:0,review_count:0,member_since:now,created_at:now};
 const sets=[{set_number:'42172-1',name:'McLaren P1',theme:'Technic',year:2024,piece_count:3893,estimated_value:450,catalog_active:true},{set_number:'42143-1',name:'Ferrari Daytona SP3',theme:'Technic',year:2022,piece_count:3778,estimated_value:450,catalog_active:true}];
 const params=new URLSearchParams(location.search);let signedOut=params.get('isolated')==='signed-out';const onboarding=params.get('isolated')==='onboarding';
-const savedProfile=localStorage.getItem('bc_isolated_profile');
-const state={profile:onboarding&&!savedProfile?null:(savedProfile?JSON.parse(savedProfile):defaultProfile),collection:[],wishlist:[],requests:[],sets,oauthOptions:null,authCalls:[]};
+const savedProfile=localStorage.getItem('bc_isolated_profile');const mode=params.get('isolated');
+const initialCollection=mode==='partial'?[{id:'c1',user_id:user.id,set_number:'42172-1',available_for_exchange:false,created_at:now},{id:'c2',user_id:user.id,set_number:'42143-1',available_for_exchange:false,created_at:now}]:mode==='matched'?[{id:'c1',user_id:user.id,set_number:'42172-1',available_for_exchange:true,created_at:now}]:[];
+const initialWishlist=mode==='partial'||mode==='matched'?[{id:'w1',user_id:user.id,set_number:'42143-1',priority:3,created_at:now}]:[];
+const state={profile:onboarding&&!savedProfile?null:(savedProfile?JSON.parse(savedProfile):defaultProfile),collection:initialCollection,wishlist:initialWishlist,requests:[],sets,oauthOptions:null,authCalls:[]};
 window.__bcIsolated=state;window.BC_LOCATIONS={India:['Bengaluru','Mumbai','Delhi']};
 const selected=table=>table==='profiles'?(state.profile?[state.profile]:[]):table==='collection_items'?state.collection.map(x=>({...x,lego_sets:sets.find(s=>s.set_number===x.set_number)})):table==='wishlists'?state.wishlist.map(x=>({...x,lego_sets:sets.find(s=>s.set_number===x.set_number)})):table==='exchange_requests'?state.requests:table==='lego_sets'?sets:table==='public_profiles'?[{id:'00000000-0000-4000-8000-000000000099',display_name:'Match Collector',country:'India',city:'Bengaluru',rating:5,review_count:3,member_since:now,founding_member_number:9}]:[];
 const chain=table=>{const q={filters:[],mode:'select',patch:null,

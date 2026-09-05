@@ -39,8 +39,7 @@ function cityCopy(){
 }
 function applyGuestHome(){
   const hero=document.querySelector('#bc-main .bc-hero');if(!hero||!status)return;
-  const copy=policyCopy(),pill=hero.querySelector('.bc-pill.gold'),cta=hero.querySelector('.bc-hero-actions .bc-btn.primary[data-auth]');
-  if(pill&&pill.textContent!==copy.pill)pill.textContent=copy.pill;if(cta&&cta.textContent!==copy.cta)cta.textContent=copy.cta;
+  const copy=policyCopy();
   const host=hero.firstElementChild;if(host){let note=host.querySelector('.bc-membership-policy');if(!note){note=document.createElement('div');note.className='bc-membership-policy';host.appendChild(note)}const html=`<b>Membership launch policy:</b> ${esc(copy.body)}`;if(note.innerHTML!==html)note.innerHTML=html;}
 }
 function applyMemberHome(){
