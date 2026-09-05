@@ -197,16 +197,16 @@ function readiness(){
 }
 function guidedProgress(){
   const owned=S.collection.length,wanted=S.wishlist.length,available=S.collection.filter(x=>x.available_for_exchange).length,matches=S.matches.length;
-  const score=Math.round((1+Math.min(owned,3)/3+Math.min(wanted,3)/3+Math.min(available,1)+Math.min(matches,1))/5*100);
+  const score=Math.round((1+Math.min(owned,3)/3+Math.min(wanted,3)/3+Math.min(available,2)/2+Math.min(matches,1))/5*100);
   const steps=[
     {done:true,title:'Account created',desc:'You’re ready to build your BrickCircle.'},
     {done:owned>=3,title:'My Sets',desc:`${owned}/3 owned sets added`},
     {done:wanted>=3,title:'Sets I Want',desc:`${wanted}/3 wanted sets added`},
-    {done:available>=1,title:'Available to Exchange',desc:available?'At least one set is available':'Choose a set you would exchange'},
+    {done:available>=2,title:'Available to Exchange',desc:`${available}/2 sets available`},
     {done:matches>=1,title:'Reciprocal match',desc:matches?`${matches} match${matches===1?'':'es'} available`:'Waiting for the right overlap'}
   ];
-  let action;if(matches)action={label:matches===1?'View my match':`View my ${matches} matches`,go:'matches'};else if(owned<3)action={label:`Add ${3-owned===1?'one more set':`${3-owned} more sets`}`,go:'browse'};else if(wanted<3)action={label:'Build my wishlist',go:'browse'};else if(!available)action={label:'Make a set available',go:'sets'};else action={label:'Explore more sets',go:'browse'};
-  const gaps=[];if(owned<3)gaps.push(`${3-owned} more owned set${3-owned===1?'':'s'}`);if(wanted<3)gaps.push(`${3-wanted} wanted set${3-wanted===1?'':'s'}`);if(!available)gaps.push('1 set available to exchange');
+  let action;if(matches)action={label:matches===1?'View my match':`View my ${matches} matches`,go:'matches'};else if(owned<3)action={label:`Add ${3-owned===1?'one more set':`${3-owned} more sets`}`,go:'browse'};else if(wanted<3)action={label:'Build my wishlist',go:'browse'};else if(available<2)action={label:available===1?'Make one more set available':'Make 2 sets available',go:'sets'};else action={label:'Explore more sets',go:'browse'};
+  const gaps=[];if(owned<3)gaps.push(`${3-owned} more owned set${3-owned===1?'':'s'}`);if(wanted<3)gaps.push(`${3-wanted} wanted set${3-wanted===1?'':'s'}`);if(available<2)gaps.push(`${2-available} more set${2-available===1?'':'s'} available to exchange`);
   return {steps,score,action,guidance:gaps.length?`Add ${gaps.join(' and ')} to improve your chances.`:'Your sets are ready for reciprocal matching.'};
 }
 function stageForExchange(e){

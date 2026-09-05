@@ -39,6 +39,9 @@ test('partial progress recommends the next missing owned set',async({page})=>{
 
 test('a reciprocal match becomes the primary next action',async({page})=>{
   await page.goto('/v2.html?isolated=matched#home');
+  await expect(page.locator('.bc-guided-progress')).toContainText('1/2 sets available');
+  await expect(page.locator('.bc-guided-progress .bc-check').filter({hasText:'Available to Exchange'})).not.toHaveClass(/done/);
+  await expect(page.locator('.bc-readiness-score')).toHaveText('63%');
   await expect(page.locator('.bc-guided-progress')).toContainText('✓ Reciprocal match');
   await expect(page.getByRole('button',{name:'View my match'}).first()).toBeVisible();
   await page.getByRole('button',{name:'View my match'}).first().click();
