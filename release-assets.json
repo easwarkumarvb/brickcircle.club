@@ -1,5 +1,5 @@
 {
-  "release": "20260905-phase2b",
+  "release": "20260905-phase2c",
   "shell": [
     "/",
     "/v2.html",
@@ -8,9 +8,7 @@
     "/product-analytics.js",
     "/observability-v26.js",
     "/locations-v3.js",
-    "/set-image-fix-v34.js",
     "/app-v3.js",
-    "/collection-remove-hotfix.js",
     "/membership-v31.js",
     "/a11y-v1.js",
     "/manifest.webmanifest",

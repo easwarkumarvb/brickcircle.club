@@ -6,7 +6,7 @@
     "release:sync":"node scripts/sync-release-assets.mjs",
     "release:check":"node scripts/sync-release-assets.mjs --check",
     "test:static":"playwright test --project=chromium --grep @static",
-    "syntax-check":"for f in app-v3.js locations-v3.js set-image-fix-v34.js membership-v31.js collection-remove-hotfix.js a11y-v1.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js; do node --check \"$f\"; done",
+    "syntax-check":"for f in app-v3.js locations-v3.js membership-v31.js a11y-v1.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js; do node --check \"$f\"; done",
     "test:e2e":"playwright test --project=chromium --grep-invert @cross-browser",
     "test:isolated":"playwright test --config=playwright.isolated.config.ts",
     "test:isolated:chromium":"playwright test --config=playwright.isolated.config.ts --project=chromium",
