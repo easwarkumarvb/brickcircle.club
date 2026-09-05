@@ -1,9 +1,7 @@
 /* BrickCircle V3.1 membership policy layer: Founding 100 + Early Members through #1000. */
 (()=>{
 'use strict';
-const URL='https://nsxtromjdpdscknadxez.supabase.co';
-const KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
-const db=window.supabase?.createClient?.(URL,KEY);if(!db)return;
+const db=window.BC_SUPABASE;if(!db)return;
 let status=null,scheduled=false;
 const route=()=>decodeURIComponent((location.hash||'#home').slice(1).split('/')[0]||'home');
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

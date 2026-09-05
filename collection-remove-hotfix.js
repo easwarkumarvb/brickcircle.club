@@ -2,9 +2,7 @@
 (()=>{
 'use strict';
 
-const SUPABASE_URL='https://nsxtromjdpdscknadxez.supabase.co';
-const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
-const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY);
+const db=window.BC_SUPABASE;
 if(!db)return;
 
 function toast(msg){

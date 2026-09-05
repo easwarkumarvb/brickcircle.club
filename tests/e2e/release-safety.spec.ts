@@ -42,13 +42,14 @@ test('@static current destructive actions remain scoped to the signed-in owner',
   expect(exchangeGuard).toContain("set available_for_exchange=false");
 });
 
-test('@static auth and onboarding reliability layer follows the canonical app',()=>{
+test('@static app-v3 owns the consolidated auth and onboarding runtime',()=>{
   const html=read('v2.html');
-  expect(html.indexOf('/v3-auth-onboarding-hotfix.js')).toBeGreaterThan(html.indexOf('/app-v3.js'));
-  const auth=read('v3-auth-onboarding-hotfix.js');
-  expect(auth).toContain("provider:'google'");
-  expect(auth).toContain('skipBrowserRedirect:true');
-  expect(auth).toContain("form.id!=='bc-onboard'");
-  expect(auth).toContain('patch={id:user.id');
-  expect(auth).toContain("upsert(patch,{onConflict:'id'})");
+  const app=read('app-v3.js');
+  expect(html).not.toContain('/v3-auth-onboarding-hotfix.js');
+  expect(html).not.toContain('/join-entry-v33.js');
+  expect(app).toContain("provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true");
+  expect(app).toContain("queryParams:{prompt:'select_account'}");
+  expect(app).toContain('patch={id:user.id');
+  expect(app).toContain("upsert(patch,{onConflict:'id'})");
+  expect(app).toContain('window.BC_SUPABASE=db');
 });

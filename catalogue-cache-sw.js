@@ -1,9 +1,9 @@
-const RELEASE='20260902-phase1b';
+const RELEASE='20260905-phase2b';
 const SHELL_CACHE=`brickcircle-shell-${RELEASE}`;
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=["/","/v2.html","/app-v3.css?v=20260902-phase1b","/analytics.js?v=20260902-phase1b","/product-analytics.js?v=20260902-phase1b","/observability-v26.js?v=20260902-phase1b","/locations-v3.js?v=20260902-phase1b","/set-image-fix-v34.js?v=20260902-phase1b","/app-v3.js?v=20260902-phase1b","/collection-remove-hotfix.js?v=20260902-phase1b","/join-entry-v33.js?v=20260902-phase1b","/v3-auth-onboarding-hotfix.js?v=20260902-phase1b","/membership-v31.js?v=20260902-phase1b","/a11y-v1.js?v=20260902-phase1b","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
+const SHELL=["/","/v2.html","/app-v3.css?v=20260905-phase2b","/analytics.js?v=20260905-phase2b","/product-analytics.js?v=20260905-phase2b","/observability-v26.js?v=20260905-phase2b","/locations-v3.js?v=20260905-phase2b","/set-image-fix-v34.js?v=20260905-phase2b","/app-v3.js?v=20260905-phase2b","/collection-remove-hotfix.js?v=20260905-phase2b","/membership-v31.js?v=20260905-phase2b","/a11y-v1.js?v=20260905-phase2b","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();

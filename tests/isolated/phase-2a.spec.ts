@@ -57,6 +57,10 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.wishlist.length)).toBe(0);
   await page.locator('[data-settab="collection"]').click();
   await page.locator('[data-edit-set]').click();
+  await page.locator('#bc-edit-item [name="condition"]').selectOption('Good');
+  await page.locator('#bc-edit-item').getByRole('button',{name:'Save details'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection[0].condition)).toBe('Good');
+  await page.locator('[data-edit-set]').click();
   page.once('dialog',dialog=>dialog.accept());
   await page.locator('[data-remove-collection-item]').click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection.length)).toBe(0);
