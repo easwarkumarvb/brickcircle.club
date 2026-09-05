@@ -37,6 +37,7 @@ test('blocked set images reveal the existing graceful placeholder',async({page})
   await page.goto('/v2.html?isolated=signed-out#home');
   const image=page.locator('.bc-landing-hero img[data-set-image]').first();
   const placeholder=image.locator('xpath=following-sibling::*[1]');
+  await image.evaluate(element=>{element.dispatchEvent(new Event('error'));element.dispatchEvent(new Event('error'))});
   await expect(image).toBeHidden();
   await expect(placeholder).toBeVisible();
 });
