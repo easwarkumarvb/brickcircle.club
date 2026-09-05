@@ -21,6 +21,20 @@ test('signed-out auth entry exposes both sign-in and account creation paths',asy
   await expect(page.locator('#bc-email-signup [name="password"]')).toBeVisible();
 });
 
+test('email account creation uses the canonical client and onboarding metadata',async({page})=>{
+  await page.goto('/v2.html?isolated=signed-out');
+  await page.locator('[data-auth]').first().click();
+  await page.locator('[data-auth-tab="signup"]').click();
+  const form=page.locator('#bc-email-signup');
+  await form.locator('[name="name"]').fill('Beta Collector');
+  await form.locator('[name="email"]').fill('beta@example.invalid');
+  await form.locator('[name="password"]').fill('password123');
+  await form.evaluate((element:HTMLFormElement)=>element.requestSubmit());
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.authCalls.some((call:any)=>call.method==='signUp'))).toBe(true);
+  const call=await page.evaluate(()=>window.__bcIsolated.authCalls.find((entry:any)=>entry.method==='signUp'));
+  expect(call.credentials).toMatchObject({email:'beta@example.invalid',options:{data:{full_name:'Beta Collector'},emailRedirectTo:'http://127.0.0.1:4173/v2.html'}});
+});
+
 test('Google OAuth keeps the callback on the BrickCircle loopback origin',async({page})=>{
   await page.goto('/v2.html?isolated=signed-out');
   await page.locator('[data-auth]').first().click();

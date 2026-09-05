@@ -50,12 +50,17 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await expect(page.locator('.bc-match')).toContainText(/Ferrari Daytona SP3/);
   await page.locator('[data-propose]').click();
   await expect(page.locator('#bc-overlay')).toContainText('McLaren P1');
-  await page.getByRole('button',{name:'Cancel'}).click();
+  await page.locator('#bc-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.requests.length)).toBe(1);
+  await expect(page.locator('#bc-exchange-body')).toContainText('Proposal sent');
   await page.locator('[data-nav="sets"]').first().click();
   await page.locator('[data-settab="wishlist"]').click();
   await page.locator('[data-remove-wish="42143-1"]').click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.wishlist.length)).toBe(0);
   await page.locator('[data-settab="collection"]').click();
+  const collectionImage=await page.locator('.bc-myset img').getAttribute('src');
+  expect(collectionImage).toContain('42172-1');
+  expect(collectionImage).not.toContain('42172-1-1');
   await page.locator('[data-edit-set]').click();
   await page.locator('#bc-edit-item [name="condition"]').selectOption('Good');
   await page.locator('#bc-edit-item').getByRole('button',{name:'Save details'}).click();
@@ -64,6 +69,18 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   page.once('dialog',dialog=>dialog.accept());
   await page.locator('[data-remove-collection-item]').click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection.length)).toBe(0);
+});
+
+test('mobile navigation keeps every beta-critical destination reachable',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/v2.html#home');
+  const mobile=page.locator('.bc-mobile-nav');
+  await expect(mobile).toBeVisible();
+  for(const route of ['browse','sets','matches','exchanges']){
+    await mobile.locator(`[data-nav="${route}"]`).click();
+    await expect(page).toHaveURL(new RegExp(`#${route}$`));
+    await expect(page.locator(`.bc-mobile-nav [data-nav="${route}"]`)).toHaveAttribute('aria-current','page');
+  }
 });
 
 declare global {interface Window {__bcIsolated:any}}

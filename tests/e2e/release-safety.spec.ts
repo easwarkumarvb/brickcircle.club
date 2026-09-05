@@ -26,18 +26,17 @@ test('@static canonical entrypoint excludes known legacy application layers',()=
   const html=read('v2.html');
   expect(JSON.parse(read('vercel.json')).rewrites).toContainEqual({source:'/',destination:'/v2.html'});
   expect(html.match(/\/app-v3\.js\?v=/g)).toHaveLength(1);
-  for(const legacy of ['v2prod.js','authfix.js','catalog-search-v32.js','home-stable.js','signout-switch-account.js']){
+  for(const legacy of ['v2prod.js','authfix.js','catalog-search-v32.js','home-stable.js','signout-switch-account.js','set-image-fix-v34.js','collection-remove-hotfix.js']){
     expect(html).not.toContain(legacy);
   }
 });
 
 test('@static current destructive actions remain scoped to the signed-in owner',()=>{
   const app=read('app-v3.js');
-  const collection=read('collection-remove-hotfix.js');
   const exchangeGuard=read('supabase/migrations/20260822_v23_single_active_exchange_lock.sql');
   expect(app).toContain("from('wishlists').delete().eq('id',existing.id).eq('user_id',S.user.id)");
   expect(app).toContain("from('collection_items').delete().eq('id',existing.id).eq('user_id',S.user.id)");
-  expect(collection).toContain(".eq('user_id',user.id)");
+  expect(app).toContain("from('collection_items').delete().eq('id',id).eq('user_id',user.id).select('id')");
   expect(exchangeGuard).toContain("raise exception 'One of these LEGO sets is already reserved in another active exchange'");
   expect(exchangeGuard).toContain("set available_for_exchange=false");
 });
