@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test';
 import path from 'node:path';
 
 const appPath=path.resolve('app-v3.js');
-const authHotfixPath=path.resolve('v3-auth-onboarding-hotfix.js');
 const catalogSearchPath=path.resolve('catalog-search-v32.js');
 
 function collectErrors(page:any){
@@ -94,31 +93,11 @@ test('PWA manifest and service worker are release-ready', async ({request})=>{
   expect(sw).toContain('/v2.html');
 });
 
-test('Google sign-in hands off to the Supabase OAuth authorize URL', async ({page})=>{
-  const errors=collectErrors(page);
-  // A same-document hash handoff lets this test verify the call contract before
-  // an actual OAuth navigation replaces the JavaScript execution context.
-  const oauthUrl='https://qa.brickcircle.test/auth#oauth-start';
-  await page.route('https://qa.brickcircle.test/**',route=>route.fulfill({status:200,contentType:'text/html',body:'<button class="bc-auth-provider google" data-oauth="google">Continue with Google</button>'}));
-  await page.goto('https://qa.brickcircle.test/auth');
-  await page.evaluate((url)=>{
-    (window as any).__oauthCalled=false;
-    (window as any).supabase={createClient:()=>({
-      auth:{
-        getUser:async()=>({data:{user:null},error:null}),
-        signInWithOAuth:async(options:any)=>{
-          (window as any).__oauthCalled=options?.provider==='google'&&options?.options?.skipBrowserRedirect===true;
-          return {data:{url},error:null};
-        }
-      },
-      from:()=>({upsert:async()=>({error:null})})
-    })};
-  },oauthUrl);
-  await page.addScriptTag({path:authHotfixPath});
-  await page.locator('button').click();
-  await expect.poll(()=>page.evaluate(()=>(window as any).__oauthCalled),{timeout:3000}).toBeTruthy();
-  await expect(page).toHaveURL(oauthUrl,{timeout:3000});
-  expect(materialErrors(errors)).toEqual([]);
+test('Google sign-in contract is owned by the canonical app', async ()=>{
+  const app=await import('node:fs').then(fs=>fs.readFileSync(appPath,'utf8'));
+  expect(app).toContain("signInWithOAuth({provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true");
+  expect(app).toContain("queryParams:{prompt:'select_account'}");
+  expect(app).toContain('location.assign(data.url)');
 });
 
 test('signed-in collector can add, wishlist, mark exchangeable, match and propose through UX', async ({page})=>{

@@ -1,5 +1,5 @@
 {
-  "release": "20260902-phase1b",
+  "release": "20260905-phase2b",
   "shell": [
     "/",
     "/v2.html",
@@ -11,8 +11,6 @@
     "/set-image-fix-v34.js",
     "/app-v3.js",
     "/collection-remove-hotfix.js",
-    "/join-entry-v33.js",
-    "/v3-auth-onboarding-hotfix.js",
     "/membership-v31.js",
     "/a11y-v1.js",
     "/manifest.webmanifest",
