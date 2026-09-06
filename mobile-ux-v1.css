@@ -36,9 +36,13 @@
   .bc-guided-head{align-items:flex-start;flex-direction:column}
   .bc-guided-head .bc-btn{width:100%}
 
-  .bc-catalogue-tools{position:sticky;top:60px;z-index:35;background:var(--bc-bg,#f6f7f9);padding:8px 0 10px;margin-bottom:6px}
-  .bc-searchrow{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
-  .bc-searchrow .bc-input,.bc-searchrow .bc-select{width:100%;min-width:0}
+  /* Keep catalogue controls compact so results are visible without a full-screen scroll. */
+  .bc-catalogue-tools{position:static;background:transparent;padding:0;margin-bottom:6px}
+  .bc-searchrow{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important}
+  .bc-searchrow .bc-input{grid-column:1/-1;width:100%;min-width:0}
+  .bc-searchrow .bc-select{width:100%;min-width:0}
+  .bc-name-search-help{display:none}
+  .bc-catalogue-meta{margin-top:8px}
   .bc-popular-row,.bc-tabs{scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
   .bc-popular-row>* ,.bc-tabs>*{scroll-snap-align:start}
   .bc-set-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
