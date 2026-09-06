@@ -52,10 +52,12 @@ function inferStage(){
 function navigate(go){if(window.bcNav)window.bcNav(go);else location.hash='#'+go}
 function render(){
   const page=document.querySelector('#bc-main .bc-page');
-  document.getElementById(ROOT_ID)?.remove();
-  if(!page||!signedIn()||document.querySelector('.bc-landing-hero'))return;
+  const existing=document.getElementById(ROOT_ID);
+  if(!page||!signedIn()||document.querySelector('.bc-landing-hero')){existing?.remove();return}
   const stage=inferStage(),index={own:0,want:1,exchangeable:2,match:3}[stage];
-  const el=document.createElement('section');el.id=ROOT_ID;el.className='bc-first-match-coach';el.setAttribute('aria-label','Path to your first reciprocal match');
+  if(existing&&existing.parentElement===page&&existing.dataset.stage===stage)return;
+  existing?.remove();
+  const el=document.createElement('section');el.id=ROOT_ID;el.dataset.stage=stage;el.className='bc-first-match-coach';el.setAttribute('aria-label','Path to your first reciprocal match');
   el.innerHTML=`<div class="bc-first-match-head"><div><div class="bc-first-match-kicker">YOUR FASTEST PATH TO A FIRST MATCH</div><h2>Next: ${actionLabel[stage]}</h2></div><button class="bc-btn primary bc-first-match-action" type="button">${actionLabel[stage]}</button></div><div class="bc-first-match-steps">${labels.map((label,i)=>`<div class="bc-first-match-step ${i<index?'done':i===index?'current':''}">${i<index?'✓ ':''}${label}</div>`).join('')}</div><p class="bc-first-match-copy">${guidance[stage]}</p>`;
   el.querySelector('button').onclick=()=>navigate(route[stage]);
   page.prepend(el);
