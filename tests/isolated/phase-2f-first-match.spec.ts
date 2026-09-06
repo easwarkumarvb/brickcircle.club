@@ -17,6 +17,17 @@ test('partial collector keeps the coach aligned with actual readiness',async({pa
   await expect(coach).toContainText('Add 3 LEGO sets you own');
 });
 
+test('first-match coach advances after one owned set becomes exchangeable',async({page})=>{
+  await page.goto('/v2.html?isolated=ready-zero#home');
+  const coach=page.locator('#bc-first-match-coach');
+  await expect(coach).toContainText('Next: Choose exchangeable sets');
+  await expect(coach).toContainText('Make 1 owned set available so it can participate');
+
+  await page.goto('/v2.html?isolated=ready-one#home');
+  await expect(coach).toContainText('Next: Explore more sets');
+  await expect(coach.locator('.bc-first-match-step.current')).toHaveText('MATCH');
+});
+
 test('coach CTA reuses the existing router without a new backend flow',async({page})=>{
   await page.goto('/v2.html#home');
   await page.locator('#bc-first-match-coach').getByRole('button',{name:'Add owned sets'}).click();

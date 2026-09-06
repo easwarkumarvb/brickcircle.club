@@ -35,11 +35,27 @@ test('partial progress recommends the next missing owned set',async({page})=>{
   await expect(page.locator('.bc-readiness')).toContainText('1 more owned set and 2 wanted sets');
 });
 
+test('one available set satisfies the exchangeable readiness step',async({page})=>{
+  await page.goto('/v2.html?isolated=ready-zero#home');
+  const progress=page.locator('.bc-guided-progress');
+  await expect(progress).toContainText('0/1 set available');
+  await expect(progress.locator('.bc-check').filter({hasText:'Available to Exchange'})).not.toHaveClass(/done/);
+  await expect(page.locator('.bc-readiness-score')).toHaveText('60%');
+  await expect(page.getByRole('button',{name:'Make 1 set available'}).first()).toBeVisible();
+  await expect(page.locator('.bc-readiness')).toContainText('1 more set available to exchange');
+
+  await page.goto('/v2.html?isolated=ready-one#home');
+  await expect(progress).toContainText('1/1 set available');
+  await expect(progress.locator('.bc-check').filter({hasText:'Available to Exchange'})).toHaveClass(/done/);
+  await expect(page.locator('.bc-readiness-score')).toHaveText('100%');
+  await expect(page.locator('.bc-readiness')).toContainText('Your sets are ready for reciprocal matching.');
+});
+
 test('a reciprocal match becomes the primary next action',async({page})=>{
   await page.goto('/v2.html?isolated=matched#home');
-  await expect(page.locator('.bc-guided-progress')).toContainText('1/2 sets available');
-  await expect(page.locator('.bc-guided-progress .bc-check').filter({hasText:'Available to Exchange'})).not.toHaveClass(/done/);
-  await expect(page.locator('.bc-readiness-score')).toHaveText('63%');
+  await expect(page.locator('.bc-guided-progress')).toContainText('1/1 set available');
+  await expect(page.locator('.bc-guided-progress .bc-check').filter({hasText:'Available to Exchange'})).toHaveClass(/done/);
+  await expect(page.locator('.bc-readiness-score')).toHaveText('73%');
   await expect(page.locator('.bc-guided-progress')).toContainText('✓ Reciprocal match');
   await expect(page.getByRole('button',{name:'View my match'}).first()).toBeVisible();
   await page.getByRole('button',{name:'View my match'}).first().click();
