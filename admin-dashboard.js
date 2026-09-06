@@ -2,6 +2,7 @@
 'use strict';
 const SUPABASE_URL='https://nsxtromjdpdscknadxez.supabase.co';
 const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
+const OWNER_USER_ID='388ee0a7-2b93-4505-a70c-f4766d7ad50a';
 const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s);
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -16,17 +17,20 @@ function userSearchText(u){return [u.display_name,u.email,u.city,u.country,userS
 async function accessToken(){
   const {data:{session}}=await db.auth.getSession();
   if(!session?.access_token)throw new Error('Sign in to BrickCircle first, then reopen this page.');
+  const {data:{user},error}=await db.auth.getUser();
+  if(error||!user)throw new Error('Your session is invalid or expired. Please sign in again.');
+  if(user.id!==OWNER_USER_ID)throw new Error('This admin console is restricted to the BrickCircle owner account.');
   return session.access_token;
 }
 async function load(){
   if(!db){status('Supabase could not start.',true);return}
-  $('#refresh').disabled=true;status('Loading beta operations data…');
+  $('#refresh').disabled=true;status('Checking owner administrator access…');
   try{
     const token=await accessToken();
     const res=await fetch(`${SUPABASE_URL}/functions/v1/admin-dashboard`,{headers:{Authorization:`Bearer ${token}`,apikey:SUPABASE_KEY}});
     const body=await res.json().catch(()=>({}));
     if(!res.ok)throw new Error(body?.error||`Dashboard request failed (${res.status}).`);
-    payload=body;render();status(`Administrator access confirmed · refreshed ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`);
+    payload=body;render();status(`Owner administrator access confirmed · refreshed ${new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}`);
   }catch(e){payload=null;$('#dashboard').classList.add('hidden');status(e?.message||'Could not load admin dashboard.',true)}
   finally{$('#refresh').disabled=false}
 }
