@@ -1,5 +1,5 @@
 {
-  "release": "20260905-phase2e",
+  "release": "20260906-phase2f",
   "shell": [
     "/",
     "/v2.html",
@@ -11,6 +11,7 @@
     "/app-v3.js",
     "/membership-v31.js",
     "/a11y-v1.js",
+    "/phase-2f-first-match.js",
     "/manifest.webmanifest",
     "/assets/brickcircle-logo.webp",
     "/assets/pwa-icon.svg"
