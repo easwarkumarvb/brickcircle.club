@@ -10,10 +10,13 @@ function ensureStyle(){
   const s=document.createElement('style');s.id=STYLE_ID;s.textContent='.bc-owner-admin-link{display:inline-flex;align-items:center;justify-content:center;min-height:38px;padding:8px 11px;border:1px solid #d1d5db;border-radius:10px;background:#fff;color:#111827;text-decoration:none;font:600 13px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;white-space:nowrap}.bc-owner-admin-link:hover{background:#f9fafb}.bc-owner-admin-link:focus-visible{outline:3px solid rgba(59,130,246,.35);outline-offset:2px}@media(max-width:720px){.bc-owner-admin-link{min-height:36px;padding:7px 9px;font-size:12px}}';document.head.appendChild(s)
 }
 function syncLink(){
-  document.querySelectorAll('.bc-owner-admin-link').forEach(el=>el.remove());
-  if(currentUserId!==OWNER_USER_ID)return;
+  const existing=[...document.querySelectorAll('.bc-owner-admin-link')];
+  if(currentUserId!==OWNER_USER_ID){existing.forEach(el=>el.remove());return}
   const actions=document.querySelector('.bc-top-actions');
   if(!actions)return;
+  const inCurrentActions=existing.find(el=>el.parentElement===actions);
+  existing.filter(el=>el!==inCurrentActions).forEach(el=>el.remove());
+  if(inCurrentActions)return;
   ensureStyle();
   const a=document.createElement('a');a.className='bc-owner-admin-link';a.href='/admin.html';a.textContent='Admin';a.setAttribute('aria-label','Open BrickCircle admin dashboard');
   const avatar=actions.querySelector('.bc-avatar-btn');
