@@ -1,9 +1,10 @@
 {
-  "release": "20260905-phase2e",
+  "release": "20260906-phase2f-mobile2",
   "shell": [
     "/",
     "/v2.html",
     "/app-v3.css",
+    "/mobile-ux-v1.css",
     "/analytics.js",
     "/product-analytics.js",
     "/observability-v26.js",
@@ -11,6 +12,7 @@
     "/app-v3.js",
     "/membership-v31.js",
     "/a11y-v1.js",
+    "/phase-2f-first-match.js",
     "/manifest.webmanifest",
     "/assets/brickcircle-logo.webp",
     "/assets/pwa-icon.svg"
