@@ -1,0 +1,89 @@
+/* BrickCircle mobile UX layer — additive, mobile-only hardening for beta. */
+@media (max-width: 720px){
+  html,body{max-width:100%;overflow-x:hidden}
+  body{overscroll-behavior-y:contain}
+  .bc-main{padding:14px 12px calc(92px + env(safe-area-inset-bottom,0px));min-height:100dvh}
+  .bc-topbar{height:60px}
+  .bc-topbar-in{padding:0 12px;gap:8px}
+  .bc-logo{min-width:0;flex:1}
+  .bc-logo img{height:42px;max-width:150px;object-fit:contain;object-position:left center}
+  .bc-desktop-nav{display:none}
+  .bc-top-actions{margin-left:auto;gap:5px}
+  .bc-icon-btn,.bc-avatar-btn{min-width:40px;width:40px;height:40px;border-radius:11px}
+  .bc-signin{min-height:40px;padding:8px 11px;font-size:13px}
+
+  .bc-page-head{display:block;margin:2px 0 14px}
+  .bc-page-head h1{font-size:28px;line-height:1.08}
+  .bc-page-head p{font-size:14px;line-height:1.45}
+  .bc-head-actions{justify-content:flex-start;margin-top:10px}
+
+  .bc-btn{min-height:48px;padding:11px 14px;border-radius:13px}
+  .bc-head-actions .bc-btn,.bc-form-actions .bc-btn{flex:1 1 140px}
+  input.bc-input,select.bc-select,textarea.bc-textarea{font-size:16px;min-height:48px}
+  textarea.bc-textarea{min-height:110px}
+
+  .bc-hero,.bc-dashboard-hero,.bc-dashboard-grid,.bc-grid.two,.bc-grid.three{grid-template-columns:1fr}
+  .bc-hero{padding:22px 18px;border-radius:20px;gap:18px}
+  .bc-hero h1{font-size:clamp(34px,11vw,48px);line-height:1.01;margin:12px 0}
+  .bc-hero p{font-size:16px}
+  .bc-hero-actions{display:grid;grid-template-columns:1fr;gap:9px}
+  .bc-hero-actions .bc-btn{width:100%}
+  .bc-welcome,.bc-readiness,.bc-dash-card{padding:18px}
+  .bc-welcome h1{font-size:29px}
+  .bc-readiness-score{font-size:38px}
+  .bc-checklist{grid-template-columns:1fr 1fr;gap:8px}
+  .bc-check{min-height:0;padding:11px}
+  .bc-guided-head{align-items:flex-start;flex-direction:column}
+  .bc-guided-head .bc-btn{width:100%}
+
+  .bc-catalogue-tools{position:sticky;top:60px;z-index:35;background:var(--bc-bg,#f6f7f9);padding:8px 0 10px;margin-bottom:6px}
+  .bc-searchrow{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .bc-searchrow .bc-input,.bc-searchrow .bc-select{width:100%;min-width:0}
+  .bc-popular-row,.bc-tabs{scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}
+  .bc-popular-row>* ,.bc-tabs>*{scroll-snap-align:start}
+  .bc-set-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important}
+  .bc-set-card{min-width:0}
+  .bc-set-card .bc-set-image{aspect-ratio:1/1;height:auto!important}
+  .bc-set-card h3,.bc-set-card strong{overflow-wrap:anywhere}
+  .bc-pager{display:grid!important;grid-template-columns:1fr auto 1fr;align-items:center;gap:7px}
+  .bc-pager .bc-btn{min-width:0;padding-inline:8px}
+
+  .bc-landing-section,.bc-workflow,.bc-guided-progress{padding:18px;border-radius:18px}
+  .bc-landing-showcase{min-height:330px;padding:8px}
+  .bc-showcase-card{width:70%;padding:10px;border-radius:17px}
+  .bc-showcase-card .bc-set-image{height:145px}
+  .bc-showcase-link{left:8%;right:8%;font-size:11px}
+  .bc-story-flow{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+  .bc-story-flow>i{transform:rotate(90deg);justify-self:center}
+  .bc-landing-workflow{grid-template-columns:1fr!important}
+  .bc-example-match{grid-template-columns:1fr!important}
+  .bc-example-sets{min-width:0}
+
+  .bc-modal{width:min(100% - 20px,560px);max-height:calc(100dvh - 24px);overflow:auto;border-radius:18px}
+  .bc-overlay{align-items:flex-end!important;padding:10px!important}
+  .bc-drawer{width:min(100%,520px);max-width:100%;max-height:88dvh;overflow:auto;padding-bottom:calc(18px + env(safe-area-inset-bottom,0px))}
+
+  .bc-mobile-nav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:120;padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px));background:rgba(17,24,39,.98);border-top:1px solid #ffffff1a;backdrop-filter:blur(14px)}
+  .bc-mobile-nav button{min-width:0;min-height:52px;border:0;background:transparent;color:#cbd5e1;border-radius:10px;padding:4px 2px;font-size:10px;font-weight:800;line-height:1.08;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+  .bc-mobile-nav button span{font-size:19px;line-height:1}
+  .bc-mobile-nav button.active{color:var(--bc-gold,#f4c542);background:#ffffff0d}
+
+  .bc-reassurance{align-items:flex-start;flex-direction:column;padding:13px}
+  .bc-reassurance span{width:100%}
+}
+
+@media (max-width: 420px){
+  .bc-main{padding-inline:10px}
+  .bc-topbar-in{padding-inline:10px}
+  .bc-logo img{max-width:132px;height:39px}
+  .bc-page-head h1{font-size:26px}
+  .bc-set-grid{grid-template-columns:1fr!important}
+  .bc-checklist{grid-template-columns:1fr}
+  .bc-showcase-card{width:76%}
+  .bc-mobile-nav button{font-size:9.5px}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .bc-page{animation:none!important}
+  html{scroll-behavior:auto}
+}
