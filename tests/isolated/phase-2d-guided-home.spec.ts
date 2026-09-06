@@ -45,7 +45,7 @@ test('one available set satisfies the exchangeable readiness step',async({page})
   await expect(page.locator('.bc-readiness')).toContainText('1 more set available to exchange');
 
   await page.goto('/v2.html?isolated=ready-one#home');
-  await expect(progress).toContainText('1/1 set available');
+  await expect(progress).toContainText('1 set available');
   await expect(progress.locator('.bc-check').filter({hasText:'Available to Exchange'})).toHaveClass(/done/);
   await expect(page.locator('.bc-readiness-score')).toHaveText('100%');
   await expect(page.locator('.bc-readiness')).toContainText('Your sets are ready for reciprocal matching.');
@@ -53,7 +53,7 @@ test('one available set satisfies the exchangeable readiness step',async({page})
 
 test('a reciprocal match becomes the primary next action',async({page})=>{
   await page.goto('/v2.html?isolated=matched#home');
-  await expect(page.locator('.bc-guided-progress')).toContainText('1/1 set available');
+  await expect(page.locator('.bc-guided-progress')).toContainText('1 set available');
   await expect(page.locator('.bc-guided-progress .bc-check').filter({hasText:'Available to Exchange'})).toHaveClass(/done/);
   await expect(page.locator('.bc-readiness-score')).toHaveText('73%');
   await expect(page.locator('.bc-guided-progress')).toContainText('✓ Reciprocal match');

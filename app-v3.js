@@ -231,7 +231,7 @@ function guidedProgress(){
     {done:true,title:'Account created',desc:'You’re ready to build your BrickCircle.'},
     {done:owned>=3,title:'My Sets',desc:`${owned}/3 owned sets added`},
     {done:wanted>=3,title:'Sets I Want',desc:`${wanted}/3 wanted sets added`},
-    {done:available>=1,title:'Available to Exchange',desc:`${available}/1 set available`},
+    {done:available>=1,title:'Available to Exchange',desc:available>=1?'1 set available':'0/1 set available'},
     {done:matches>=1,title:'Reciprocal match',desc:matches?`${matches} match${matches===1?'':'es'} available`:'Waiting for the right overlap'}
   ];
   let action;if(matches)action={label:matches===1?'View my match':`View my ${matches} matches`,go:'matches'};else if(owned<3)action={label:`Add ${3-owned===1?'one more set':`${3-owned} more sets`}`,go:'browse'};else if(wanted<3)action={label:'Build my wishlist',go:'browse'};else if(available<1)action={label:'Make 1 set available',go:'sets'};else action={label:'Explore more sets',go:'browse'};
