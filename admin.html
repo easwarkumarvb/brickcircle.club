@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="robots" content="noindex,nofollow,noarchive">
+  <meta name="theme-color" content="#111827">
+  <title>BrickCircle Admin</title>
+  <link rel="icon" type="image/webp" href="/assets/brickcircle-logo.webp">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4"></script>
+  <style>
+    :root{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827;background:#f6f7f9}
+    *{box-sizing:border-box}body{margin:0}.wrap{max-width:1260px;margin:0 auto;padding:20px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}.brand{display:flex;align-items:center;gap:12px}.brand img{width:42px;height:42px;object-fit:contain}.brand h1{font-size:21px;margin:0}.muted{color:#6b7280}.actions{display:flex;gap:8px;flex-wrap:wrap}.btn{border:1px solid #d1d5db;background:#fff;color:#111827;border-radius:10px;padding:10px 13px;font:inherit;cursor:pointer}.btn.primary{background:#111827;color:#fff;border-color:#111827}.btn:disabled{opacity:.55;cursor:not-allowed}.notice{padding:14px 16px;border:1px solid #e5e7eb;background:#fff;border-radius:12px;margin-bottom:16px}.notice.error{border-color:#fecaca;background:#fef2f2;color:#991b1b}.grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:18px}.metric{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:16px}.metric b{display:block;font-size:28px;line-height:1.1;margin-top:5px}.metric span{font-size:12px;color:#6b7280}.panel{background:#fff;border:1px solid #e5e7eb;border-radius:14px;overflow:hidden;margin-bottom:18px}.panel-head{padding:14px 16px;border-bottom:1px solid #e5e7eb;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}.panel-head h2{font-size:16px;margin:0}.search{min-width:240px;max-width:420px;flex:1;border:1px solid #d1d5db;border-radius:10px;padding:10px 12px;font:inherit}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse;min-width:860px}.table th,.table td{padding:11px 14px;text-align:left;border-bottom:1px solid #f0f1f3;font-size:13px;vertical-align:top}.table th{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#6b7280;background:#fafafa;position:sticky;top:0}.user-btn{appearance:none;border:0;background:transparent;padding:0;color:#111827;font:inherit;font-weight:650;cursor:pointer;text-decoration:underline;text-decoration-color:#d1d5db;text-underline-offset:3px}.pill{display:inline-flex;border-radius:999px;background:#f3f4f6;padding:3px 8px;font-size:11px;white-space:nowrap}.pill.good{background:#ecfdf5;color:#065f46}.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail{padding:16px}.detail h3{margin:0 0 4px;font-size:17px}.detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:16px 0}.mini{border:1px solid #e5e7eb;border-radius:10px;padding:10px}.mini b{display:block;font-size:19px}.lists{display:grid;grid-template-columns:1fr 1fr;gap:14px}.list{border:1px solid #e5e7eb;border-radius:12px;overflow:hidden}.list h4{margin:0;padding:11px 12px;background:#fafafa;border-bottom:1px solid #e5e7eb}.row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid #f3f4f6}.row:last-child{border-bottom:0}.row small{display:block;color:#6b7280;margin-top:2px}.empty{padding:18px;color:#6b7280}.hidden{display:none!important}.loading{padding:40px;text-align:center;color:#6b7280}
+    @media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.split,.lists{grid-template-columns:1fr}.detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.top{align-items:flex-start}}
+    @media(max-width:520px){.wrap{padding:14px}.grid{grid-template-columns:1fr 1fr}.metric b{font-size:23px}.actions{width:100%}.actions .btn{flex:1}.top{flex-direction:column}.search{min-width:0;width:100%}.detail-grid{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div class="brand"><img src="/assets/brickcircle-logo.webp" alt=""><div><h1>Beta Operations</h1><div class="muted">Private BrickCircle admin dashboard</div></div></div>
+      <div class="actions"><button class="btn" id="refresh" type="button">Refresh</button><a class="btn" href="/v2.html">Open BrickCircle</a><button class="btn" id="signout" type="button">Sign out</button></div>
+    </header>
+    <div id="status" class="notice">Checking administrator access…</div>
+    <section id="dashboard" class="hidden" aria-live="polite">
+      <div class="grid" id="metrics"></div>
+      <section class="panel">
+        <div class="panel-head"><h2>Registered users</h2><input id="search" class="search" type="search" placeholder="Search name, email, city or set number" autocomplete="off"></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>User</th><th>Joined</th><th>Location</th><th>Collection</th><th>Wishlist</th><th>Exchangeable</th><th>Requests</th><th>Exchanges</th></tr></thead><tbody id="users"></tbody></table></div>
+      </section>
+      <section class="panel hidden" id="detail-panel"><div id="detail" class="detail"></div></section>
+    </section>
+  </main>
+  <script src="/admin-dashboard.js?v=1"></script>
+</body>
+</html>
