@@ -180,9 +180,11 @@ function showOnboarding(){
 
 function clearProtectedState(){S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.founder=null;S.liquidity=null;S.profiles={};S.items={};S.sets={}}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
+const missingAuthSession=error=>error?.name==='AuthSessionMissingError'||/auth session missing/i.test(String(error?.message||''));
 async function refreshCore(){
   const auth=await settled(db.auth.getUser()),authError=auth.error||null,user=auth.data?.user||null;
   if(authError){
+    if(missingAuthSession(authError)){clearProtectedState();S.refreshWarning='';return}
     const status=Number(authError.status||0);
     S.refreshWarning=authError.message||'Your session could not be refreshed.';
     if(status===401||status===403){clearProtectedState();return}
