@@ -14,10 +14,10 @@ const labels=['OWN','WANT','EXCHANGEABLE','MATCH'];
 const guidance={
   own:'Add 3 LEGO sets you own so BrickCircle has enough supply signals to work with.',
   want:'Add 3 sets you genuinely want to experience.',
-  exchangeable:'Make 2 owned sets available so they can participate in reciprocal matching.',
+  exchangeable:'Make 1 owned set available so it can participate in reciprocal matching.',
   match:'Your collection is ready. Explore more sets while BrickCircle looks for reciprocal overlap.'
 };
-const actionLabel={own:'Add owned sets',want:'Add wanted sets',exchangeable:'Choose exchangeable sets',match:'Explore more sets'};
+const actionLabel={own:'Add owned sets',want:'Add wanted sets',exchangeable:'Choose exchangeable set',match:'Explore more sets'};
 const route={own:'browse',want:'browse',exchangeable:'sets',match:'browse'};
 
 function signedIn(){return !document.querySelector('.bc-signin')&&!!document.querySelector('#bc-main .bc-page')}
@@ -39,7 +39,7 @@ function inferStage(){
     const collection=Number((document.querySelector('[data-settab="collection"]')?.textContent.match(/(\d+)\s*$/)||[])[1]||0);
     const wanted=Number((document.querySelector('[data-settab="wishlist"]')?.textContent.match(/(\d+)\s*$/)||[])[1]||0);
     const available=document.querySelectorAll('[data-exchangeable]:checked').length;
-    if(collection<3)return 'own';if(wanted<3)return 'want';if(available<2)return 'exchangeable';return 'match';
+    if(collection<3)return 'own';if(wanted<3)return 'want';if(available<1)return 'exchangeable';return 'match';
   }
   if(hash==='#browse'||hash==='#catalogue'){
     const text=document.querySelector('.bc-head-actions')?.textContent||'';
