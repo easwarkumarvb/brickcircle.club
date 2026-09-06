@@ -1,9 +1,10 @@
 {
-  "release": "20260906-phase2f",
+  "release": "20260906-phase2f-mobile1",
   "shell": [
     "/",
     "/v2.html",
     "/app-v3.css",
+    "/mobile-ux-v1.css",
     "/analytics.js",
     "/product-analytics.js",
     "/observability-v26.js",
