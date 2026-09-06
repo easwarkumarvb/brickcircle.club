@@ -1,5 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2.57.4'
 
+const OWNER_USER_ID = '388ee0a7-2b93-4505-a70c-f4766d7ad50a'
+
 const cors = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -21,7 +23,10 @@ Deno.serve(async (req) => {
     const userClient = createClient(url, anon, { global: { headers: { Authorization: authHeader } } })
     const { data: authData, error: authError } = await userClient.auth.getUser()
     if (authError || !authData.user) return json({ error: 'Session is invalid or expired.' }, 401)
-    if (authData.user.app_metadata?.role !== 'admin') return json({ error: 'Administrator access required.' }, 403)
+
+    const isOwner = authData.user.id === OWNER_USER_ID
+    const hasAdminRole = authData.user.app_metadata?.role === 'admin'
+    if (!isOwner || !hasAdminRole) return json({ error: 'Owner administrator access required.' }, 403)
 
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
     const [profilesR, collectionR, wishlistR, requestsR, exchangesR, setsR] = await Promise.all([
