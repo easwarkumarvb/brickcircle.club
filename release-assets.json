@@ -1,8 +1,10 @@
 {
-  "release": "20260907-exchange-proposal-notifications",
+  "release": "20260907-legal-pages",
   "shell": [
     "/",
     "/v2.html",
+    "/privacy.html",
+    "/terms.html",
     "/app-v3.css",
     "/mobile-ux-v1.css",
     "/analytics.js",
@@ -15,6 +17,7 @@
     "/membership-v31.js",
     "/a11y-v1.js",
     "/phase-2f-first-match.js",
+    "/legal-links.js",
     "/manifest.webmanifest",
     "/assets/brickcircle-logo.webp",
     "/assets/pwa-icon.svg"
