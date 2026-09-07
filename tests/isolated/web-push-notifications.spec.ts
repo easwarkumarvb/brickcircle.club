@@ -17,6 +17,8 @@ test('meaningful signed-in engagement prompts, permission grant saves a subscrip
   await mockPush(page);
   await page.goto('/v2.html?isolated=partial#home');
   await expect(page.locator('.bc-push-prompt')).toContainText('Get notified when a local match or exchange proposal arrives');
+  await expect(page.locator('.bc-push-prompt')).toHaveClass(/automatic/);
+  expect(await page.locator('.bc-push-prompt').evaluate(element=>getComputedStyle(element).pointerEvents)).toBe('none');
   await page.locator('[data-push-enable]').click();
   await expect(page.locator('.bc-push-prompt')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>(window as any).__bcIsolated.pushSubscriptions.length)).toBe(1);

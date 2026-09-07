@@ -1,9 +1,9 @@
-const RELEASE='20260907-web-push-notifications';
+const RELEASE='20260907-web-push-notifications-r2';
 const SHELL_CACHE=`brickcircle-shell-${RELEASE}`;
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=["/","/v2.html","/app-v3.css?v=20260907-web-push-notifications","/mobile-ux-v1.css?v=20260907-web-push-notifications","/analytics.js?v=20260907-web-push-notifications","/product-analytics.js?v=20260907-web-push-notifications","/observability-v26.js?v=20260907-web-push-notifications","/locations-v3.js?v=20260907-web-push-notifications","/web-push-config.js?v=20260907-web-push-notifications","/web-push-v1.js?v=20260907-web-push-notifications","/app-v3.js?v=20260907-web-push-notifications","/admin-nav.js?v=20260907-web-push-notifications","/login-match-notification.js?v=20260907-web-push-notifications","/membership-v31.js?v=20260907-web-push-notifications","/a11y-v1.js?v=20260907-web-push-notifications","/phase-2f-first-match.js?v=20260907-web-push-notifications","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
+const SHELL=["/","/v2.html","/app-v3.css?v=20260907-web-push-notifications-r2","/mobile-ux-v1.css?v=20260907-web-push-notifications-r2","/analytics.js?v=20260907-web-push-notifications-r2","/product-analytics.js?v=20260907-web-push-notifications-r2","/observability-v26.js?v=20260907-web-push-notifications-r2","/locations-v3.js?v=20260907-web-push-notifications-r2","/web-push-config.js?v=20260907-web-push-notifications-r2","/web-push-v1.js?v=20260907-web-push-notifications-r2","/app-v3.js?v=20260907-web-push-notifications-r2","/admin-nav.js?v=20260907-web-push-notifications-r2","/login-match-notification.js?v=20260907-web-push-notifications-r2","/membership-v31.js?v=20260907-web-push-notifications-r2","/a11y-v1.js?v=20260907-web-push-notifications-r2","/phase-2f-first-match.js?v=20260907-web-push-notifications-r2","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
