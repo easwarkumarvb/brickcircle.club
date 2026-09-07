@@ -1,9 +1,9 @@
-const RELEASE='20260907-web-push-notifications-r3';
+const RELEASE='20260907-web-push-notifications-r4';
 const SHELL_CACHE=`brickcircle-shell-${RELEASE}`;
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=["/","/v2.html","/privacy.html","/terms.html","/app-v3.css?v=20260907-web-push-notifications-r3","/mobile-ux-v1.css?v=20260907-web-push-notifications-r3","/analytics.js?v=20260907-web-push-notifications-r3","/product-analytics.js?v=20260907-web-push-notifications-r3","/observability-v26.js?v=20260907-web-push-notifications-r3","/locations-v3.js?v=20260907-web-push-notifications-r3","/web-push-config.js?v=20260907-web-push-notifications-r3","/web-push-v1.js?v=20260907-web-push-notifications-r3","/app-v3.js?v=20260907-web-push-notifications-r3","/admin-nav.js?v=20260907-web-push-notifications-r3","/login-match-notification.js?v=20260907-web-push-notifications-r3","/membership-v31.js?v=20260907-web-push-notifications-r3","/a11y-v1.js?v=20260907-web-push-notifications-r3","/phase-2f-first-match.js?v=20260907-web-push-notifications-r3","/legal-links.js?v=20260907-web-push-notifications-r3","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
+const SHELL=["/","/v2.html","/privacy.html","/terms.html","/app-v3.css?v=20260907-web-push-notifications-r4","/mobile-ux-v1.css?v=20260907-web-push-notifications-r4","/analytics.js?v=20260907-web-push-notifications-r4","/product-analytics.js?v=20260907-web-push-notifications-r4","/observability-v26.js?v=20260907-web-push-notifications-r4","/locations-v3.js?v=20260907-web-push-notifications-r4","/web-push-config.js?v=20260907-web-push-notifications-r4","/web-push-v1.js?v=20260907-web-push-notifications-r4","/app-v3.js?v=20260907-web-push-notifications-r4","/admin-nav.js?v=20260907-web-push-notifications-r4","/login-match-notification.js?v=20260907-web-push-notifications-r4","/membership-v31.js?v=20260907-web-push-notifications-r4","/a11y-v1.js?v=20260907-web-push-notifications-r4","/phase-2f-first-match.js?v=20260907-web-push-notifications-r4","/legal-links.js?v=20260907-web-push-notifications-r4","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
