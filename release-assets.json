@@ -11,6 +11,7 @@
     "/locations-v3.js",
     "/app-v3.js",
     "/admin-nav.js",
+    "/login-match-notification.js",
     "/membership-v31.js",
     "/a11y-v1.js",
     "/phase-2f-first-match.js",
