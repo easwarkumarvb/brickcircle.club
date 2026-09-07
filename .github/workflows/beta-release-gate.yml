@@ -3,6 +3,31 @@ on:
   pull_request:
 
 jobs:
+  exchange-proposal-notifications:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_notifications
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_notifications"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_notifications
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load isolated exchange notification schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/exchange_notification_base.sql
+      - name: Apply exchange proposal notification migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260907062008_exchange_proposal_notifications.sql
+      - name: Verify durability, recipient security, deep links and deduplication
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/exchange_proposal_notifications.sql
+
   reciprocal-alias-matching:
     runs-on: ubuntu-latest
     timeout-minutes: 10
