@@ -3,7 +3,7 @@ const SHELL_CACHE=`brickcircle-shell-${RELEASE}`;
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=["/","/v2.html","/app-v3.css?v=20260906-phase2g-hardening","/mobile-ux-v1.css?v=20260906-phase2g-hardening","/analytics.js?v=20260906-phase2g-hardening","/product-analytics.js?v=20260906-phase2g-hardening","/observability-v26.js?v=20260906-phase2g-hardening","/locations-v3.js?v=20260906-phase2g-hardening","/app-v3.js?v=20260906-phase2g-hardening","/membership-v31.js?v=20260906-phase2g-hardening","/a11y-v1.js?v=20260906-phase2g-hardening","/phase-2f-first-match.js?v=20260906-phase2g-hardening","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
+const SHELL=["/","/v2.html","/app-v3.css?v=20260906-phase2g-hardening","/mobile-ux-v1.css?v=20260906-phase2g-hardening","/analytics.js?v=20260906-phase2g-hardening","/product-analytics.js?v=20260906-phase2g-hardening","/observability-v26.js?v=20260906-phase2g-hardening","/locations-v3.js?v=20260906-phase2g-hardening","/app-v3.js?v=20260906-phase2g-hardening","/admin-nav.js?v=20260906-phase2g-hardening","/membership-v31.js?v=20260906-phase2g-hardening","/a11y-v1.js?v=20260906-phase2g-hardening","/phase-2f-first-match.js?v=20260906-phase2g-hardening","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
