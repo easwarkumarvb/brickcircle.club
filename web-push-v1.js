@@ -28,6 +28,10 @@ async function save(user,subscription){
   },{onConflict:'endpoint'});
   if(error)throw error;
 }
+async function freshSubscription(worker,publicKey,previous){
+  try{await previous?.unsubscribe?.()}catch(_){ }
+  return worker.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(publicKey)});
+}
 async function enable(user,button){
   if(!supported())throw new Error('Web Push is not supported in this browser.');
   const publicKey=window.BC_WEB_PUSH_CONFIG?.vapidPublicKey;
@@ -38,8 +42,17 @@ async function enable(user,button){
     if(permission!=='granted'){rememberDismissal(user.id);throw new Error(permission==='denied'?'Notifications are blocked in your browser settings.':'Notification permission was not granted.');}
     const worker=await registration();
     let subscription=await worker.pushManager.getSubscription();
-    if(!subscription)subscription=await worker.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(publicKey)});
-    await save(user,subscription);close();window.bcPushToast?.('Notifications enabled for new matches and proposals.');return true;
+    if(!subscription)subscription=await freshSubscription(worker,publicKey,null);
+    try{
+      await save(user,subscription);
+    }catch(firstError){
+      // A PushManager subscription belongs to the browser origin, not the signed-in account.
+      // If another BrickCircle account previously owned this endpoint, RLS correctly rejects
+      // reassigning it. Rotate the browser endpoint and save the fresh subscription instead.
+      subscription=await freshSubscription(worker,publicKey,subscription);
+      try{await save(user,subscription)}catch(_){throw firstError}
+    }
+    close();window.bcPushToast?.('Notifications enabled for new matches and proposals.');return true;
   }finally{button.disabled=false;button.textContent='Enable notifications'}
 }
 function open(user,{automatic=false}={}){
