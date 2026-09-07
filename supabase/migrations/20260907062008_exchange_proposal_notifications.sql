@@ -16,7 +16,7 @@ with candidates as (
     r.requester_id,
     r.offered_item_id,
     r.requested_item_id,
-    pg_catalog.coalesce(pg_catalog.nullif(pg_catalog.btrim(p.display_name), ''), 'A collector') as requester_name,
+    pg_catalog.coalesce(nullif(pg_catalog.btrim(p.display_name), ''), 'A collector') as requester_name,
     count(*) over (partition by n.id) as candidate_count,
     row_number() over (partition by r.id order by n.created_at, n.id) as notification_rank
   from public.notifications n
@@ -59,7 +59,7 @@ declare
   requester_name text;
 begin
   select pg_catalog.coalesce(
-    pg_catalog.nullif(pg_catalog.btrim(p.display_name), ''),
+    nullif(pg_catalog.btrim(p.display_name), ''),
     'A collector'
   )
   into requester_name
