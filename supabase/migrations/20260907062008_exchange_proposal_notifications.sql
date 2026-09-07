@@ -16,7 +16,7 @@ with candidates as (
     r.requester_id,
     r.offered_item_id,
     r.requested_item_id,
-    pg_catalog.coalesce(nullif(pg_catalog.btrim(p.display_name), ''), 'A collector') as requester_name,
+    coalesce(nullif(pg_catalog.btrim(p.display_name), ''), 'A collector') as requester_name,
     count(*) over (partition by n.id) as candidate_count,
     row_number() over (partition by r.id order by n.created_at, n.id) as notification_rank
   from public.notifications n
@@ -58,7 +58,7 @@ as $$
 declare
   requester_name text;
 begin
-  select pg_catalog.coalesce(
+  select coalesce(
     nullif(pg_catalog.btrim(p.display_name), ''),
     'A collector'
   )
@@ -80,7 +80,7 @@ begin
     new.responder_id,
     'request_received',
     'New exchange proposal',
-    pg_catalog.format('%s proposed an exchange with you.', pg_catalog.coalesce(requester_name, 'A collector')),
+    pg_catalog.format('%s proposed an exchange with you.', coalesce(requester_name, 'A collector')),
     new.requester_id,
     'exchange_request',
     new.id,
