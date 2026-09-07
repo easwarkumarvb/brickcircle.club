@@ -1,9 +1,9 @@
-const RELEASE='20260907-exchange-proposal-notifications';
+const RELEASE='20260907-legal-pages';
 const SHELL_CACHE=`brickcircle-shell-${RELEASE}`;
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=["/","/v2.html","/app-v3.css?v=20260907-exchange-proposal-notifications","/mobile-ux-v1.css?v=20260907-exchange-proposal-notifications","/analytics.js?v=20260907-exchange-proposal-notifications","/product-analytics.js?v=20260907-exchange-proposal-notifications","/observability-v26.js?v=20260907-exchange-proposal-notifications","/locations-v3.js?v=20260907-exchange-proposal-notifications","/app-v3.js?v=20260907-exchange-proposal-notifications","/admin-nav.js?v=20260907-exchange-proposal-notifications","/login-match-notification.js?v=20260907-exchange-proposal-notifications","/membership-v31.js?v=20260907-exchange-proposal-notifications","/a11y-v1.js?v=20260907-exchange-proposal-notifications","/phase-2f-first-match.js?v=20260907-exchange-proposal-notifications","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
+const SHELL=["/","/v2.html","/privacy.html","/terms.html","/app-v3.css?v=20260907-legal-pages","/mobile-ux-v1.css?v=20260907-legal-pages","/analytics.js?v=20260907-legal-pages","/product-analytics.js?v=20260907-legal-pages","/observability-v26.js?v=20260907-legal-pages","/locations-v3.js?v=20260907-legal-pages","/app-v3.js?v=20260907-legal-pages","/admin-nav.js?v=20260907-legal-pages","/login-match-notification.js?v=20260907-legal-pages","/membership-v31.js?v=20260907-legal-pages","/a11y-v1.js?v=20260907-legal-pages","/phase-2f-first-match.js?v=20260907-legal-pages","/legal-links.js?v=20260907-legal-pages","/manifest.webmanifest","/assets/brickcircle-logo.webp","/assets/pwa-icon.svg"];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();
