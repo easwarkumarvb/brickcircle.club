@@ -15,5 +15,17 @@ function ensureFooter(){
   document.body.appendChild(footer);
   return footer;
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',ensureFooter,{once:true});else ensureFooter();
+function enhanceAuthDisclosure(root=document){
+  root.querySelectorAll?.('.bc-small').forEach(node=>{
+    if(node.dataset.legalLinked||!node.textContent.includes('By continuing, you agree'))return;
+    node.dataset.legalLinked='1';
+    node.innerHTML='By continuing, you agree to our <a href="/terms.html">Terms of Use</a> and acknowledge our <a href="/privacy.html">Privacy Policy</a>. Please use BrickCircle responsibly, meet in safe public places and inspect sets before exchanging.';
+  });
+}
+function init(){
+  ensureFooter();enhanceAuthDisclosure();
+  const observer=new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node.nodeType===1)enhanceAuthDisclosure(node)})));
+  observer.observe(document.body,{childList:true,subtree:true});
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();
