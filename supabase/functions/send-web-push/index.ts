@@ -1,4 +1,5 @@
 import {createClient} from 'npm:@supabase/supabase-js@2.57.4';
+// @deno-types="npm:@types/web-push@3.6.4"
 import webpush from 'npm:web-push@3.6.7';
 import {dispatchPush,type PushPayload,type PushSubscription} from './core.ts';
 
