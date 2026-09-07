@@ -10,6 +10,7 @@
     "/observability-v26.js",
     "/locations-v3.js",
     "/app-v3.js",
+    "/admin-nav.js",
     "/membership-v31.js",
     "/a11y-v1.js",
     "/phase-2f-first-match.js",
