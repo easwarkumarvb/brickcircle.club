@@ -1,5 +1,5 @@
 {
-  "release": "20260907-exchange-proposal-notifications",
+  "release": "20260907-web-push-notifications",
   "shell": [
     "/",
     "/v2.html",
@@ -9,6 +9,8 @@
     "/product-analytics.js",
     "/observability-v26.js",
     "/locations-v3.js",
+    "/web-push-config.js",
+    "/web-push-v1.js",
     "/app-v3.js",
     "/admin-nav.js",
     "/login-match-notification.js",
