@@ -82,7 +82,7 @@ select pg_temp.assert_true(
   'trigger function is not a client API'
 );
 select pg_temp.assert_true(
-  (select p.prosecdef and p.proconfig=array['search_path=']::text[]
+  (select p.prosecdef and p.proconfig && array['search_path=','search_path=""']::text[]
    from pg_proc p join pg_namespace n on n.oid=p.pronamespace
    where n.nspname='public' and p.proname='notify_new_exchange_request'),
   'trigger function is hardened with an empty search_path'
