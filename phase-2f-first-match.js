@@ -17,7 +17,7 @@ const guidance={
   exchangeable:'Make 1 owned set available so it can participate in reciprocal matching.',
   match:'Your collection is ready. Explore more sets while BrickCircle looks for reciprocal overlap.'
 };
-const actionLabel={own:'Add owned sets',want:'Add wanted sets',exchangeable:'Choose exchangeable sets',match:'Explore more sets'};
+const actionLabel={own:'Add owned sets',want:'Add wanted sets',exchangeable:'Choose exchangeable set',match:'Explore more sets'};
 const route={own:'browse',want:'browse',exchangeable:'sets',match:'browse'};
 
 function signedIn(){return !document.querySelector('.bc-signin')&&!!document.querySelector('#bc-main .bc-page')}
