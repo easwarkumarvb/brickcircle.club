@@ -49,7 +49,6 @@ function collapseBrowseDiscovery(){
 function simplifyHeadings(){
   const main=root();if(!main)return;
   if(['browse','catalogue'].includes(route())){
-    setText(main.querySelector('.bc-page-head h1'),'Find a LEGO set');
     setText(main.querySelector('.bc-page-head p'),'Search once, then choose: I own it or I want it.');
   }
   if(route()==='sets'){
@@ -69,8 +68,8 @@ function simplifyHeadings(){
 function removeRedundantLandingSections(){
   if(route()!=='home' || document.querySelector('.bc-dashboard-hero'))return;
   const main=root();if(!main)return;
-  // Hero + one workflow + trust + CTA is enough for first-time comprehension.
-  main.querySelector('.bc-story')?.setAttribute('hidden','');
+  // Keep the visual exchange story; hide duplicate explanatory sections.
+  main.querySelector('.bc-landing-workflow')?.setAttribute('hidden','');
   main.querySelector('.bc-landing-match-example')?.setAttribute('hidden','');
 }
 
