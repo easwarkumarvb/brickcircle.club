@@ -97,6 +97,7 @@ h1,h2,h3{color:var(--zen-ink)!important;letter-spacing:-.035em!important}
 .bc-zen-discovery summary::-webkit-details-marker{display:none}
 .bc-popular-row{gap:6px!important}
 .bc-pop-chip{border:1px solid var(--zen-line)!important;background:var(--zen-surface)!important;border-radius:999px!important;box-shadow:none!important}
+.bc-iconic-chip small{color:var(--zen-muted)!important}
 .bc-set-grid{gap:12px!important}
 .bc-set-card{padding:12px!important;background:var(--zen-surface)!important}
 .bc-set-card h3{font-size:1rem!important;line-height:1.25!important}
