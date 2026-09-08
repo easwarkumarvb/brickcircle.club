@@ -1,5 +1,5 @@
 {
-  "release": "20260908-exchangeable-persistence-r8",
+  "release": "20260909-zen-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -7,6 +7,7 @@
     "/terms.html",
     "/app-v3.css",
     "/mobile-ux-v1.css",
+    "/zen-ux-v1.css",
     "/analytics.js",
     "/product-analytics.js",
     "/observability-v26.js",
@@ -14,6 +15,7 @@
     "/web-push-config.js",
     "/web-push-v1.js",
     "/app-v3.js",
+    "/catalogue-discovery-v1.js",
     "/install-promo.js",
     "/collection-owner-photo.js",
     "/collection-remove-safety.js",
@@ -26,6 +28,7 @@
     "/a11y-v1.js",
     "/phase-2f-first-match.js",
     "/legal-links.js",
+    "/zen-ux-v1.js",
     "/manifest.webmanifest",
     "/assets/brickcircle-logo.webp",
     "/assets/pwa-icon.svg"
