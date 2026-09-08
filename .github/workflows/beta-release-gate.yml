@@ -3,6 +3,18 @@ on:
   pull_request:
 
 jobs:
+  owner-photo-trust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Syntax-check owner photo client
+        run: node --check collection-owner-photo.js
+      - name: Verify mandatory photo, privacy and legacy guards
+        run: node qa/owner_photo_static_test.mjs
+
   web-push-notifications:
     runs-on: ubuntu-latest
     timeout-minutes: 10
