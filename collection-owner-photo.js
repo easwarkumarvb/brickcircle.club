@@ -41,6 +41,11 @@ async function signedUrl(path){
   const {data,error}=await db().storage.from('collection-photos').createSignedUrl(path,900);
   if(error)throw error;return data?.signedUrl||'';
 }
+async function collectionPhotoRow(itemId){
+  const {data,error}=await db().from('collection_items').select('id,set_number,owner_photo_path').eq('id',itemId).limit(1);
+  if(error)throw error;return data?.[0]||null;
+}
+function refreshAfterPhoto(){if(!window.__bcIsolated)setTimeout(()=>location.reload(),350)}
 
 function photoPicker({title,copy,onSave,saveLabel='Add to My Sets'}){
   const o=overlay(`<div class="bc-modal-head"><div><h2>${esc(title)}</h2><p class="bc-muted">${esc(copy)}</p></div><button class="bc-close" type="button" data-photo-close>×</button></div>
@@ -77,18 +82,18 @@ async function addOwnedSet(setNumber){
     const {error}=await db().from('collection_items').insert({user_id:user.id,set_number:setNumber,owner_photo_path:path});
     if(error){await cleanup(path);throw error}
     try{window.bcProductAnalytics?.track?.('collection_item_added',{set_number:setNumber,owner_photo:true})}catch(_){ }
-    toast('Added to My Sets with your owner photo.');setTimeout(()=>location.reload(),350);
+    toast('Added to My Sets with your owner photo.');refreshAfterPhoto();
   }});
 }
 
 async function ensureLegacyPhoto(itemId){
-  const {data,error}=await db().from('collection_items').select('id,set_number,owner_photo_path').eq('id',itemId).single();
-  if(error)throw error;if(data?.owner_photo_path)return true;
+  const data=await collectionPhotoRow(itemId);
+  if(data?.owner_photo_path)return true;
   photoPicker({title:`Add a photo for set ${data?.set_number||''}`,copy:'This legacy set needs a photo of the assembled model before it can be made available to exchange.',saveLabel:'Upload photo',onSave:async file=>{
     const user=await currentUser();const path=await uploadPhoto(file,user);
     const {error:updateError}=await db().from('collection_items').update({owner_photo_path:path,updated_at:new Date().toISOString()}).eq('id',itemId).eq('user_id',user.id);
     if(updateError){await cleanup(path);throw updateError}
-    toast('Photo added. You can now make this set available to exchange.');setTimeout(()=>location.reload(),350);
+    toast('Photo added. You can now make this set available to exchange.');refreshAfterPhoto();
   }});return false;
 }
 
@@ -102,8 +107,8 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',async e=>{
   const input=e.target.closest?.('[data-exchangeable]');if(!input||!input.checked)return;
   try{
-    const {data,error}=await db().from('collection_items').select('owner_photo_path').eq('id',input.dataset.exchangeable).single();
-    if(error)throw error;if(data?.owner_photo_path)return;
+    const data=await collectionPhotoRow(input.dataset.exchangeable);
+    if(data?.owner_photo_path)return;
     e.preventDefault();e.stopImmediatePropagation();input.checked=false;await ensureLegacyPhoto(input.dataset.exchangeable);
   }catch(err){console.error(err);input.checked=false;toast(err?.message||'Could not verify the set photo.')}
 },true);
@@ -113,8 +118,8 @@ document.addEventListener('submit',async e=>{
   const exchangeable=form.querySelector('input[name="exchangeable"]');if(!exchangeable?.checked)return;
   const itemId=form.querySelector('[data-remove-collection-item]')?.dataset.removeCollectionItem;if(!itemId)return;
   try{
-    const {data,error}=await db().from('collection_items').select('owner_photo_path').eq('id',itemId).single();
-    if(error)throw error;if(data?.owner_photo_path)return;
+    const data=await collectionPhotoRow(itemId);
+    if(data?.owner_photo_path)return;
     e.preventDefault();e.stopImmediatePropagation();exchangeable.checked=false;await ensureLegacyPhoto(itemId);
   }catch(err){e.preventDefault();e.stopImmediatePropagation();exchangeable.checked=false;toast(err?.message||'Could not verify the set photo.')}
 },true);
@@ -126,9 +131,9 @@ async function hydrateOwnerPhotos(){
     if(row.dataset.ownerPhotoHydrated)return;
     const itemId=row.querySelector('[data-edit-set]')?.dataset.editSet;if(!itemId)continue;
     try{
-      const {data}=await client.from('collection_items').select('owner_photo_path').eq('id',itemId).eq('user_id',user.id).single();
-      if(!data?.owner_photo_path)continue;
-      const url=await signedUrl(data.owner_photo_path),img=row.querySelector('.bc-myset-visual img');
+      const {data}=await client.from('collection_items').select('owner_photo_path').eq('id',itemId).eq('user_id',user.id).limit(1);
+      const path=data?.[0]?.owner_photo_path;if(!path)continue;
+      const url=await signedUrl(path),img=row.querySelector('.bc-myset-visual img');
       if(img&&url){img.src=url;img.removeAttribute('data-set-image');img.alt='Owner photo of assembled LEGO set';row.dataset.ownerPhotoHydrated='1'}
     }catch(_){ }
   }
@@ -150,7 +155,6 @@ async function hydrateCounterpartyPhotos(){
         .eq('user_id',userId)
         .eq('set_number',setNumber)
         .eq('available_for_exchange',true)
-        .not('owner_photo_path','is',null)
         .limit(1);
       const path=data?.[0]?.owner_photo_path;if(error||!path)continue;
       const url=await signedUrl(path);if(!url)continue;
