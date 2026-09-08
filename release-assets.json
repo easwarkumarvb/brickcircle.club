@@ -1,5 +1,5 @@
 {
-  "release": "20260908-meetup-submit-r6",
+  "release": "20260908-exchangeable-persistence-r8",
   "shell": [
     "/",
     "/v2.html",
@@ -14,6 +14,9 @@
     "/web-push-config.js",
     "/web-push-v1.js",
     "/app-v3.js",
+    "/install-promo.js",
+    "/collection-owner-photo.js",
+    "/exchangeable-persistence-v1.js",
     "/meetup-submit-hotfix.js",
     "/exchange-lifecycle-notifications.js",
     "/admin-nav.js",

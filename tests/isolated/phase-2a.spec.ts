@@ -38,7 +38,14 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   const search=page.locator('#bc-q');
   await search.fill('McLaren');
   await page.locator('[data-set="42172-1"] [data-own]').click();
+  const photoForm=page.locator('#bc-owner-photo-form');
+  await expect(photoForm).toBeVisible();
+  await expect(photoForm.getByRole('button',{name:'Add to My Sets'})).toBeDisabled();
+  await photoForm.locator('#bc-owner-photo-input').setInputFiles({name:'mclaren-owner.jpg',mimeType:'image/jpeg',buffer:Buffer.from('isolated-owner-photo')});
+  await expect(photoForm.getByRole('button',{name:'Add to My Sets'})).toBeEnabled();
+  await photoForm.getByRole('button',{name:'Add to My Sets'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection.length)).toBe(1);
+  expect(await page.evaluate(()=>window.__bcIsolated.collection[0].owner_photo_path)).toBeTruthy();
   await search.fill('Ferrari');
   await page.locator('[data-set="42143-1"] [data-want]').click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.wishlist.length)).toBe(1);

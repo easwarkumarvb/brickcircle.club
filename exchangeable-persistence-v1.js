@@ -32,8 +32,6 @@ async function persistExchangeable(input){
     if(!data||data.id!==id)throw new Error('BrickCircle could not confirm that this set was updated. Please try again.');
     if(Boolean(data.available_for_exchange)!==next)throw new Error('BrickCircle could not verify the saved exchange setting. Please try again.');
 
-    // Rehydrate from Supabase so the in-memory collection, match readiness,
-    // and checkbox all reflect the persisted database value.
     await window.bcV3Refresh?.();
     toast(next?'This set is saved as Available to Exchange.':'This set is saved as Not Available.');
   }catch(error){
@@ -44,9 +42,6 @@ async function persistExchangeable(input){
   }
 }
 
-// Capture before app-v3's target-level onchange handler. The canonical handler
-// currently treats a zero-row UPDATE as success; this guard requires Supabase
-// to return the updated row before the UI confirms the change.
 document.addEventListener('change',event=>{
   const input=event.target?.closest?.('input[data-exchangeable]');
   if(!input)return;
