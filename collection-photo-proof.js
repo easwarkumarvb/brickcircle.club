@@ -9,7 +9,7 @@ if(!db)return;
 
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>[...r.querySelectorAll(s)];
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 
 function toast(message){
   $('.bc-photo-toast')?.remove();
@@ -133,31 +133,54 @@ document.addEventListener('click',event=>{
 document.addEventListener('change',async event=>{
   const checkbox=event.target.closest?.('[data-exchangeable]');
   if(!checkbox||!checkbox.checked)return;
+  if(checkbox.dataset.photoProofPass==='1'){delete checkbox.dataset.photoProofPass;return}
   const id=checkbox.dataset.exchangeable;if(!id)return;
   event.preventDefault();event.stopImmediatePropagation();
   checkbox.disabled=true;
   try{
     const {data,error}=await db.from('collection_items').select('id,set_number,owner_photo_path,lego_sets(name)').eq('id',id).maybeSingle();
     if(error)throw error;
-    if(data?.owner_photo_path){checkbox.disabled=false;checkbox.dispatchEvent(new Event('change',{bubbles:true}));return}
+    if(data?.owner_photo_path){checkbox.disabled=false;checkbox.dataset.photoProofPass='1';checkbox.dispatchEvent(new Event('change',{bubbles:true}));return}
     checkbox.checked=false;checkbox.disabled=false;
     showPhotoModal({existingId:id,setNumber:data?.set_number,setName:data?.lego_sets?.name||data?.set_number});
     toast('Add a finished-set photo before making this set available to exchange.');
   }catch(error){checkbox.checked=false;checkbox.disabled=false;toast(error?.message||'Could not check this set. Please try again.')}
 },true);
 
+async function guardDetailsModal(){
+  const form=$('#bc-edit-item');
+  if(!form||form.dataset.photoProofChecked==='1')return;
+  form.dataset.photoProofChecked='1';
+  const checkbox=$('input[name="exchangeable"]',form);
+  const id=$('[data-remove-collection-item]',form)?.dataset.removeCollectionItem;
+  if(!checkbox||!id||checkbox.checked)return;
+  try{
+    const {data,error}=await db.from('collection_items').select('id,set_number,owner_photo_path,lego_sets(name)').eq('id',id).maybeSingle();
+    if(error||data?.owner_photo_path)return;
+    checkbox.disabled=true;
+    const note=document.createElement('div');
+    note.className='bc-notice warn bc-details-photo-guard';
+    note.innerHTML='<b>Photo required for exchange</b><br>Add a photo of the assembled set before making this copy available.';
+    const action=document.createElement('button');action.type='button';action.className='bc-btn';action.style.marginTop='8px';action.textContent='Add finished-set photo';
+    action.onclick=()=>showPhotoModal({existingId:id,setNumber:data?.set_number,setName:data?.lego_sets?.name||data?.set_number});
+    note.appendChild(action);
+    checkbox.closest('label')?.insertAdjacentElement('afterend',note);
+  }catch(_){ }
+}
+
 let decorating=false;
 async function decorateOwnedRows(){
   if(decorating)return;decorating=true;
   try{
+    await guardDetailsModal();
     const rows=$$('.bc-myset [data-edit-set]');if(!rows.length)return;
     const ids=rows.map(b=>b.dataset.editSet).filter(Boolean);
     const {data,error}=await db.from('collection_items').select('id,set_number,owner_photo_path').in('id',ids);
     if(error)return;
     const byId=new Map((data||[]).map(x=>[String(x.id),x]));
     for(const button of rows){
-      const item=byId.get(String(button.dataset.editSet));if(!item)return;
-      const card=button.closest('.bc-myset');if(!card)return;
+      const item=byId.get(String(button.dataset.editSet));if(!item)continue;
+      const card=button.closest('.bc-myset');if(!card)continue;
       if(item.owner_photo_path){
         const img=card.querySelector('.bc-myset-visual img');
         const url=publicPhoto(item.owner_photo_path);
