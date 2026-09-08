@@ -1,0 +1,108 @@
+/* BrickCircle Zen UX — calm hierarchy, progressive disclosure, one primary action. */
+body.bc-zen{
+  --bc-bg:#f6f6f3;
+  --bc-card:#fff;
+  --bc-line:#e7e7e1;
+  --bc-muted:#6e706b;
+  --bc-radius:20px;
+  --bc-shadow:none;
+  background:var(--bc-bg);
+}
+body.bc-zen .bc-topbar{background:rgba(249,249,246,.96);color:#171916;border-bottom:1px solid var(--bc-line);backdrop-filter:blur(16px)}
+body.bc-zen .bc-desktop-nav button{color:#6d706a;background:transparent}
+body.bc-zen .bc-desktop-nav button:hover{background:#efefe9;color:#171916}
+body.bc-zen .bc-desktop-nav button.active{background:transparent;color:#171916;box-shadow:inset 0 -2px 0 #171916;border-radius:0}
+body.bc-zen .bc-icon-btn,body.bc-zen .bc-avatar-btn{background:#fff;color:#171916;border-color:#e1e2dc}
+body.bc-zen .bc-signin{background:#171916;color:#fff}
+body.bc-zen .bc-card,body.bc-zen .bc-landing-section,body.bc-zen .bc-workflow,body.bc-zen .bc-guided-progress{box-shadow:none;border-color:var(--bc-line)}
+body.bc-zen .bc-btn{box-shadow:none;border-radius:999px;font-weight:760}
+body.bc-zen .bc-btn:hover{box-shadow:none;background:#f2f2ee}
+body.bc-zen .bc-btn.primary{background:#171916;border-color:#171916;color:#fff}
+body.bc-zen .bc-btn.primary:hover{background:#2c2f2b}
+body.bc-zen .bc-btn.gold{background:#171916;border-color:#171916;color:#fff}
+body.bc-zen .bc-pill{font-weight:720;background:#f1f1ed;color:#5f625c}
+body.bc-zen .bc-pill.gold,body.bc-zen .bc-pill.green,body.bc-zen .bc-pill.blue{background:#f1f1ed;color:#555851}
+body.bc-zen .bc-page-head{margin-bottom:24px}
+body.bc-zen .bc-page-head h1{font-weight:700;letter-spacing:-.045em}
+body.bc-zen .bc-page-head p{max-width:580px}
+
+/* Signed-out: one promise, one explanation, one CTA. */
+body.bc-zen .bc-landing-hero{min-height:0;background:#fff;border:1px solid var(--bc-line);box-shadow:none;padding:clamp(28px,5vw,68px);gap:clamp(24px,5vw,64px)}
+body.bc-zen .bc-landing-hero h1{font-size:clamp(42px,6vw,76px);max-width:760px;font-weight:720}
+body.bc-zen .bc-landing-hero h1 em{background:none;color:inherit}
+body.bc-zen .bc-landing-hero p{color:#676a64;max-width:560px}
+body.bc-zen .bc-landing-showcase{min-height:360px}
+body.bc-zen .bc-showcase-card{box-shadow:none;border-color:var(--bc-line)}
+body.bc-zen .bc-showcase-link{background:#171916;box-shadow:none}
+body.bc-zen .bc-zen-hidden{display:none!important}
+.bc-zen-explainer{margin-top:18px;padding:clamp(22px,4vw,36px);background:#fff;border:1px solid var(--bc-line);border-radius:24px}
+.bc-zen-explainer h2{margin:0 0 22px;font-size:clamp(26px,3vw,38px);letter-spacing:-.035em;max-width:650px}
+.bc-zen-steps{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--bc-line);border:1px solid var(--bc-line);border-radius:18px;overflow:hidden}
+.bc-zen-step{background:#fff;padding:22px;min-height:145px}
+.bc-zen-step small{display:block;color:#8a8d86;font-weight:800;letter-spacing:.08em;margin-bottom:24px}
+.bc-zen-step strong{display:block;font-size:18px;margin-bottom:6px}
+.bc-zen-step p{margin:0;color:var(--bc-muted);line-height:1.5;font-size:14px}
+.bc-zen-trustline{display:flex;gap:18px;flex-wrap:wrap;margin-top:18px;color:#62655f;font-size:13px}
+.bc-zen-trustline span:before{content:'✓';margin-right:6px;color:#171916;font-weight:900}
+body.bc-zen .bc-landing-final{background:#171916;border-radius:24px;box-shadow:none}
+
+/* Signed-in Home: replace dashboard overload with one focus. */
+.bc-zen-focus{padding:clamp(26px,5vw,52px);background:#fff;border:1px solid var(--bc-line);border-radius:26px;display:grid;grid-template-columns:1fr auto;gap:26px;align-items:end}
+.bc-zen-focus-kicker{font-size:11px;letter-spacing:.12em;font-weight:850;color:#8a8d86;text-transform:uppercase}
+.bc-zen-focus h1{margin:10px 0 8px;max-width:700px;font-size:clamp(32px,5vw,56px);line-height:1.02;letter-spacing:-.05em;font-weight:720}
+.bc-zen-focus p{margin:0;max-width:620px;color:var(--bc-muted);font-size:16px;line-height:1.55}
+.bc-zen-focus .bc-btn{min-width:170px;min-height:50px}
+.bc-zen-progress{display:flex;gap:7px;margin-top:24px;max-width:330px}
+.bc-zen-progress span{height:4px;flex:1;border-radius:999px;background:#e5e6e1}
+.bc-zen-progress span.done,.bc-zen-progress span.current{background:#171916}
+body.bc-zen.bc-zen-home-incomplete .bc-dashboard-grid{display:none}
+body.bc-zen .bc-dashboard-hero,body.bc-zen .bc-guided-progress,body.bc-zen .bc-workflow,body.bc-zen .bc-reassurance{display:none!important}
+body.bc-zen.bc-zen-home-ready .bc-dashboard-grid{margin-top:18px}
+body.bc-zen.bc-zen-home-ready .bc-dash-card{box-shadow:none}
+
+/* Catalogue: search first, inspiration on demand. */
+body.bc-zen.bc-zen-route-browse .bc-catalogue-positioning{display:none!important}
+body.bc-zen.bc-zen-route-browse .bc-popular,body.bc-zen.bc-zen-route-browse .bc-iconic-discovery{display:none}
+body.bc-zen.bc-zen-route-browse .bc-page.bc-zen-discovery-open .bc-popular,body.bc-zen.bc-zen-route-browse .bc-page.bc-zen-discovery-open .bc-iconic-discovery{display:block}
+.bc-zen-context{margin:-6px 0 20px;color:#62655f;line-height:1.5;max-width:680px}
+.bc-zen-discovery-toggle{margin:10px 0 18px}
+body.bc-zen.bc-zen-route-browse .bc-catalogue-tools{background:#fff;border:1px solid var(--bc-line);border-radius:18px;padding:14px}
+body.bc-zen.bc-zen-route-browse .bc-name-search-help{display:none}
+body.bc-zen.bc-zen-route-browse .bc-set-card{box-shadow:none;border-color:var(--bc-line)}
+body.bc-zen.bc-zen-route-browse .bc-set-card>.bc-small{display:none}
+body.bc-zen.bc-zen-route-browse .bc-set-card h3{min-height:auto}
+
+/* Owned / Wanted: remove readiness language from the primary hierarchy. */
+body.bc-zen.bc-zen-route-sets .bc-page-head .bc-pill{display:none}
+body.bc-zen.bc-zen-route-sets .bc-notice.warn{background:#fafaf7;border-color:var(--bc-line);color:#4f524c}
+body.bc-zen.bc-zen-route-sets .bc-myset{box-shadow:none}
+body.bc-zen.bc-zen-route-sets .bc-tabs{padding-left:0}
+
+/* Matches: mutual is enough; no unexplained scoring. */
+body.bc-zen.bc-zen-route-matches .bc-match-top>.bc-pill{display:none}
+body.bc-zen.bc-zen-route-matches .bc-match{box-shadow:none;padding:clamp(18px,3vw,28px)}
+body.bc-zen.bc-zen-route-matches .bc-match-sides{margin-top:20px}
+body.bc-zen.bc-zen-route-matches .bc-match .bc-notice.good{background:#f7f7f3;border-color:var(--bc-line);color:#4b4e48}
+
+/* Exchanges: calm the operational surface. */
+body.bc-zen.bc-zen-route-exchanges .bc-request,body.bc-zen.bc-zen-route-exchanges .bc-exchange-list>.bc-card{box-shadow:none}
+body.bc-zen.bc-zen-route-exchanges .bc-tabs{padding-left:0}
+
+/* Mobile navigation becomes a quiet fixed tool, not a second visual system. */
+body.bc-zen .bc-mobile-nav{background:rgba(250,250,247,.97);border-top:1px solid var(--bc-line);box-shadow:none}
+body.bc-zen .bc-mobile-nav button{color:#73766f}
+body.bc-zen .bc-mobile-nav button.active{color:#171916;background:transparent}
+
+@media(max-width:760px){
+  .bc-zen-focus{grid-template-columns:1fr;align-items:start}
+  .bc-zen-focus .bc-btn{width:100%}
+  .bc-zen-steps{grid-template-columns:1fr}
+  .bc-zen-step{min-height:0}
+  body.bc-zen .bc-landing-hero{padding:28px 20px}
+  body.bc-zen .bc-landing-showcase{min-height:330px;padding-inline:6px}
+  body.bc-zen .bc-page-head{align-items:flex-start}
+}
+
+@media(prefers-reduced-motion:reduce){
+  body.bc-zen *{scroll-behavior:auto!important;transition:none!important;animation-duration:.01ms!important}
+}
