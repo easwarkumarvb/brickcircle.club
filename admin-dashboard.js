@@ -5,7 +5,7 @@ const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
 const OWNER_USER_ID='388ee0a7-2b93-4505-a70c-f4766d7ad50a';
 const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY);
 const $=s=>document.querySelector(s);
-const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const fmt=x=>x?new Date(x).toLocaleDateString(undefined,{day:'numeric',month:'short',year:'numeric'}):'—';
 let payload=null, selectedId='';
 
@@ -13,6 +13,12 @@ function status(message,error=false){const el=$('#status');el.textContent=messag
 function metric(label,value){return `<article class="metric"><span>${esc(label)}</span><b>${Number(value||0).toLocaleString()}</b></article>`}
 function userSetNumbers(u){return [...(u.collection||[]),...(u.wishlist||[])].map(x=>String(x.set_number||'')).join(' ')}
 function userSearchText(u){return [u.display_name,u.email,u.city,u.country,userSetNumbers(u)].join(' ').toLowerCase()}
+function imageSetNumber(n){const s=String(n||'');return /-\d+$/.test(s)?s:`${s}-1`}
+function setName(n){return payload?.sets?.[String(n)]?.name||''}
+function setThumb(n,name=''){
+  const number=imageSetNumber(n),src=`https://images.brickset.com/sets/images/${encodeURIComponent(number)}.jpg`;
+  return `<img class="set-thumb" src="${src}" alt="${esc(name||`LEGO set ${n}`)}" loading="lazy" decoding="async" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span class="set-thumb-fallback" hidden aria-hidden="true">🧱</span>`;
+}
 
 async function accessToken(){
   const {data:{session}}=await db.auth.getSession();
@@ -55,9 +61,8 @@ function renderUsers(){
   </tr>`).join(''):`<tr><td colspan="8" class="empty">No users match this search.</td></tr>`;
   document.querySelectorAll('[data-user]').forEach(b=>b.addEventListener('click',()=>{selectedId=b.dataset.user;renderDetail(selectedId);$('#detail-panel').scrollIntoView({behavior:'smooth',block:'start'})}));
 }
-function setName(n){return payload?.sets?.[String(n)]?.name||''}
-function renderCollection(items=[]){return items.length?items.map(x=>`<div class="row"><div><b>${esc(x.set_number)}</b>${setName(x.set_number)?` · ${esc(setName(x.set_number))}`:''}<small>${esc([x.condition,x.completeness].filter(Boolean).join(' · '))}</small></div>${x.available_for_exchange?'<span class="pill good">Exchangeable</span>':'<span class="pill">Collection</span>'}</div>`).join(''):'<div class="empty">No sets added.</div>'}
-function renderWishlist(items=[]){return items.length?items.map(x=>`<div class="row"><div><b>${esc(x.set_number)}</b>${setName(x.set_number)?` · ${esc(setName(x.set_number))}`:''}</div><span class="pill">${esc(x.priority||'Wanted')}</span></div>`).join(''):'<div class="empty">No wishlist items.</div>'}
+function renderCollection(items=[]){return items.length?items.map(x=>{const name=setName(x.set_number);return `<div class="row"><div class="set-info">${setThumb(x.set_number,name)}<div class="set-copy"><b>${esc(x.set_number)}</b>${name?`<span class="set-name">${esc(name)}</span>`:''}<small>${esc([x.condition,x.completeness].filter(Boolean).join(' · '))}</small></div></div>${x.available_for_exchange?'<span class="pill good">Exchangeable</span>':'<span class="pill">Collection</span>'}</div>`}).join(''):'<div class="empty">No sets added.</div>'}
+function renderWishlist(items=[]){return items.length?items.map(x=>{const name=setName(x.set_number);return `<div class="row"><div class="set-info">${setThumb(x.set_number,name)}<div class="set-copy"><b>${esc(x.set_number)}</b>${name?`<span class="set-name">${esc(name)}</span>`:''}</div></div><span class="pill">${esc(x.priority||'Wanted')}</span></div>`}).join(''):'<div class="empty">No wishlist items.</div>'}
 function renderDetail(id){
   const u=(payload.users||[]).find(x=>x.id===id);if(!u)return;
   $('#detail-panel').classList.remove('hidden');
