@@ -3,15 +3,16 @@
 'use strict';
 const root=()=>document.getElementById('bc-main');
 const route=()=>decodeURIComponent((location.hash||'#home').slice(1).split('/')[0]||'home');
+const setText=(el,text)=>{if(el&&el.textContent!==text)el.textContent=text};
 
 function relabelNavigation(){
   document.querySelectorAll('[data-nav="browse"]').forEach(el=>{
     if(el.closest('.bc-mobile-nav')) return;
-    if(el.tagName==='BUTTON') el.textContent='Find sets';
+    if(el.tagName==='BUTTON') setText(el,'Find sets');
   });
   document.querySelectorAll('[data-nav="sets"]').forEach(el=>{
     if(el.closest('.bc-mobile-nav')) return;
-    if(el.tagName==='BUTTON' && el.closest('.bc-desktop-nav')) el.textContent='My LEGO';
+    if(el.tagName==='BUTTON' && el.closest('.bc-desktop-nav')) setText(el,'My LEGO');
   });
 }
 
@@ -48,28 +49,20 @@ function collapseBrowseDiscovery(){
 function simplifyHeadings(){
   const main=root();if(!main)return;
   if(['browse','catalogue'].includes(route())){
-    const h1=main.querySelector('.bc-page-head h1');
-    const p=main.querySelector('.bc-page-head p');
-    if(h1)h1.textContent='Find a LEGO set';
-    if(p)p.textContent='Search once, then choose: I own it or I want it.';
+    setText(main.querySelector('.bc-page-head h1'),'Find a LEGO set');
+    setText(main.querySelector('.bc-page-head p'),'Search once, then choose: I own it or I want it.');
   }
   if(route()==='sets'){
-    const h1=main.querySelector('.bc-page-head h1');
-    const p=main.querySelector('.bc-page-head p');
-    if(h1)h1.textContent='My LEGO';
-    if(p)p.textContent='Your collection and the sets you want next.';
+    setText(main.querySelector('.bc-page-head h1'),'My LEGO');
+    setText(main.querySelector('.bc-page-head p'),'Your collection and the sets you want next.');
   }
   if(route()==='matches'){
-    const h1=main.querySelector('.bc-page-head h1');
-    const p=main.querySelector('.bc-page-head p');
-    if(h1)h1.textContent='Matches';
-    if(p)p.textContent='Only mutual matches appear here.';
+    setText(main.querySelector('.bc-page-head h1'),'Matches');
+    setText(main.querySelector('.bc-page-head p'),'Only mutual matches appear here.');
   }
   if(route()==='exchanges'){
-    const h1=main.querySelector('.bc-page-head h1');
-    const p=main.querySelector('.bc-page-head p');
-    if(h1)h1.textContent='Exchanges';
-    if(p)p.textContent='One place for proposals, active exchanges and returns.';
+    setText(main.querySelector('.bc-page-head h1'),'Exchanges');
+    setText(main.querySelector('.bc-page-head p'),'One place for proposals, active exchanges and returns.');
   }
 }
 
