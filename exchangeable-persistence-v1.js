@@ -20,17 +20,27 @@ async function persistExchangeable(input){
     const {data:{user},error:userError}=await db.auth.getUser();
     if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');
 
-    const {data,error}=await db
+    // Commit first, then verify with a fresh read. Keeping these as two
+    // separate requests avoids a false-negative UI rollback when a client or
+    // test double cannot return the mutated row from UPDATE ... RETURNING.
+    const {error:updateError}=await db
       .from('collection_items')
       .update({available_for_exchange:next,updated_at:new Date().toISOString()})
       .eq('id',id)
-      .eq('user_id',user.id)
+      .eq('user_id',user.id);
+
+    if(updateError)throw updateError;
+
+    const {data:verified,error:verifyError}=await db
+      .from('collection_items')
       .select('id,available_for_exchange')
+      .eq('id',id)
+      .eq('user_id',user.id)
       .maybeSingle();
 
-    if(error)throw error;
-    if(!data||data.id!==id)throw new Error('BrickCircle could not confirm that this set was updated. Please try again.');
-    if(Boolean(data.available_for_exchange)!==next)throw new Error('BrickCircle could not verify the saved exchange setting. Please try again.');
+    if(verifyError)throw verifyError;
+    if(!verified||verified.id!==id)throw new Error('BrickCircle could not confirm that this set was updated. Please try again.');
+    if(Boolean(verified.available_for_exchange)!==next)throw new Error('BrickCircle could not verify the saved exchange setting. Please try again.');
 
     await window.bcV3Refresh?.();
     toast(next?'This set is saved as Available to Exchange.':'This set is saved as Not Available.');
