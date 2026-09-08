@@ -50,6 +50,8 @@ function simplifyHeadings(){
   const main=root();if(!main)return;
   if(['browse','catalogue'].includes(route())){
     setText(main.querySelector('.bc-page-head p'),'Search once, then choose: I own it or I want it.');
+    const q=main.querySelector('#bc-q');
+    if(q&&q.getAttribute('aria-label')!=='Search LEGO sets by set number, model name or theme')q.setAttribute('aria-label','Search LEGO sets by set number, model name or theme');
   }
   if(route()==='sets'){
     setText(main.querySelector('.bc-page-head h1'),'My LEGO');
