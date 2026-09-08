@@ -14,6 +14,7 @@ function bind(root=document){root.querySelectorAll('[data-zen-nav]').forEach(el=
 function markRoute(){
   document.body.classList.add('bc-zen');
   ROUTE_CLASSES.forEach(name=>document.body.classList.remove(`bc-zen-route-${name}`));
+  document.body.classList.remove('bc-zen-home-incomplete','bc-zen-home-ready');
   document.body.classList.add(`bc-zen-route-${route()}`);
 }
 
@@ -39,6 +40,7 @@ function simplifyLanding(page){
   if(!page.querySelector('.bc-zen-explainer')){
     hero.insertAdjacentHTML('afterend',`<section class="bc-zen-explainer" aria-labelledby="bc-zen-how-title"><h2 id="bc-zen-how-title">Three things. That’s the whole idea.</h2><div class="bc-zen-steps"><article class="bc-zen-step"><small>01 · OWN</small><strong>Add LEGO you already have</strong><p>Your collection is the starting point. You decide which physical sets can be exchanged.</p></article><article class="bc-zen-step"><small>02 · WANT</small><strong>Choose what you want to experience</strong><p>Save sets you would genuinely like to build next.</p></article><article class="bc-zen-step"><small>03 · EXCHANGE</small><strong>BrickCircle finds the mutual match</strong><p>If another nearby collector wants yours and you want theirs, you can start an exchange.</p></article></div><div class="bc-zen-trustline" aria-label="BrickCircle exchange principles"><span>Local meetup</span><span>Inspect before handoff</span><span>Temporary exchange</span></div></section>`);
   }
+  if(actions[1])actions[1].onclick=()=>page.querySelector('.bc-zen-explainer')?.scrollIntoView({behavior:'smooth',block:'start'});
   const final=page.querySelector('.bc-landing-final');if(final){text(final.querySelector('span'),'START WITH WHAT YOU OWN');text(final.querySelector('h2'),'Your first set is enough to begin.');text(final.querySelector('button'),'Add a set I own')}
 }
 
@@ -62,7 +64,8 @@ function simplifySignedInHome(page){
   let focus=page.querySelector('.bc-zen-focus');
   const markup=`<div><div class="bc-zen-focus-kicker">${stage.kicker}</div><h1>${stage.title}</h1><p>${stage.copy}</p><div class="bc-zen-progress" aria-label="First match setup progress"><span class="${stage.index>=0?'done':''}"></span><span class="${stage.index>=1?'done':''}"></span><span class="${stage.index>=2?'done':''}"></span><span class="${stage.index>=3?'current':''}"></span></div></div><div>${button(stage.label,stage.go)}</div>`;
   if(!focus){focus=document.createElement('section');focus.className='bc-zen-focus';page.prepend(focus)}
-  if(focus.dataset.stage!==String(stage.index)+String(!!stage.matched)){focus.dataset.stage=String(stage.index)+String(!!stage.matched);focus.innerHTML=markup}
+  const stageKey=String(stage.index)+String(!!stage.matched);
+  if(focus.dataset.stage!==stageKey){focus.dataset.stage=stageKey;focus.innerHTML=markup}
   bind(focus);
 }
 
@@ -125,7 +128,7 @@ function apply(){
     if(route()==='browse'||route()==='catalogue')simplifyBrowse(page);
     if(['sets','collection','wishlist'].includes(route()))simplifySets(page);
     if(route()==='matches')simplifyMatches(page);
-    if(['exchanges','requests','returns','meetup','exchange'].includes(route()))simplifyExchanges(page);
+    if(['exchanges','requests','returns','meetup'].includes(route()))simplifyExchanges(page);
   }
   simplifyProposalModal();
   bind(document);
