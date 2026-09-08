@@ -1,5 +1,5 @@
 {
-  "release": "20260908-meetup-submit-r6",
+  "release": "20260908-install-promo-r7",
   "shell": [
     "/",
     "/v2.html",
@@ -14,6 +14,7 @@
     "/web-push-config.js",
     "/web-push-v1.js",
     "/app-v3.js",
+    "/install-promo.js",
     "/collection-owner-photo.js",
     "/meetup-submit-hotfix.js",
     "/exchange-lifecycle-notifications.js",
