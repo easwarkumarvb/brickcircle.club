@@ -10,6 +10,7 @@
     "/zen-ux-v1.css",
     "/analytics.js",
     "/product-analytics.js",
+    "/session-persistence-v1.js",
     "/observability-v26.js",
     "/locations-v3.js",
     "/web-push-config.js",
