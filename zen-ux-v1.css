@@ -73,14 +73,14 @@ h1,h2,h3{color:var(--zen-ink)!important;letter-spacing:-.035em!important}
 .bc-zen-more[open] summary:after{content:' −'}
 .bc-zen-more-body{padding-top:14px}
 
-/* Public landing: remove repetition and let the example breathe. */
+/* Public landing: keep one visual story and remove duplicate explanations. */
 .bc-landing-hero{min-height:auto!important;padding:64px 0 38px!important;gap:42px!important}
 .bc-landing-hero-copy h1{font-size:clamp(2.6rem,6vw,5.5rem)!important;line-height:.96!important;max-width:760px!important}
 .bc-landing-hero-copy p{font-size:1.14rem!important;line-height:1.65!important;max-width:600px!important;color:var(--zen-muted)!important}
 .bc-landing-hero-copy em{color:var(--zen-accent)!important;font-style:normal!important}
 .bc-landing-showcase{box-shadow:none!important}
 .bc-landing-section{padding:34px!important;margin-top:18px!important}
-.bc-story{display:none!important}
+.bc-landing-workflow{display:none!important}
 .bc-landing-match-example{display:none!important}
 .bc-trust-grid{grid-template-columns:repeat(3,1fr)!important;gap:8px!important}
 .bc-trust-grid span{background:#fafaf7!important;border:1px solid var(--zen-line)!important;border-radius:12px!important;padding:14px!important}
@@ -89,7 +89,7 @@ h1,h2,h3{color:var(--zen-ink)!important;letter-spacing:-.035em!important}
 /* Browse: search first. Secondary discovery is collapsible. */
 .bc-catalogue-tools{background:var(--zen-surface)!important;border:1px solid var(--zen-line)!important;border-radius:var(--zen-radius)!important;padding:14px!important;box-shadow:var(--zen-shadow)!important}
 .bc-searchrow{gap:8px!important}
-.bc-input,.bc-select{border:1px solid var(--zen-line)!important;border-radius:12px!important;background:#fff!important;min-height:46px!important;box-shadow:none!important}
+.bc-input,.bc-select{border:1px solid var(--zen-line)!important;border-radius:12px!important;background:#fff!important;min-height:48px!important;box-shadow:none!important}
 .bc-input:focus,.bc-select:focus{border-color:#a9c7b9!important;box-shadow:0 0 0 3px var(--zen-accent-soft)!important}
 .bc-popular{margin:0 0 12px!important}
 .bc-zen-discovery{margin-bottom:12px}
