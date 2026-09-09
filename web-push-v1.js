@@ -3,6 +3,7 @@
 const DISMISS_PREFIX='bc_push_prompt_dismissed:';
 const STYLE_ID='bc-web-push-style';
 let promptedUser='';
+let reconcilingUser='';
 
 function supported(){return 'serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window}
 function dismissed(userId){try{return Number(localStorage.getItem(DISMISS_PREFIX+userId)||0)>Date.now()-30*864e5}catch(_){return false}}
@@ -32,6 +33,27 @@ async function freshSubscription(worker,publicKey,previous){
   try{await previous?.unsubscribe?.()}catch(_){ }
   return worker.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(publicKey)});
 }
+async function attach(user,{rotateOnConflict=true}={}){
+  if(!supported()||Notification.permission!=='granted'||!user?.id)return false;
+  const publicKey=window.BC_WEB_PUSH_CONFIG?.vapidPublicKey;
+  if(!publicKey)return false;
+  const worker=await registration();
+  let subscription=await worker.pushManager.getSubscription();
+  if(!subscription)subscription=await worker.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:bytes(publicKey)});
+  try{
+    await save(user,subscription);
+  }catch(firstError){
+    if(!rotateOnConflict)throw firstError;
+    subscription=await freshSubscription(worker,publicKey,subscription);
+    try{await save(user,subscription)}catch(_){throw firstError}
+  }
+  return true;
+}
+async function reconcile(user){
+  if(!user?.id||!supported()||Notification.permission!=='granted'||reconcilingUser===user.id)return false;
+  reconcilingUser=user.id;
+  try{return await attach(user)}catch(error){console.warn('BrickCircle push reconcile failed',error);return false}finally{if(reconcilingUser===user.id)reconcilingUser=''}
+}
 async function enable(user,button){
   if(!supported())throw new Error('Web Push is not supported in this browser.');
   const publicKey=window.BC_WEB_PUSH_CONFIG?.vapidPublicKey;
@@ -40,18 +62,7 @@ async function enable(user,button){
   try{
     const permission=Notification.permission==='granted'?'granted':await Notification.requestPermission();
     if(permission!=='granted'){rememberDismissal(user.id);throw new Error(permission==='denied'?'Notifications are blocked in your browser settings.':'Notification permission was not granted.');}
-    const worker=await registration();
-    let subscription=await worker.pushManager.getSubscription();
-    if(!subscription)subscription=await freshSubscription(worker,publicKey,null);
-    try{
-      await save(user,subscription);
-    }catch(firstError){
-      // A PushManager subscription belongs to the browser origin, not the signed-in account.
-      // If another BrickCircle account previously owned this endpoint, RLS correctly rejects
-      // reassigning it. Rotate the browser endpoint and save the fresh subscription instead.
-      subscription=await freshSubscription(worker,publicKey,subscription);
-      try{await save(user,subscription)}catch(_){throw firstError}
-    }
+    await attach(user);
     close();window.bcPushToast?.('Notifications enabled for new matches and proposals.');return true;
   }finally{button.disabled=false;button.textContent='Enable notifications'}
 }
@@ -67,7 +78,9 @@ function open(user,{automatic=false}={}){
   return true;
 }
 function consider(user,{meaningful=false}={}){
-  if(!user?.id||!meaningful||promptedUser===user.id||!supported()||Notification.permission!=='default')return;
+  if(!user?.id||!meaningful||!supported())return;
+  if(Notification.permission==='granted'){reconcile(user);return}
+  if(promptedUser===user.id||Notification.permission!=='default')return;
   promptedUser=user.id;
   setTimeout(()=>{if(!document.querySelector('.bc-modal-overlay,.bc-drawer-overlay,.bc-match-login-notice'))open(user,{automatic:true})},1800);
 }
@@ -76,11 +89,13 @@ async function signOut(user){
   try{
     const worker=await navigator.serviceWorker.getRegistration('/'),subscription=await worker?.pushManager.getSubscription();
     if(worker&&subscription){
+      // Detach this account from the endpoint, but keep the browser subscription alive.
+      // This prevents cross-account delivery while allowing a later sign-in to reconcile
+      // the already-granted browser permission without asking the user again.
       await window.BC_SUPABASE.from('push_subscriptions').delete().eq('user_id',user.id).eq('endpoint',subscription.endpoint);
-      await subscription.unsubscribe();
     }
   }catch(_){ }
-  promptedUser='';close();
+  promptedUser='';reconcilingUser='';close();
 }
-window.bcWebPush={consider,open,signOut,supported};
+window.bcWebPush={consider,open,signOut,reconcile,supported};
 })();
