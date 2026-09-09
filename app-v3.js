@@ -181,39 +181,40 @@ function showOnboarding(){
 
 function clearProtectedState(){S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.founder=null;S.liquidity=null;S.profiles={};S.items={};S.sets={}}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
+const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
 const missingAuthSession=error=>error?.name==='AuthSessionMissingError'||/auth session missing/i.test(String(error?.message||''));
 async function refreshCore(){
-  const auth=await settled(db.auth.getUser()),authError=auth.error||null,user=auth.data?.user||null;
+  const auth=await settledTimeout(db.auth.getUser()),authError=auth.error||null,user=auth.data?.user||null;
   if(authError){
     if(missingAuthSession(authError)){clearProtectedState();S.refreshWarning='';return}
     const status=Number(authError.status||0);
     S.refreshWarning=authError.message||'Your session could not be refreshed.';
     if(status===401||status===403){clearProtectedState();return}
-    if(!S.user)throw authError;
+    if(!S.user)return;
   }else{
     S.user=user;
     if(!S.user){clearProtectedState();S.refreshWarning='';return}
   }
   const uid=S.user.id;
   const [p,c,w,req,ex,n,msg,found,liq]=await Promise.all([
-    settled(db.from('profiles').select('*').eq('id',uid).maybeSingle()),
-    settled(db.from('collection_items').select('*,lego_sets(*)').eq('user_id',uid).order('created_at',{ascending:false})),
-    settled(db.from('wishlists').select('*,lego_sets(*)').eq('user_id',uid).order('created_at',{ascending:false})),
-    settled(db.from('exchange_requests').select('*').or(`requester_id.eq.${uid},responder_id.eq.${uid}`).order('created_at',{ascending:false}).limit(80)),
-    settled(db.from('exchanges').select('*').or(`user_a.eq.${uid},user_b.eq.${uid}`).order('created_at',{ascending:false}).limit(80)),
-    settled(db.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(50)),
-    settled(db.from('messages').select('*').or(`sender_id.eq.${uid},recipient_id.eq.${uid}`).order('created_at',{ascending:false}).limit(100)),
-    settled(db.rpc('bc_founder_status')),
-    settled(db.rpc('bc_liquidity_status'))
+    settledTimeout(db.from('profiles').select('*').eq('id',uid).maybeSingle()),
+    settledTimeout(db.from('collection_items').select('*,lego_sets(*)').eq('user_id',uid).order('created_at',{ascending:false})),
+    settledTimeout(db.from('wishlists').select('*,lego_sets(*)').eq('user_id',uid).order('created_at',{ascending:false})),
+    settledTimeout(db.from('exchange_requests').select('*').or(`requester_id.eq.${uid},responder_id.eq.${uid}`).order('created_at',{ascending:false}).limit(80)),
+    settledTimeout(db.from('exchanges').select('*').or(`user_a.eq.${uid},user_b.eq.${uid}`).order('created_at',{ascending:false}).limit(80)),
+    settledTimeout(db.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(50)),
+    settledTimeout(db.from('messages').select('*').or(`sender_id.eq.${uid},recipient_id.eq.${uid}`).order('created_at',{ascending:false}).limit(100)),
+    settledTimeout(db.rpc('bc_founder_status')),
+    settledTimeout(db.rpc('bc_liquidity_status'))
   ]);
   const failures=[p,c,w,req,ex,n,msg,found,liq].filter(result=>result.error);
   if(!p.error)S.profile=p.data||null;if(!c.error)S.collection=c.data||[];if(!w.error)S.wishlist=w.data||[];if(!req.error)S.requests=req.data||[];if(!ex.error)S.exchanges=ex.data||[];if(!n.error)S.notifications=n.data||[];if(!msg.error)S.messages=msg.data||[];
   if(!found.error)S.founder=Array.isArray(found.data)?found.data[0]:found.data;if(!liq.error)S.liquidity=Array.isArray(liq.data)?liq.data[0]:liq.data;
-  const m=await settled(db.rpc('find_matches',{p_user:uid}));if(!m.error)S.matches=m.data||[];else failures.push(m);
+  const m=await settledTimeout(db.rpc('find_matches',{p_user:uid}));if(!m.error)S.matches=m.data||[];else failures.push(m);
   S.refreshWarning=failures.length?(failures[0].error?.message||'Some BrickCircle information could not refresh.'):(authError?S.refreshWarning:'');
   S.collection.forEach(i=>{S.items[i.id]=i;if(i.lego_sets)S.sets[i.set_number]=i.lego_sets});S.wishlist.forEach(i=>{if(i.lego_sets)S.sets[i.set_number]=i.lego_sets});
   window.bcWebPush?.consider(S.user,{meaningful:S.collection.length+S.wishlist.length>0});
-  const people=new Set();S.requests.forEach(r=>{people.add(r.requester_id);people.add(r.responder_id)});S.exchanges.forEach(e=>{people.add(e.user_a);people.add(e.user_b)});S.matches.forEach(m=>people.add(m.match_user));S.messages.forEach(m=>{people.add(m.sender_id);people.add(m.recipient_id)});people.delete(uid);if(people.size){const result=await settled(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since,founding_member_number').in('id',[...people]));if(result.error)S.refreshWarning=S.refreshWarning||result.error.message||'Collector details could not refresh.';else(result.data||[]).forEach(p=>S.profiles[p.id]=p)}
+  const people=new Set();S.requests.forEach(r=>{people.add(r.requester_id);people.add(r.responder_id)});S.exchanges.forEach(e=>{people.add(e.user_a);people.add(e.user_b)});S.matches.forEach(m=>people.add(m.match_user));S.messages.forEach(m=>{people.add(m.sender_id);people.add(m.recipient_id)});people.delete(uid);if(people.size){const result=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since,founding_member_number').in('id',[...people]));if(result.error)S.refreshWarning=S.refreshWarning||result.error.message||'Collector details could not refresh.';else(result.data||[]).forEach(p=>S.profiles[p.id]=p)}
 }
 async function refreshRoute(){await refreshCore();shell();await renderRoute()}
 
@@ -557,7 +558,7 @@ function installPWA(){if(!S.installPrompt)return toast('Use your browser menu an
 function setupPWA(){window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();S.installPrompt=e});if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/catalogue-cache-sw.js').catch(e=>console.warn('SW',e)))}
 
 async function boot(){
-  captureReferral();setupPWA();if(parseJoinIntent()){showAuth();clearQueryParam('join')}await providerSettings();const {data:{session}}=await withTimeout(db.auth.getSession(),10000);S.user=session?.user||null;await refreshCore();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown)showUnreadProposalNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
+  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await refreshCore();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown)showUnreadProposalNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
 }
 function handleAuthChange(event,session){if(!S.booted){pendingAuthChange=[event,session];return}const prev=S.user?.id;S.user=session?.user||null;setTimeout(async()=>{if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery()}else if(event==='SIGNED_IN'&&S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown)showUnreadProposalNotice();if(!prev)toast('Welcome to BrickCircle.')}else if(event==='SIGNED_OUT'){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();shell();await renderRoute()}},0)}
 db.auth.onAuthStateChange(handleAuthChange);
