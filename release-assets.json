@@ -1,5 +1,5 @@
 {
-  "release": "20260909-match-notifications-r2",
+  "release": "20260909-exchange-safety-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -19,6 +19,7 @@
     "/catalogue-discovery-v1.js",
     "/install-promo.js",
     "/collection-owner-photo.js",
+    "/owner-photo-dedupe-v1.js",
     "/collection-remove-safety.js",
     "/exchangeable-persistence-v1.js",
     "/meetup-submit-hotfix.js",
