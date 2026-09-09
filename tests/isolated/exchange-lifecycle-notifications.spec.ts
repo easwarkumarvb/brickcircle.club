@@ -10,6 +10,8 @@ test('member notifications surface exchange lifecycle events and reciprocal matc
   expect(source).toContain('showUnread().catch');
   expect(source).toContain("window.addEventListener('online'");
   expect(source).toContain("document.addEventListener('visibilitychange'");
+  expect(source).toContain('if(!user?.id||activeId');
+  expect(source).toContain("next.id===user?.id&&(channel||pollTimer)");
 });
 
 test('lifecycle notification client is shipped in the release shell',async()=>{

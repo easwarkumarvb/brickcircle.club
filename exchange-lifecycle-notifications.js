@@ -41,7 +41,7 @@ function show(row){
   return true;
 }
 async function showUnread(){
-  if(!user?.id||document.visibilityState==='hidden')return;
+  if(!user?.id||activeId||document.visibilityState==='hidden')return;
   const uid=user.id;
   const {data}=await db.from('notifications').select('id,user_id,kind,title,body,read_at,created_at').eq('user_id',uid).is('read_at',null).in('kind',[...KINDS]).order('created_at',{ascending:false}).limit(20);
   if(user?.id!==uid)return;
@@ -62,6 +62,10 @@ function start(){
 async function sync(){const {data}=await db.auth.getUser();user=data?.user||null;if(user)start();else stop()}
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')showUnread().catch(()=>{})});
 window.addEventListener('online',()=>showUnread().catch(()=>{}));
-db.auth.onAuthStateChange((_event,session)=>{user=session?.user||null;if(user)start();else stop()});
+db.auth.onAuthStateChange((_event,session)=>{
+  const next=session?.user||null;
+  if(next?.id&&next.id===user?.id&&(channel||pollTimer)){showUnread().catch(()=>{});return}
+  user=next;if(user)start();else stop();
+});
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>sync().catch(()=>{}),{once:true});else sync().catch(()=>{});
 })();
