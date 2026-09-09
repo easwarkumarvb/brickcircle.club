@@ -502,7 +502,35 @@ async function renderExchanges(token,legacy='exchanges'){
 }
 function renderExchangeBody(){const host=$('#bc-exchange-body');if(!host)return;const active=activeExchanges(),pending=pendingRequests(),done=completedExchanges();if(S.exchangeTab==='requests'){host.innerHTML=pending.length?`<div class="bc-exchange-list">${pending.map(requestCard).join('')}</div>`:empty('📨','No pending requests','New proposals you send or receive will appear here.','Find matches','matches');$$('[data-request-action]',host).forEach(b=>b.onclick=()=>respondRequest(b.dataset.requestId,b.dataset.requestAction))}else if(S.exchangeTab==='completed'){host.innerHTML=done.length?`<div class="bc-exchange-list">${done.map(exchangeCard).join('')}</div>`:empty('✓','No completed exchanges yet','Your completed exchange history and reviews will build here.','Find a match','matches');$$('[data-exchange]',host).forEach(b=>b.onclick=()=>navigate('exchange',b.dataset.exchange))}else{host.innerHTML=active.length?`<div class="bc-exchange-list">${active.map(exchangeCard).join('')}</div>`:empty('🤝','No active exchanges','Accept a reciprocal proposal and your entire meetup → swap → return journey will live here.','See matches','matches');$$('[data-exchange]',host).forEach(b=>b.onclick=()=>navigate('exchange',b.dataset.exchange))}bindCommon(host)}
 function requestCard(r){const incoming=r.responder_id===S.user.id,other=incoming?r.requester_id:r.responder_id,p=S.profiles[other]||{},offer=itemName(r.offered_item_id),want=itemName(r.requested_item_id),focused=routeId()===r.id;return `<article class="bc-card bc-pad bc-request" data-request-card="${attr(r.id)}" ${focused?'style="outline:3px solid #f3c623;outline-offset:2px"':''}><div><div>${pill(incoming?'Incoming proposal':'Proposal sent',incoming?'gold':'blue')}</div><h3>${esc(offer)} ⇄ ${esc(want)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${r.duration_days} days · ${fmtDateTime(r.created_at)}</div>${r.message?`<div class="bc-notice" style="margin-top:10px">${esc(r.message)}</div>`:''}</div><div class="bc-request-actions">${incoming?`<button class="bc-btn primary" data-request-action="accept" data-request-id="${r.id}">Accept</button><button class="bc-btn" data-request-action="decline" data-request-id="${r.id}">Decline</button>`:`<button class="bc-btn danger" data-request-action="cancel" data-request-id="${r.id}">Cancel proposal</button>`}</div></article>`}
-async function respondRequest(id,action){const btn=$(`[data-request-id="${CSS.escape(id)}"][data-request-action="${action}"]`);if(btn){btn.disabled=true;btn.textContent=action==='accept'?'Accepting…':'Working…'}const {data,error}=await db.rpc('respond_exchange_request',{p_request_id:id,p_action:action});if(error){fail(error);if(btn)btn.disabled=false;return}await refreshCore();await hydrateExchangeItems();if(action==='accept'){S.exchangeTab='active';toast('Exchange accepted. Plan a safe meetup next.');track('exchange_request_accepted',{request_id:id});if(data?.exchange_id)return navigate('exchange',data.exchange_id)}renderExchangeBody()}
+async function respondRequest(id,action){
+  const btn=$(`[data-request-id="${CSS.escape(id)}"][data-request-action="${action}"]`);
+  const original=btn?.textContent||'';
+  if(btn){btn.disabled=true;btn.textContent=action==='accept'?'Accepting…':'Working…'}
+  const {data,error}=await settledTimeout(db.rpc('respond_exchange_request',{p_request_id:id,p_action:action}),15000);
+  if(error){
+    fail(error);
+    if(btn){btn.disabled=false;btn.textContent=original}
+    await refreshCore();
+    renderExchangeBody();
+    return;
+  }
+  if(data?.ok===false){
+    fail(new Error(data.message||'This proposal can no longer be accepted.'));
+    if(btn){btn.disabled=false;btn.textContent=original}
+    await refreshCore();
+    renderExchangeBody();
+    return;
+  }
+  await refreshCore();
+  await hydrateExchangeItems();
+  if(action==='accept'){
+    S.exchangeTab='active';
+    toast('Exchange accepted. Plan a safe meetup next.');
+    track('exchange_request_accepted',{request_id:id});
+    if(data?.exchange_id)return navigate('exchange',data.exchange_id);
+  }
+  renderExchangeBody();
+}
 function exchangeStageLabel(e){if(e.state==='disputed')return 'Issue reported';if(e.state==='swap_active')return e.return_due_at&&new Date(e.return_due_at)<new Date()?'Return overdue':'Temporary swap active';if(e.state==='completed')return 'Completed';if(e.state==='accepted')return 'Plan meetup';return 'In progress'}
 function exchangeCard(e){const p=otherProfile(e),a=itemName(e.item_a),b=itemName(e.item_b),stage=stageForExchange(e);return `<article class="bc-card bc-ex-card"><div class="bc-ex-top"><div><span class="bc-pill ${e.state==='disputed'?'red':e.state==='completed'?'green':e.state==='swap_active'?'blue':'gold'}">${esc(exchangeStageLabel(e))}</span><h3>${esc(a)} ⇄ ${esc(b)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${e.duration_days} days${e.return_due_at?` · return ${fmtDate(e.return_due_at)}`:''}</div></div><button class="bc-btn primary" data-exchange="${e.id}">${e.state==='completed'?'View & review':'Continue →'}</button></div><div class="bc-ex-progress">${[1,2,3,4,5].map(n=>`<i class="bc-ex-step ${n<stage?'done':n===stage?'current':''}"></i>`).join('')}</div><div class="bc-small">Request → Meetup → Handoff → Experience → Return</div></article>`}
 
