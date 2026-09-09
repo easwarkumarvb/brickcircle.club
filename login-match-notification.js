@@ -41,7 +41,7 @@ function show(userId,match,count,name){
   n.querySelector('[data-dismiss-match]').onclick=dismiss;
 }
 async function check(user){
-  if(!user?.id||hasSeen(user.id)||window.BC_PROPOSAL_NOTICE_ACTIVE)return;
+  if(!user?.id||hasSeen(user.id)||window.BC_PROPOSAL_NOTICE_ACTIVE||window.BC_MATCH_NOTICE_ACTIVE)return;
   const db=window.BC_SUPABASE;
   if(!db)return;
   try{

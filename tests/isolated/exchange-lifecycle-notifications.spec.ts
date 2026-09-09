@@ -1,12 +1,15 @@
 import fs from 'node:fs';
 import {test,expect} from './fixtures';
 
-test('exchange lifecycle notifications are surfaced inside the app',async()=>{
+test('member notifications surface exchange lifecycle events and reciprocal matches',async()=>{
   const source=fs.readFileSync('exchange-lifecycle-notifications.js','utf8');
-  for(const kind of ['exchange_accepted','exchange_declined','exchange_cancelled','exchange_created'])expect(source).toContain(kind);
-  expect(source).toContain("location.hash='#exchanges'");
+  for(const kind of ['exchange_accepted','exchange_declined','exchange_cancelled','exchange_created','reciprocal_match'])expect(source).toContain(kind);
+  expect(source).toContain("route:'#matches'");
   expect(source).toContain("event:'INSERT'");
   expect(source).toContain(".is('read_at',null)");
+  expect(source).toContain('showUnread().catch');
+  expect(source).toContain("window.addEventListener('online'");
+  expect(source).toContain("document.addEventListener('visibilitychange'");
 });
 
 test('lifecycle notification client is shipped in the release shell',async()=>{
