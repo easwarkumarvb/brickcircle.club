@@ -10,6 +10,23 @@ let lastHiddenAt=0;
 let lastVisibleAt=Date.now();
 let lastRoute='';
 
+async function resilientAuthLock(name,acquireTimeout,fn){
+  const locks=window.navigator?.locks;
+  if(!locks?.request)return fn();
+  const controller=new AbortController();
+  const timeoutMs=acquireTimeout>0?Math.min(acquireTimeout,3500):3500;
+  const timer=setTimeout(()=>controller.abort(),timeoutMs);
+  try{
+    return await locks.request(name,{mode:'exclusive',signal:controller.signal},lock=>lock?fn():fn());
+  }catch(error){
+    if(error?.name!=='AbortError')throw error;
+    console.warn('BrickCircle recovered a stalled cross-tab auth lock.');
+    return fn();
+  }finally{
+    clearTimeout(timer);
+  }
+}
+
 function rememberRoute(){
   const hash=location.hash||'#home';
   if(hash&&hash!=='#home')lastRoute=hash;
@@ -94,6 +111,7 @@ supabaseGlobal.createClient=(url,key,options={})=>{
     persistSession:true,
     autoRefreshToken:true,
     detectSessionInUrl:true,
+    lock:resilientAuthLock,
     ...(options.auth||{})
   };
   return wrapClient(originalCreateClient(url,key,{...options,auth:authOptions}));
