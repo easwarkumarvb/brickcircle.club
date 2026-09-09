@@ -1,5 +1,5 @@
 {
-  "release": "20260909-match-notifications-r2",
+  "release": "20260909-beta-reliability-pwa-off-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -14,11 +14,10 @@
     "/observability-v26.js",
     "/locations-v3.js",
     "/web-push-config.js",
-    "/web-push-v1.js",
     "/app-v3.js",
     "/catalogue-discovery-v1.js",
-    "/install-promo.js",
     "/collection-owner-photo.js",
+    "/owner-photo-dedupe-v1.js",
     "/collection-remove-safety.js",
     "/exchangeable-persistence-v1.js",
     "/meetup-submit-hotfix.js",
@@ -30,8 +29,6 @@
     "/phase-2f-first-match.js",
     "/legal-links.js",
     "/zen-ux-v1.js",
-    "/manifest.webmanifest",
-    "/assets/brickcircle-logo.webp",
-    "/assets/pwa-icon.svg"
+    "/assets/brickcircle-logo.webp"
   ]
 }

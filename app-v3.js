@@ -20,6 +20,7 @@ const withTimeout=(promise,ms=12000)=>Promise.race([promise,new Promise((_,rejec
 const routeName=()=>decodeURIComponent((location.hash||'#home').slice(1).split('/')[0]||'home');
 const routeId=()=>decodeURIComponent((location.hash||'').slice(1).split('/')[1]||'');
 const isSignedIn=()=>!!S.user;
+const betaPWAEnabled=()=>window.BC_BETA_FLAGS?.pwaEnabled===true;
 const LOC=()=>window.BC_LOCATIONS||{};
 const countries=()=>Object.keys(LOC()).sort((a,b)=>a.localeCompare(b));
 const popularSets=['42143','42115','42083','42056','42141','42172','10283','21309','10318','10307'];
@@ -545,9 +546,9 @@ async function shareInvite(){if(!S.user){showAuth();return}try{const {data,error
 function showNotifications(){
   if(!S.user)return showAuth();
   const unread=S.notifications.filter(notification=>!notification.read_at).length;
-  const o=drawer(`<div class="bc-drawer-head"><div><h2>Notifications</h2><div class="bc-small">${unread?`${unread} unread`:'You’re caught up'}</div></div><button class="bc-close" data-close>×</button></div><button class="bc-btn" data-enable-push style="margin-bottom:10px">Enable system notifications</button>${unread?'<button class="bc-btn" data-read-all style="margin:0 0 10px 8px">Mark all read</button>':''}<div>${S.notifications.length?S.notifications.map(notification=>`<button class="bc-notification ${notification.read_at?'':'unread'}" type="button" data-note="${attr(notification.id)}" style="display:block;width:100%;text-align:left;background:${notification.read_at?'#fff':'#fff9df'}"><b>${esc(notification.title||String(notification.kind||'Update').replace(/_/g,' '))}</b><div>${esc(notification.body||'')}</div><small>${fmtDateTime(notification.created_at)}${isProposalNotification(notification)?' · View proposal':isReciprocalMatchNotification(notification)?' · View match':''}</small></button>`).join(''):'<div class="bc-empty"><div class="bc-empty-icon">🔔</div><h3>No notifications yet</h3></div>'}</div>`);
+  const o=drawer(`<div class="bc-drawer-head"><div><h2>Notifications</h2><div class="bc-small">${unread?`${unread} unread`:'You’re caught up'}</div></div><button class="bc-close" data-close>×</button></div>${betaPWAEnabled()?'<button class="bc-btn" data-enable-push style="margin-bottom:10px">Enable system notifications</button>':''}${unread?'<button class="bc-btn" data-read-all style="margin:0 0 10px 8px">Mark all read</button>':''}<div>${S.notifications.length?S.notifications.map(notification=>`<button class="bc-notification ${notification.read_at?'':'unread'}" type="button" data-note="${attr(notification.id)}" style="display:block;width:100%;text-align:left;background:${notification.read_at?'#fff':'#fff9df'}"><b>${esc(notification.title||String(notification.kind||'Update').replace(/_/g,' '))}</b><div>${esc(notification.body||'')}</div><small>${fmtDateTime(notification.created_at)}${isProposalNotification(notification)?' · View proposal':isReciprocalMatchNotification(notification)?' · View match':''}</small></button>`).join(''):'<div class="bc-empty"><div class="bc-empty-icon">🔔</div><h3>No notifications yet</h3></div>'}</div>`);
   $('[data-close]',o).onclick=()=>o.closest('.bc-drawer-overlay').remove();
-  $('[data-enable-push]',o).onclick=()=>{o.closest('.bc-drawer-overlay').remove();window.bcWebPush?.open(S.user)};
+  $('[data-enable-push]',o)?.addEventListener('click',()=>{o.closest('.bc-drawer-overlay').remove();window.bcWebPush?.open(S.user)});
   $('[data-read-all]',o)?.addEventListener('click',async()=>{const {error}=await db.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',S.user.id).is('read_at',null);if(error)return fail(error);await refreshCore();shell();await renderRoute();showNotifications()});
   $$('[data-note]',o).forEach(element=>element.onclick=()=>openNotification(S.notifications.find(notification=>notification.id===element.dataset.note)));
 }
@@ -555,7 +556,21 @@ function showInbox(){if(!S.user)return showAuth();const groups={};S.messages.for
 function quickMessage(person){if(!S.user)return showAuth();const p=S.profiles[person]||{};const o=modal(`<div class="bc-modal-head"><div><h2>Message ${esc(p.display_name||'collector')}</h2></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-quick-message"><textarea class="bc-textarea" name="message" maxlength="4000" required placeholder="Write your message"></textarea><button class="bc-btn primary">Send message</button></form>`);$('[data-close]',o).onclick=closeOverlay;$('#bc-quick-message',o).onsubmit=async ev=>{ev.preventDefault();const f=new FormData(ev.currentTarget),{error}=await db.from('messages').insert({sender_id:S.user.id,recipient_id:person,body:String(f.get('message'))});if(error)return fail(error);closeOverlay();toast('Message sent.');await refreshCore()}}
 
 function installPWA(){if(!S.installPrompt)return toast('Use your browser menu and choose Add to Home screen.');S.installPrompt.prompt();S.installPrompt.userChoice.finally(()=>{S.installPrompt=null})}
-function setupPWA(){window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();S.installPrompt=e});if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/catalogue-cache-sw.js').catch(e=>console.warn('SW',e)))}
+async function disableBetaPWA(){
+  try{
+    if('serviceWorker'in navigator&&navigator.serviceWorker.getRegistrations){
+      const registrations=await navigator.serviceWorker.getRegistrations();
+      const brickCircleRegistration=registration=>[registration.installing,registration.waiting,registration.active].filter(Boolean).some(worker=>{try{const url=new URL(worker.scriptURL,location.href);return url.origin===location.origin&&url.pathname==='/catalogue-cache-sw.js'}catch(_){return false}});
+      await Promise.allSettled(registrations.filter(brickCircleRegistration).map(registration=>registration.unregister()));
+    }
+  }catch(error){console.warn('Service worker cleanup',error)}
+  try{if(window.caches?.keys){const keys=await caches.keys();await Promise.allSettled(keys.filter(key=>key.startsWith('brickcircle-')).map(key=>caches.delete(key)))}}catch(error){console.warn('Cache cleanup',error)}
+}
+function setupPWA(){
+  if(!betaPWAEnabled()){disableBetaPWA().catch(error=>console.warn('PWA cleanup',error));return}
+  window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();S.installPrompt=e});
+  if('serviceWorker'in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/catalogue-cache-sw.js').catch(e=>console.warn('SW',e)))
+}
 
 async function boot(){
   captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await refreshCore();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown)showUnreadProposalNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
