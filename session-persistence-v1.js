@@ -40,24 +40,25 @@ function wrapClient(client){
   const auth=client.auth;
   const originalOnAuthStateChange=auth.onAuthStateChange.bind(auth);
 
-  auth.onAuthStateChange=(callback)=>originalOnAuthStateChange(async(event,session)=>{
+  auth.onAuthStateChange=(callback)=>originalOnAuthStateChange((event,session)=>{
     if(event!=='SIGNED_OUT' || !isResumeWindow()){
       callback(event,session);
       return;
     }
 
-    // Android/Chrome can briefly surface an empty auth state while a backgrounded
-    // tab wakes and the refresh token is being re-hydrated. Do not convert that
-    // transient state into a real logout until the stored session is rechecked.
-    await new Promise(resolve=>setTimeout(resolve,350));
-    const recovered=await recoverSession(auth);
-    if(recovered){
-      callback('TOKEN_REFRESHED',recovered);
-      queueMicrotask(()=>window.bcV3Refresh?.());
-      return;
-    }
+    // Supabase holds an internal auth lock while this callback runs. Defer all
+    // Supabase calls so getSession/refreshSession cannot deadlock app startup.
+    setTimeout(async()=>{
+      await new Promise(resolve=>setTimeout(resolve,350));
+      const recovered=await recoverSession(auth);
+      if(recovered){
+        callback('TOKEN_REFRESHED',recovered);
+        queueMicrotask(()=>window.bcV3Refresh?.());
+        return;
+      }
 
-    callback('SIGNED_OUT',null);
+      callback('SIGNED_OUT',null);
+    },0);
   });
 
   const validateResume=async()=>{
