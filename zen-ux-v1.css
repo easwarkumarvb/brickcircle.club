@@ -1,0 +1,147 @@
+/* BrickCircle Zen UX v1 — calm, progressive, one-action-at-a-time interface. */
+:root{
+  --zen-bg:#f7f7f4;
+  --zen-surface:#ffffff;
+  --zen-ink:#171714;
+  --zen-muted:#6d6c66;
+  --zen-line:#e7e6df;
+  --zen-accent:#1f6b4f;
+  --zen-accent-soft:#edf5f1;
+  --zen-radius:18px;
+  --zen-shadow:0 1px 2px rgba(20,20,16,.04);
+}
+html{background:var(--zen-bg)}
+body{background:var(--zen-bg)!important;color:var(--zen-ink)!important;letter-spacing:-.005em}
+.bc-main{background:var(--zen-bg)!important}
+.bc-page{max-width:1080px!important;padding-top:32px!important;padding-bottom:110px!important}
+
+/* Navigation: quiet, stable, obvious. */
+.bc-topbar{background:rgba(247,247,244,.94)!important;border-bottom:1px solid var(--zen-line)!important;backdrop-filter:blur(14px)}
+.bc-topbar-in{max-width:1080px!important}
+.bc-logo img{max-height:42px!important}
+.bc-desktop-nav{gap:4px!important}
+.bc-desktop-nav button{background:transparent!important;border:0!important;border-radius:10px!important;color:var(--zen-muted)!important;font-weight:600!important;padding:9px 12px!important}
+.bc-desktop-nav button:hover,.bc-desktop-nav button.active{background:var(--zen-surface)!important;color:var(--zen-ink)!important;box-shadow:var(--zen-shadow)!important}
+.bc-top-actions{gap:6px!important}
+.bc-icon-btn,.bc-avatar-btn,.bc-signin{box-shadow:none!important}
+
+/* Typography and spacing. */
+h1,h2,h3{color:var(--zen-ink)!important;letter-spacing:-.035em!important}
+.bc-page h1{font-size:clamp(2rem,4vw,3.4rem)!important;line-height:1.02!important}
+.bc-page h2{font-size:clamp(1.35rem,2vw,2rem)!important}
+.bc-page-head{align-items:flex-end!important;margin-bottom:28px!important}
+.bc-page-head p,.bc-muted,.bc-small{color:var(--zen-muted)!important}
+
+/* Surfaces: less chrome, more whitespace. */
+.bc-card,.bc-set-card,.bc-guided-progress,.bc-workflow,.bc-reassurance,.bc-landing-section,.bc-landing-final,.bc-notice{
+  border:1px solid var(--zen-line)!important;
+  border-radius:var(--zen-radius)!important;
+  box-shadow:var(--zen-shadow)!important;
+}
+.bc-card,.bc-guided-progress,.bc-workflow,.bc-landing-section{background:var(--zen-surface)!important}
+.bc-btn{min-height:44px!important;border-radius:12px!important;box-shadow:none!important;font-weight:650!important}
+.bc-btn.primary,.bc-btn.gold{background:var(--zen-accent)!important;border-color:var(--zen-accent)!important;color:#fff!important}
+.bc-btn.primary:hover,.bc-btn.gold:hover{filter:brightness(.96)}
+.bc-btn.ghost{background:transparent!important;border-color:var(--zen-line)!important;color:var(--zen-ink)!important}
+.bc-pill{border-radius:999px!important;font-weight:650!important}
+.bc-pill.gold{background:var(--zen-accent-soft)!important;color:var(--zen-accent)!important;border-color:transparent!important}
+
+/* Home: one next action, then progress. */
+.bc-dashboard-hero{display:grid!important;grid-template-columns:minmax(0,1fr) 260px!important;gap:18px!important;background:transparent!important;margin-bottom:18px!important}
+.bc-welcome{background:var(--zen-surface)!important;color:var(--zen-ink)!important;border:1px solid var(--zen-line)!important;border-radius:var(--zen-radius)!important;padding:32px!important;box-shadow:var(--zen-shadow)!important}
+.bc-welcome h1,.bc-welcome p{color:var(--zen-ink)!important}
+.bc-welcome p{max-width:600px!important;color:var(--zen-muted)!important}
+.bc-readiness{padding:28px!important;display:flex!important;flex-direction:column!important;justify-content:center!important}
+.bc-readiness-score{font-size:3rem!important;font-weight:700!important;letter-spacing:-.06em!important}
+.bc-progress{height:6px!important;background:#efeee8!important}
+.bc-progress span{background:var(--zen-accent)!important}
+.bc-guided-progress{padding:28px!important;margin-bottom:18px!important}
+.bc-guided-head{margin-bottom:22px!important}
+.bc-checklist{display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;gap:8px!important}
+.bc-check{background:#fafaf7!important;border:1px solid var(--zen-line)!important;border-radius:12px!important;padding:14px!important;min-height:86px!important}
+.bc-check.done{background:var(--zen-accent-soft)!important;border-color:transparent!important}
+.bc-check span{color:var(--zen-muted)!important}
+.bc-dashboard-grid{gap:12px!important}
+.bc-dash-card{padding:22px!important}
+.bc-statbig{font-size:2.2rem!important}
+
+/* Signed-in home secondary education is collapsed by the JS layer. */
+.bc-zen-more{margin-top:16px;border-top:1px solid var(--zen-line);padding-top:14px}
+.bc-zen-more summary{cursor:pointer;color:var(--zen-muted);font-weight:650;list-style:none}
+.bc-zen-more summary::-webkit-details-marker{display:none}
+.bc-zen-more summary:after{content:' +';font-weight:400}
+.bc-zen-more[open] summary:after{content:' −'}
+.bc-zen-more-body{padding-top:14px}
+
+/* Public landing: keep one visual story and remove duplicate explanations. */
+.bc-landing-hero{min-height:auto!important;padding:64px 0 38px!important;gap:42px!important}
+.bc-landing-hero-copy h1{font-size:clamp(2.6rem,6vw,5.5rem)!important;line-height:.96!important;max-width:760px!important}
+.bc-landing-hero-copy p{font-size:1.14rem!important;line-height:1.65!important;max-width:600px!important;color:var(--zen-muted)!important}
+.bc-landing-hero-copy em{color:var(--zen-accent)!important;font-style:normal!important}
+.bc-landing-showcase{box-shadow:none!important}
+.bc-landing-section{padding:34px!important;margin-top:18px!important}
+.bc-landing-workflow{display:none!important}
+.bc-landing-match-example{display:none!important}
+.bc-trust-grid{grid-template-columns:repeat(3,1fr)!important;gap:8px!important}
+.bc-trust-grid span{background:#fafaf7!important;border:1px solid var(--zen-line)!important;border-radius:12px!important;padding:14px!important}
+.bc-landing-final{text-align:center!important;padding:42px 24px!important;background:var(--zen-surface)!important}
+
+/* Browse: search first. Secondary discovery is collapsible. */
+.bc-catalogue-tools{background:var(--zen-surface)!important;border:1px solid var(--zen-line)!important;border-radius:var(--zen-radius)!important;padding:14px!important;box-shadow:var(--zen-shadow)!important}
+.bc-searchrow{gap:8px!important}
+.bc-input,.bc-select{border:1px solid var(--zen-line)!important;border-radius:12px!important;background:#fff!important;min-height:48px!important;box-shadow:none!important}
+.bc-input:focus,.bc-select:focus{border-color:#a9c7b9!important;box-shadow:0 0 0 3px var(--zen-accent-soft)!important}
+.bc-popular{margin:0 0 12px!important}
+.bc-zen-discovery{margin-bottom:12px}
+.bc-zen-discovery summary{cursor:pointer;color:var(--zen-muted);font-weight:650;padding:6px 0;list-style:none}
+.bc-zen-discovery summary::-webkit-details-marker{display:none}
+.bc-popular-row{gap:6px!important}
+.bc-pop-chip{border:1px solid var(--zen-line)!important;background:var(--zen-surface)!important;border-radius:999px!important;box-shadow:none!important}
+.bc-iconic-chip small{color:var(--zen-muted)!important}
+.bc-set-grid{gap:12px!important}
+.bc-set-card{padding:12px!important;background:var(--zen-surface)!important}
+.bc-set-card h3{font-size:1rem!important;line-height:1.25!important}
+.bc-set-actions{gap:6px!important}
+.bc-set-actions button{border-radius:10px!important;box-shadow:none!important}
+
+/* My Sets: make ownership and availability easier to scan. */
+.bc-tabs{background:transparent!important;border-bottom:1px solid var(--zen-line)!important;gap:16px!important}
+.bc-tab{border:0!important;border-bottom:2px solid transparent!important;border-radius:0!important;background:transparent!important;padding:10px 2px!important;color:var(--zen-muted)!important}
+.bc-tab.active{border-bottom-color:var(--zen-accent)!important;color:var(--zen-ink)!important;background:transparent!important}
+.bc-set-list{gap:8px!important}
+
+/* Empty states should feel like instructions, not errors. */
+.bc-empty{padding:52px 24px!important;background:var(--zen-surface)!important;border:1px dashed #d9d8d0!important;border-radius:var(--zen-radius)!important}
+.bc-empty-icon{font-size:2rem!important;filter:grayscale(1)!important;opacity:.7!important}
+
+/* Modals and drawers. */
+.bc-overlay{backdrop-filter:blur(8px)!important;background:rgba(20,20,16,.28)!important}
+.bc-modal,.bc-drawer{border-radius:20px!important;box-shadow:0 18px 60px rgba(20,20,16,.16)!important}
+
+@media (max-width:820px){
+  .bc-page{padding:20px 16px 96px!important}
+  .bc-dashboard-hero{grid-template-columns:1fr!important}
+  .bc-readiness{display:none!important}
+  .bc-welcome{padding:24px!important}
+  .bc-checklist{grid-template-columns:1fr 1fr!important}
+  .bc-guided-head{display:block!important}
+  .bc-guided-head .bc-btn{width:100%!important;margin-top:14px!important}
+  .bc-landing-hero{padding-top:28px!important}
+  .bc-landing-showcase{margin-top:12px!important}
+  .bc-trust-grid{grid-template-columns:1fr 1fr!important}
+  .bc-searchrow{display:grid!important;grid-template-columns:1fr!important}
+  .bc-set-grid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  .bc-page-head{display:block!important}
+  .bc-head-actions{margin-top:14px!important}
+  .bc-mobile-nav{background:rgba(247,247,244,.96)!important;border-top:1px solid var(--zen-line)!important;backdrop-filter:blur(14px)!important}
+  .bc-mobile-nav button{color:var(--zen-muted)!important}
+  .bc-mobile-nav button.active{color:var(--zen-accent)!important}
+}
+@media (max-width:520px){
+  .bc-checklist{grid-template-columns:1fr!important}
+  .bc-set-grid{grid-template-columns:1fr!important}
+  .bc-trust-grid{grid-template-columns:1fr!important}
+  .bc-landing-section{padding:24px 18px!important}
+  .bc-landing-hero-copy h1{font-size:2.75rem!important}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
