@@ -30,6 +30,7 @@ const persist=()=>localStorage.setItem(STORE,JSON.stringify(data));
 const state={
   actors,sets,get actor(){return actorKey},get data(){return data},
   reset(){data=fresh();actorKey='easwar';localStorage.setItem(ACTOR,actorKey);persist()},
+  persist,
   switchActor(next){if(!actors[next])throw new Error(`Unknown actor ${next}`);actorKey=next;signedOut=false;localStorage.setItem(ACTOR,next)}
 };
 window.__bcThreeUser=state;
@@ -91,12 +92,13 @@ function chain(table){
   };
   return query;
 }
+function itemReserved(itemId){return data.exchanges.some(exchange=>exchange.state!=='completed'&&exchange.state!=='cancelled'&&(exchange.item_a===itemId||exchange.item_b===itemId))}
 function findMatches(){
-  const mine=data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange);
+  const mine=data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange&&!itemReserved(row.id));
   const myWishes=data.wishlist.filter(row=>row.user_id===active().id);
   const profile=data.profiles.find(row=>row.id===active().id);
   const matches=[];
-  for(const own of mine){for(const other of data.collection.filter(row=>row.user_id!==active().id&&row.available_for_exchange)){
+  for(const own of mine){for(const other of data.collection.filter(row=>row.user_id!==active().id&&row.available_for_exchange&&!itemReserved(row.id))){
     const otherProfile=data.profiles.find(row=>row.id===other.user_id);
     if(!profile||!otherProfile||profile.city!==otherProfile.city||profile.country!==otherProfile.country)continue;
     if(!myWishes.some(wish=>wish.set_number===other.set_number))continue;
@@ -118,8 +120,12 @@ const db={
     if(name==='find_matches')return {data:findMatches(),error:null};
     if(name==='respond_exchange_request'){
       const request=data.requests.find(row=>row.id===args.p_request_id&&(row.requester_id===active().id||row.responder_id===active().id));if(!request)return {data:null,error:{message:'Request not found'}};
+      if(args.p_action==='accept'&&(itemReserved(request.offered_item_id)||itemReserved(request.requested_item_id)))return {data:null,error:{message:'One of these LEGO sets is already reserved in another active exchange'}};
       request.status=args.p_action==='accept'?'accepted':args.p_action==='decline'?'declined':'cancelled';request.updated_at=NOW;
-      let exchange=null;if(args.p_action==='accept'){exchange={id:`exchange-${data.exchanges.length+1}`,request_id:request.id,user_a:request.requester_id,user_b:request.responder_id,item_a:request.offered_item_id,item_b:request.requested_item_id,duration_days:request.duration_days,state:'accepted',created_at:NOW,updated_at:NOW};data.exchanges.push(exchange)}persist();return {data:exchange?{exchange_id:exchange.id}:true,error:null};
+      let exchange=null;if(args.p_action==='accept'){
+        exchange={id:`exchange-${data.exchanges.length+1}`,request_id:request.id,user_a:request.requester_id,user_b:request.responder_id,item_a:request.offered_item_id,item_b:request.requested_item_id,duration_days:request.duration_days,state:'accepted',created_at:NOW,updated_at:NOW};data.exchanges.push(exchange);
+        data.collection.filter(row=>row.id===request.offered_item_id||row.id===request.requested_item_id).forEach(row=>{row.available_for_exchange=false});
+      }persist();return {data:exchange?{exchange_id:exchange.id}:true,error:null};
     }
     if(name==='bc_founder_status')return {data:{my_is_founder:true,my_number:7},error:null};
     if(name==='bc_liquidity_status')return {data:{collection_count:visibleRows('collection_items',{filters:[],ins:[]}).length,exchangeable_count:data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange).length,wishlist_count:data.wishlist.filter(row=>row.user_id===active().id).length,referral_claims:0,liquidity_readiness:80},error:null};
