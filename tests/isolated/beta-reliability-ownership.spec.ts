@@ -32,6 +32,12 @@ test('one runtime owns auth, notification subscription and root rendering',async
   expect.soft(ownership.broad,'document-wide MutationObservers').toHaveLength(0);
 });
 
+test('signed-in profile exposes the canonical support contact',async({page})=>{
+  await page.goto('/v2.html?isolated=ready-one#profile');
+  const support=page.locator('a[href="mailto:support@brickcircle.club"]');
+  await expect(support).toHaveText('support@brickcircle.club');
+});
+
 test('latest rapid exchangeability intent wins delayed writes',async({page})=>{
   await page.goto('/v2.html?isolated=ready-zero#sets');
   await page.evaluate(()=>{
