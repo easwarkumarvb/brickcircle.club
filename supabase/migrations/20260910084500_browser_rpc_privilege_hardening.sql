@@ -26,7 +26,9 @@ grant usage, select on sequence public.growth_events_id_seq to service_role;
 grant usage, select on sequence public.product_metrics_id_seq to service_role;
 
 -- New functions are private by default. Client RPCs must be granted deliberately.
+alter default privileges for role postgres
+  revoke execute on functions from public;
 alter default privileges for role postgres in schema public
-  revoke execute on functions from public, anon, authenticated;
+  revoke execute on functions from anon, authenticated;
 alter default privileges for role postgres in schema public
   grant execute on functions to service_role;
