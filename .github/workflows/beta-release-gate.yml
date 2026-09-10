@@ -147,6 +147,31 @@ jobs:
       - name: Verify repair, matching, reservation and grant invariants
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/exchange_availability_integrity.sql
 
+  browser-rpc-privilege-hardening:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_security
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_security"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_security
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load isolated browser privilege schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/browser_rpc_privilege_base.sql
+      - name: Apply browser RPC privilege migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260910084500_browser_rpc_privilege_hardening.sql
+      - name: Verify anonymous, authenticated, trigger and service boundaries
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/browser_rpc_privilege_hardening.sql
+
   dependency-audit:
     if: startsWith(github.head_ref, 'qa-beta-release-gate')
     runs-on: ubuntu-latest
