@@ -23,7 +23,10 @@ test('first-time signed-in homepage starts a deterministic path from existing cl
   await expect(progress).toContainText('Your path to your first match');
   await expect(progress).toContainText('✓ Account created');
   await expect(progress).toContainText('0/3 owned sets added');
-  await expect(page.locator('.bc-readiness-score')).toHaveText('20%');
+  await expect(page.locator('.bc-readiness-status')).toHaveText('3 setup steps left');
+  await expect(page.locator('.bc-readiness-counts')).toContainText('0/3 owned');
+  await expect(page.locator('.bc-readiness-counts')).toContainText('0/3 wanted');
+  await expect(page.locator('.bc-readiness-counts')).toContainText('0/1 available');
   await expect(page.getByRole('button',{name:'Add 3 more sets'}).first()).toBeVisible();
 });
 
@@ -40,14 +43,14 @@ test('one available set satisfies the exchangeable readiness step',async({page})
   const progress=page.locator('.bc-guided-progress');
   await expect(progress).toContainText('0/1 set available');
   await expect(progress.locator('.bc-check').filter({hasText:'Available to Exchange'})).not.toHaveClass(/done/);
-  await expect(page.locator('.bc-readiness-score')).toHaveText('60%');
+  await expect(page.locator('.bc-readiness-status')).toHaveText('1 setup step left');
   await expect(page.getByRole('button',{name:'Make 1 set available'}).first()).toBeVisible();
   await expect(page.locator('.bc-readiness')).toContainText('1 more set available to exchange');
 
   await page.goto('/v2.html?isolated=ready-one#home');
   await expect(progress).toContainText('1 set available');
   await expect(progress.locator('.bc-check').filter({hasText:'Available to Exchange'})).toHaveClass(/done/);
-  await expect(page.locator('.bc-readiness-score')).toHaveText('100%');
+  await expect(page.locator('.bc-readiness-status')).toHaveText('Match found');
   await expect(page.locator('.bc-readiness')).toContainText('Your sets are ready for reciprocal matching.');
 });
 
@@ -55,12 +58,21 @@ test('a reciprocal match becomes the primary next action',async({page})=>{
   await page.goto('/v2.html?isolated=matched#home');
   await expect(page.locator('.bc-guided-progress')).toContainText('1 set available');
   await expect(page.locator('.bc-guided-progress .bc-check').filter({hasText:'Available to Exchange'})).toHaveClass(/done/);
-  await expect(page.locator('.bc-readiness-score')).toHaveText('73%');
+  await expect(page.locator('.bc-readiness-status')).toHaveText('Match found');
   await expect(page.locator('.bc-guided-progress')).toContainText('✓ Reciprocal match');
   await expect(page.getByRole('button',{name:'View my match'}).first()).toBeVisible();
   await page.getByRole('button',{name:'View my match'}).first().click();
   await expect(page).toHaveURL(/#matches$/);
   await expect(page.locator('.bc-match')).toBeVisible();
+});
+
+test('My Sets shows transparent counts without an opaque readiness percentage',async({page})=>{
+  await page.goto('/v2.html?isolated=partial#sets');
+  const summary=page.locator('.bc-setup-summary');
+  await expect(summary).toContainText('2/3 owned');
+  await expect(summary).toContainText('1/3 wanted');
+  await expect(summary).toContainText('0/1 available');
+  await expect(page.getByText(/% Match Ready/)).toHaveCount(0);
 });
 
 test('guided homepage remains clear at a mobile viewport and keeps bottom navigation',async({page})=>{
