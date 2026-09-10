@@ -14,3 +14,11 @@ test('public catalogue page responds', async ({ page }) => {
   expect(response?.ok()).toBeTruthy();
   await expect(page.locator('body')).toContainText(/LEGO|Catalogue|BrickCircle/i);
 });
+
+test('support email is available from the marketplace and trust pages', async ({ page }) => {
+  for (const path of ['/', '/v2.html', '/faq.html', '/safety.html', '/privacy.html', '/terms.html']) {
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
+    const support = page.locator('a[href="mailto:support@brickcircle.club"]').first();
+    await expect(support, `missing support link on ${path}`).toBeVisible();
+  }
+});
