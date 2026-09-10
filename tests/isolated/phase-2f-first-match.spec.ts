@@ -14,7 +14,7 @@ test('partial collector keeps the coach aligned with actual readiness',async({pa
   await page.goto('/v2.html?isolated=partial#home');
   const coach=page.locator('#bc-first-match-coach');
   await expect(coach).toContainText('Next: Add owned sets');
-  await expect(coach).toContainText('Add 3 LEGO sets you own');
+  await expect(coach).toContainText('Owned sets: 2/3. Add 1 more set');
 });
 
 test('first-match coach advances after one owned set becomes exchangeable',async({page})=>{
