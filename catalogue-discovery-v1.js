@@ -90,7 +90,8 @@ function wireIconicImages(root){
     const stage=Number(image.dataset.stage||0);
     if(stage===0){image.dataset.stage='1';image.src=proxyImage(image.dataset.set);return;}
     const visual=image.closest('.bc-iconic-visual');
-    if(visual)visual.innerHTML='<span class="bc-iconic-fallback" aria-hidden="true">🧱</span>';
+    image.hidden=true;
+    if(visual&&!visual.querySelector('.bc-iconic-fallback'))visual.insertAdjacentHTML('beforeend','<span class="bc-iconic-fallback" aria-hidden="true">🧱</span>');
   };
   images.forEach(image=>{
     if(image.dataset.imageBound)return;
