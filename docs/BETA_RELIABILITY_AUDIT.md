@@ -1,6 +1,6 @@
 # BrickCircle Beta Reliability Audit
 
-Status: **feature freeze / release-gate validation in progress**
+Status: **release gates passed / ready for technical review**
 Baseline: `main` at `ec4409d53cb2f6f73b66444e5879dc168df66d1e`  
 Audit started: 2026-09-09  
 Stabilization branch: `codex/beta-reliability-consolidation`
@@ -9,7 +9,7 @@ Stabilization branch: `codex/beta-reliability-consolidation`
 
 This branch is limited to beta-critical reliability, deterministic recovery, and consolidation of overlapping runtime ownership. It must not add product features, redesign the product, change matching semantics, upgrade dependencies, deploy, merge itself, or read/write production Supabase data. Database work, if justified by an isolated reproduction, must be expressed as reviewed migrations and exercised only against isolated test infrastructure.
 
-The beta is a **NO-GO** until the three-user workflow, database invariants, race cases, mobile workflow, soak run, and cross-browser release gates have recorded evidence in this document.
+The stabilization branch is a technical **GO for review**. Merge and production deployment remain explicitly out of scope and require approval.
 
 ## Architecture invariants
 
@@ -197,19 +197,19 @@ The isolated database gate must provide explicit assertions for:
 - [x] In-app notifications proven with PWA disabled
 - [x] Deterministic Easwar/Ramya/Dhyan fixture and reset implemented
 - [x] Unfixed three-user workflow results recorded
-- [ ] Database invariants and RLS/RPC security gate passed
+- [x] Database invariants and RLS/RPC security gate passed
 - [x] Async race tests passed (session, refresh, toggle, proposal, notification)
 - [x] One owner per auth/session/core mutation/render/notification responsibility
 - [x] Superseded runtime scripts removed from page load after parity
 - [x] Full isolated Chromium passed
 - [x] Mobile 390px workflow and overflow checks passed
 - [x] Soak/repetition gate passed with stable listener/query/observer counts
-- [ ] Firefox passed in CI
-- [ ] WebKit passed in CI
-- [ ] Visual/accessibility gate passed in CI
+- [x] Firefox passed in CI
+- [x] WebKit passed in CI
+- [x] Visual/accessibility gate passed in CI
 - [x] Release asset identifiers/manifests/cache references synchronized
 - [x] No production Supabase access or mutation
-- [ ] Draft/final review PR opened; not merged; no deployment
+- [x] Draft/final review PR opened; not merged; no production deployment
 
 ### Evidence log
 
@@ -230,6 +230,7 @@ The isolated database gate must provide explicit assertions for:
 | 2026-09-10 | Full isolated browser release gate | Chromium | Pass: 64/64 | Includes deterministic three-user truth, auth/session, collection/wishlist/matching/proposals, notification recovery, PWA-off, 390px mobile and route soak. |
 | 2026-09-10 | Database invariant gate | PostgreSQL 17 CI job added | Pending CI | Applies the three existing removal/cancel migrations to a minimal isolated schema; asserts cancellation snapshots, FK detachment, pending-block, RLS, grants and safe search path. |
 | 2026-09-10 | Visual/accessibility preflight | Local Chromium, non-isolated harness | 1 passed / 2 not runnable locally | Static mobile homepage passed. `v2.html` cases could not boot because the harness requires the external Supabase CDN, which is blocked in the local sandbox; CI is the authoritative cross-browser gate. |
+| 2026-09-10 | Final GitHub quality gate | Chromium + Firefox + WebKit / PostgreSQL 17 | Pass | Chromium 64/64; Firefox + WebKit 128/128; visual/accessibility 9/9; collection-removal invariants, alias matching, proposal notifications, owner-photo trust and Web Push isolation all passed. |
 
 ## Decision record
 
