@@ -60,8 +60,10 @@ begin
 end $$;
 rollback;
 
+set role postgres;
 create function public.bc_default_acl_probe()
-returns boolean language sql set search_path='' as $$ select true $$;
+returns boolean language sql set search_path='' as $ select true $;
+reset role;
 
 do $$
 begin
@@ -71,6 +73,8 @@ begin
   if not has_function_privilege('service_role','public.bc_default_acl_probe()','EXECUTE')
   then raise exception 'new function not executable by service role'; end if;
 end $$;
+set role postgres;
 drop function public.bc_default_acl_probe();
+reset role;
 
 select 'browser RPC privilege hardening passed' as result;
