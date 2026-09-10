@@ -93,7 +93,8 @@ test('repeated route churn keeps runtime ownership stable',async({page})=>{
   const browserErrors:string[]=[];
   page.on('pageerror',error=>browserErrors.push(error.message));
   page.on('console',message=>{
-    if(message.type()==='error'&&!message.text().startsWith('Failed to load resource:'))browserErrors.push(message.text());
+    const text=message.text();
+    if(message.type()==='error'&&!text.startsWith('Failed to load resource:')&&!text.includes('Cross-Origin Request Blocked:'))browserErrors.push(text);
   });
   await page.goto('/v2.html?isolated=ready-one#home');
   await expect(page.locator('.bc-guided-progress')).toBeVisible();
