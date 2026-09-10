@@ -42,6 +42,7 @@ create table public.notifications(
 
 alter table public.collection_items enable row level security;
 grant select,insert,update,delete on public.collection_items to authenticated;
+grant select on public.exchange_requests,public.exchanges to authenticated;
 create policy "owners manage collection" on public.collection_items for all to authenticated
 using ((select auth.uid())=user_id) with check ((select auth.uid())=user_id);
 
