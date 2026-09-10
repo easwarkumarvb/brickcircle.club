@@ -268,9 +268,20 @@ async function refreshCore(){
 async function refreshGuestMembership(){const result=await settledTimeout(db.rpc('bc_membership_status'));if(!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data}
 async function refreshRoute(){await refreshCore();if(!S.user)await refreshGuestMembership();shell();await renderRoute()}
 
-function isProposalNotification(notification){return notification?.kind==='request_received'||notification?.entity_type==='exchange_request'}
+function isProposalNotification(notification){return notification?.kind==='request_received'}
 function isReciprocalMatchNotification(notification){return notification?.kind==='reciprocal_match'&&notification?.entity_type==='reciprocal_match'}
 function notificationRequestId(notification){return notification?.entity_id||notification?.metadata?.exchange_request_id||''}
+function isCurrentNotificationRecipient(notification){return !!S.user?.id&&notification?.user_id===S.user.id}
+function isPendingProposalNotification(notification){
+  if(!isCurrentNotificationRecipient(notification)||!isProposalNotification(notification))return false;
+  const requestId=notificationRequestId(notification),request=S.requests.find(item=>item.id===requestId);
+  return !!request&&request.status==='pending';
+}
+function notificationPresentationActive(){return !!document.querySelector('[data-bc-notification-presentation],#bc-exchange-lifecycle-notice,.bc-match-login-notice')}
+function clearNotificationPresentation(){
+  window.BC_PROPOSAL_NOTICE_ACTIVE=false;
+  document.querySelectorAll('[data-bc-notification-presentation],#bc-exchange-lifecycle-notice,.bc-match-login-notice').forEach(element=>element.remove());
+}
 function updateNotificationBadge(){
   const button=$('[data-open="notifications"]');if(!button)return;
   const unread=S.notifications.filter(notification=>!notification.read_at).length;
@@ -307,7 +318,7 @@ function stopNotificationRealtime(){
   notificationChannel=null;
 }
 function applyNotificationChange(payload){
-  const row=payload?.new||payload?.old;if(!row?.id)return;
+  const row=payload?.new||payload?.old;if(!row?.id||!isCurrentNotificationRecipient(row))return;
   if(payload.eventType==='DELETE')S.notifications=S.notifications.filter(notification=>notification.id!==row.id);
   else{
     const index=S.notifications.findIndex(notification=>notification.id===row.id);
@@ -321,7 +332,7 @@ async function reconcileNotifications(){
   const result=await settledTimeout(db.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(50));
   if(result.error||S.user?.id!==uid)return;
   S.notifications=result.data||[];updateNotificationBadge();
-  if(!showUnreadProposalNotice())showUnreadLifecycleNotice();
+  showNextUnreadNotificationNotice();
 }
 function startNotificationRealtime(){
   stopNotificationRealtime();
@@ -336,12 +347,14 @@ function startNotificationRealtime(){
 function proposalNoticeSeen(notification){try{return sessionStorage.getItem(`bc_proposal_notice_seen:${S.user.id}:${notification.id}`)==='1'}catch(_){return false}}
 function markProposalNoticeSeen(notification){try{sessionStorage.setItem(`bc_proposal_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}}
 function showUnreadProposalNotice(){
-  const notification=S.notifications.find(item=>!item.read_at&&isProposalNotification(item));
+  if(!S.user?.id||notificationPresentationActive())return false;
+  const notification=S.notifications.find(item=>!item.read_at&&isPendingProposalNotification(item));
   if(!notification||proposalNoticeSeen(notification))return false;
   markProposalNoticeSeen(notification);window.BC_PROPOSAL_NOTICE_ACTIVE=true;
   const close=()=>{window.BC_PROPOSAL_NOTICE_ACTIVE=false;closeOverlay()};
   const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill gold">New proposal</span><h2 style="margin-top:8px">You have a new exchange proposal</h2><p class="bc-muted">${esc(notification.body||'A collector proposed an exchange with you.')}</p></div><button class="bc-close" data-close>×</button></div><div class="bc-form-actions"><button class="bc-btn" data-close>Not now</button><button class="bc-btn primary" data-view-proposal>View proposal</button></div>`);
-  $$('[data-close]',o).forEach(button=>button.onclick=close);
+  o.dataset.bcNotificationPresentation='proposal';
+  o.querySelectorAll('[data-close]').forEach(button=>button.onclick=close);
   $('[data-view-proposal]',o).onclick=async()=>{window.BC_PROPOSAL_NOTICE_ACTIVE=false;closeOverlay();await openNotification(notification)};
   return true;
 }
@@ -355,13 +368,17 @@ function lifecyclePresentation(notification){
 }
 function lifecycleNoticeSeen(notification){try{return sessionStorage.getItem(`bc_lifecycle_notice_seen:${S.user?.id}:${notification.id}`)==='1'}catch(_){return false}}
 function showLifecycleNotification(notification){
-  if(!notification||notification.read_at||!LIFECYCLE_NOTIFICATION_KINDS.has(notification.kind)||lifecycleNoticeSeen(notification)||document.getElementById('bc-exchange-lifecycle-notice'))return false;
+  if(!isCurrentNotificationRecipient(notification)||notification.read_at||!LIFECYCLE_NOTIFICATION_KINDS.has(notification.kind)||lifecycleNoticeSeen(notification)||notificationPresentationActive())return false;
   try{sessionStorage.setItem(`bc_lifecycle_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}
   const view=lifecyclePresentation(notification),root=document.createElement('section');root.id='bc-exchange-lifecycle-notice';root.className='bc-lifecycle-notice';root.setAttribute('role','status');
   root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(notification.title||view.label)}</h2><p>${esc(notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
   document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();navigate(view.route)};return true;
 }
-function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
+function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
+function showNextUnreadNotificationNotice(){
+  if(!S.user?.id||notificationPresentationActive())return false;
+  return showUnreadLifecycleNotice()||showUnreadProposalNotice();
+}
 
 function loginMatchNoticeSeen(){try{return sessionStorage.getItem(`bc_login_match_notice_seen:${S.user?.id}`)==='1'}catch(_){return false}}
 function showLoginMatchNotice(){
@@ -732,7 +749,7 @@ async function renderProfile(token){
 }
 function editProfile(){const p=S.profile||{};const o=modal(`<div class="bc-modal-head"><div><h2>Edit profile</h2><p class="bc-muted">Your city determines where BrickCircle searches for local reciprocal matches.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-profile-form"><div class="bc-field"><label>Display name</label><input class="bc-input" name="name" value="${attr(p.display_name||'')}" required></div><div class="bc-field"><label>Country</label><select class="bc-select" name="country" required>${locationOptions(p.country||'')}</select></div><div class="bc-field"><label>City</label><select class="bc-select" name="city" required>${cityOptions(p.country||'',p.city||'')}</select></div><div class="bc-field"><label>About your LEGO interests</label><textarea class="bc-textarea" name="bio">${esc(p.bio||'')}</textarea></div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Cancel</button><button class="bc-btn primary">Save profile</button></div></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);const f=$('#bc-profile-form',o),country=$('[name="country"]',f),city=$('[name="city"]',f);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};f.onsubmit=async ev=>{ev.preventDefault();const fd=new FormData(f),patch={display_name:String(fd.get('name')).trim(),country:String(fd.get('country')).trim(),city:String(fd.get('city')).trim(),bio:String(fd.get('bio')||'').trim(),updated_at:new Date().toISOString()};const {error}=await db.from('profiles').update(patch).eq('id',S.user.id);if(error)return fail(error);closeOverlay();await refreshCore();await renderRoute();toast('Profile updated.')}}
 async function uploadAvatar(file){if(!file)return;if(!['image/jpeg','image/png','image/webp'].includes(file.type))return toast('Choose a JPG, PNG or WebP image.');if(file.size>5*1024*1024)return toast('Profile photo must be 5 MB or smaller.');toast('Uploading photo…');const ext={'image/jpeg':'jpg','image/png':'png','image/webp':'webp'}[file.type],path=`${S.user.id}/profile-${Date.now()}.${ext}`;const {data,error}=await db.storage.from('avatars').upload(path,file,{contentType:file.type,cacheControl:'3600',upsert:false});if(error)return fail(error);const {error:pe}=await db.from('profiles').update({avatar_url:data.path,updated_at:new Date().toISOString()}).eq('id',S.user.id);if(pe)return fail(pe);await refreshCore();shell();await renderRoute();toast('Profile photo updated.')}
-async function signOut(){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await window.bcWebPush?.signOut(S.user);try{await db.auth.signOut({scope:'local'})}catch(_){try{await db.auth.signOut()}catch(__){}}try{Object.keys(localStorage).filter(k=>/^bc_(?!pending_referral)/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(_){ }S.user=null;closeOverlay();navigate('home');await refreshRoute();toast('Signed out.')}
+async function signOut(){stopNotificationRealtime();clearNotificationPresentation();await window.bcWebPush?.signOut(S.user);try{await db.auth.signOut({scope:'local'})}catch(_){try{await db.auth.signOut()}catch(__){}}try{Object.keys(localStorage).filter(k=>/^bc_(?!pending_referral)/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(_){ }S.user=null;closeOverlay();navigate('home');await refreshRoute();toast('Signed out.')}
 
 async function shareInvite(){if(!S.user){showAuth();return}try{const {data,error}=await db.rpc('bc_my_referral_code');if(error)throw error;const url=`${location.origin}/v2.html?ref=${encodeURIComponent(String(data||''))}`,founding=Number(S.membership?.founding_remaining||0),early=Number(S.membership?.early_remaining||0);const text=founding>0?'Join me on BrickCircle. The first 100 members receive complimentary lifetime marketplace membership; members #101–#1000 are Early Members with free access during beta.':early>0?'Join me on BrickCircle as an Early Member — free during beta while our local collector circle grows.':'Join me on BrickCircle — a local LEGO set exchange community for adult collectors.';if(navigator.share)await navigator.share({title:'Join BrickCircle',text,url});else if(navigator.clipboard){await navigator.clipboard.writeText(url);toast('Invite link copied.')}else prompt('Copy your BrickCircle invite link',url);track('founding_100_invite_shared')}catch(e){if(e?.name!=='AbortError')fail(e,'Could not create invite link.')}}
 function showNotifications(){
@@ -765,13 +782,15 @@ function setupPWA(){
 }
 
 async function boot(){
-  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await refreshCore();else await refreshGuestMembership();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown&&!showUnreadProposalNotice()&&!showUnreadLifecycleNotice())showLoginMatchNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
+  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await refreshCore();else await refreshGuestMembership();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
 }
 function handleAuthChange(event,session){
   if(!S.booted){pendingAuthChange=[event,session];return}
   if(event==='SIGNED_OUT'&&isResumeWindow()){setTimeout(async()=>{const recovered=await recoverSession();if(recovered)handleAuthChange('TOKEN_REFRESHED',recovered);else handleAuthChange('CONFIRMED_SIGNED_OUT',null)},350);return}
-  const prev=S.user?.id;S.user=session?.user||null;
-  setTimeout(async()=>{if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery()}else if((event==='SIGNED_IN'||event==='TOKEN_REFRESHED')&&S.user){if(event==='SIGNED_IN')await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(event==='SIGNED_IN'&&!onboardingShown&&!showUnreadProposalNotice()&&!showUnreadLifecycleNotice())showLoginMatchNotice();if(event==='SIGNED_IN'&&!prev)toast('Welcome to BrickCircle.')}else if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();await refreshGuestMembership();shell();await renderRoute()}},0)
+  const prev=S.user?.id;
+  if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();clearNotificationPresentation();clearProtectedState()}
+  S.user=session?.user||null;
+  setTimeout(async()=>{if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery()}else if((event==='SIGNED_IN'||event==='TOKEN_REFRESHED')&&S.user){if(event==='SIGNED_IN')await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(event==='SIGNED_IN'&&!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();if(event==='SIGNED_IN'&&!prev)toast('Welcome to BrickCircle.')}else if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();await refreshGuestMembership();shell();await renderRoute()}},0)
 }
 db.auth.onAuthStateChange(handleAuthChange);
 window.addEventListener('hashchange',()=>{if(S.booted)renderRoute()});

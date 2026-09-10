@@ -9,7 +9,7 @@ test('member notifications surface exchange lifecycle events and reciprocal matc
   expect(source).toContain('reconcileNotifications().catch');
   expect(source).toContain("window.addEventListener('online'");
   expect(source).toContain("document.addEventListener('visibilitychange'");
-  expect(source).toContain('if(!showUnreadProposalNotice())showUnreadLifecycleNotice()');
+  expect(source).toContain('return showUnreadLifecycleNotice()||showUnreadProposalNotice();');
 });
 
 test('lifecycle notifications are app-owned and the supplemental runtime is not shipped',async()=>{
