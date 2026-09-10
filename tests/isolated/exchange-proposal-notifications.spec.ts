@@ -20,6 +20,9 @@ test('proposal created while signed out remains durable and appears after later 
   await page.goto('/v2.html?isolated=proposal-offline#home');
   await expect(page.locator('.bc-landing-hero')).toBeVisible();
   await expect(page.locator('[data-open="notifications"]')).toHaveCount(0);
+  await expect(page.locator('#bc-overlay')).toHaveCount(0);
+  await expect(page.locator('#bc-exchange-lifecycle-notice')).toHaveCount(0);
+  await expect(page.locator('.bc-match-login-notice')).toHaveCount(0);
 
   await page.locator('[data-auth]').first().click();
   await page.locator('#bc-email-signin [name="email"]').fill('easwar@example.invalid');
@@ -39,6 +42,42 @@ test('refresh preserves one durable unread row without repeating the login inter
   await expect(page.locator('#bc-overlay')).toHaveCount(0);
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveText('1');
   expect(await page.evaluate(()=>window.__bcIsolated.notifications.filter((item:any)=>item.entity_id==='proposal-request-1').length)).toBe(1);
+});
+
+test('cancelled request is presented once as lifecycle—not as a new proposal',async({page})=>{
+  await page.goto('/v2.html#home');
+  await page.evaluate(()=>{
+    const state=window.__bcIsolated;
+    const userId='00000000-0000-4000-8000-000000000007';
+    const request={id:'cancelled-request-1',requester_id:'00000000-0000-4000-8000-000000000099',responder_id:userId,offered_item_id:'other-item-1',requested_item_id:'c1',duration_days:60,status:'cancelled',created_at:'2026-09-03T12:00:00.000Z'};
+    state.requests.unshift(request);
+    state.notifications.unshift(
+      {id:'cancel-note-1',user_id:userId,kind:'exchange_cancelled',title:'Proposal closed — set unavailable',body:'This proposal was closed because one of the physical LEGO sets is already in an active exchange.',entity_type:'exchange_request',entity_id:request.id,metadata:{exchange_request_id:request.id,route:'#exchanges'},read_at:null,created_at:'2026-09-03T12:01:00.000Z'},
+      {id:'stale-proposal-note-1',user_id:userId,kind:'request_received',title:'New exchange proposal',body:'Ramya proposed an exchange with you.',entity_type:'exchange_request',entity_id:request.id,metadata:{exchange_request_id:request.id,route:'#exchanges/cancelled-request-1'},read_at:null,created_at:request.created_at}
+    );
+    window.dispatchEvent(new Event('online'));
+  });
+
+  const lifecycle=page.locator('#bc-exchange-lifecycle-notice');
+  await expect(lifecycle).toContainText('Proposal cancelled');
+  await expect(lifecycle).toContainText('Proposal closed — set unavailable');
+  await expect(page.locator('#bc-overlay')).toHaveCount(0);
+  await expect(page.getByText('You have a new exchange proposal')).toHaveCount(0);
+});
+
+test('session loss immediately removes member notification surfaces',async({page})=>{
+  await page.goto('/v2.html?isolated=proposal#home');
+  await expect(page.locator('#bc-overlay')).toContainText('You have a new exchange proposal');
+
+  await page.evaluate(()=>{
+    window.__bcIsolated.setSignedOut(true);
+    window.__bcIsolated.emitAuth('SIGNED_OUT',null);
+  });
+
+  await expect(page.locator('#bc-overlay')).toHaveCount(0);
+  await expect(page.locator('#bc-exchange-lifecycle-notice')).toHaveCount(0);
+  await expect(page.locator('.bc-match-login-notice')).toHaveCount(0);
+  await expect(page.locator('.bc-landing-hero')).toBeVisible();
 });
 
 test('online recipient receives a live badge and clean proposal notification',async({page})=>{
