@@ -27,11 +27,11 @@
     if(/edit profile/.test(t)) track('profile_edit_start',{});
   },true);
 
-  // Observe successful user-visible outcomes without sending PII.
+  // Read successful app-owned render outcomes without observing the whole document.
   var seen=new Set();
-  var obs=new MutationObserver(function(muts){
-    muts.forEach(function(m){ Array.from(m.addedNodes||[]).forEach(function(n){
-      if(n.nodeType!==1) return; var t=text(n); if(!t) return;
+  function trackOutcomes(event){
+      var n=event&&event.detail&&event.detail.root||document.body;
+      if(!n||n.nodeType!==1) return; var t=text(n); if(!t) return;
       var candidates=[
         ['sign_up','account created'],['login','signed in'],['set_added','added to collection'],
         ['wishlist_added','added to wishlist'],['exchange_requested','exchange request'],
@@ -39,8 +39,8 @@
         ['exchange_completed','exchange completed'],['return_completed','return completed']
       ];
       candidates.forEach(function(x){ if(t.indexOf(x[1])>=0){ var k=x[0]+':'+t.slice(0,80); if(!seen.has(k)){seen.add(k);track(x[0],{});} } });
-    }); });
-  });
-  function start(){ if(document.body) obs.observe(document.body,{childList:true,subtree:true}); track('bc_app_loaded',{section:hashPage()}); }
+  }
+  document.addEventListener('bc:render',trackOutcomes);
+  function start(){ track('bc_app_loaded',{section:hashPage()}); }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start); else start();
 })();

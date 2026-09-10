@@ -63,6 +63,6 @@ function render(){
   page.prepend(el);
 }
 let queued=false;const schedule=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;render()})};
-new MutationObserver(schedule).observe(document.documentElement,{subtree:true,childList:true});
+document.addEventListener('bc:render',schedule);
 window.addEventListener('hashchange',schedule);window.addEventListener('bc:v3',schedule);schedule();
 })();

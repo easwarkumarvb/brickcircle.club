@@ -1,6 +1,6 @@
 # BrickCircle Beta Reliability Audit
 
-Status: **feature freeze / investigation in progress**  
+Status: **feature freeze / release-gate validation in progress**
 Baseline: `main` at `ec4409d53cb2f6f73b66444e5879dc168df66d1e`  
 Audit started: 2026-09-09  
 Stabilization branch: `codex/beta-reliability-consolidation`
@@ -102,6 +102,12 @@ user/auth/realtime event
   → passive analytics/observability
 ```
 
+### Consolidated runtime disposition
+
+The release page now loads `app-v3.js` as the only Supabase/auth/session/core-mutation/notification owner. Session persistence, owner-photo handling, removal safety, exchangeability persistence, meetup semantics, lifecycle notifications, admin navigation, login-match presentation, membership, accessibility, first-match coaching, and legal markup were moved into that owner and their supplemental assets were removed from `v2.html` and `release-assets.json`. `catalogue-discovery-v1.js` and `zen-ux-v1.js` remain as presentation-only extensions: both are driven by the explicit `bc:render` lifecycle and neither owns Supabase state, auth, mutations, timers, or a root/body observer. Analytics and observability remain passive.
+
+Instrumented acceptance target after consolidation: one Supabase client, one auth subscription, one notification channel, and zero document/body-wide MutationObservers.
+
 ## Open pull-request inventory
 
 Classification is provisional until migration/content parity is checked against `main`. No PR will be merged or closed from this audit without review.
@@ -121,19 +127,19 @@ These findings come from static ownership inspection. Reproduction fields remain
 
 | ID | Severity | Component | Reproduction/evidence | Root cause hypothesis | User impact | Required repair/test | Status |
 |---|---|---|---|---|---|---|---|
-| BR-001 | P1 | Notifications | Multiple auth listeners, realtime channels, poller and match prompt found | Notification state and presentation have multiple owners | duplicate/missed/stale proposal and match notices | deterministic notification recovery + single-owner parity tests | Open; static |
-| BR-002 | P0 | Collection mutations | Three capture interceptors overlap canonical add/edit/remove/toggle events | same action can enter different direct-write workflows | lost updates, partial deletion, inconsistent reload state | action-count spies, lifecycle invariants, one mutation path | Open; static |
-| BR-003 | P1 | Owner photos | DOM observer performs async photo reads/render injection; separate dedupe observer removes duplicates | network-backed rendering races canonical render | repeated photo nodes, unnecessary reads, stale photo | canonical state-backed photo render and failure cleanup tests | Open; static |
-| BR-004 | P1 | Exchangeability | capture interceptor writes then read-verifies and refreshes without per-item operation generation | rapid toggles can resolve out of order | displayed/persisted exchangeability diverges | delayed-response rapid-toggle regression | Open; static |
-| BR-005 | P1 | Auth/session | client wrapper plus several independent auth/focus/pageshow handlers request refresh | overlapping session recovery owners | startup stalls, wrong-account/stale session data | session-generation guards and account-switch/reload tests | Open; static |
-| BR-006 | P1 | PWA/cache | SW caches shell/runtime/data and claims clients; install and push have separate owners | cached generations can outlive page release boundary | stale mixed runtime, install/push-only failures | explicit beta-off cleanup and no-registration/cache tests | Open; static |
-| BR-007 | P2 | Meetup form | observer repairs missing submit type | canonical markup defect is masked after render | intermittent form semantics/timing | markup fix + submit regression | Open; static |
-| BR-008 | P1 | Rendering | Notification-row click remained continuously unstable for 30s in two Chromium attempts while document-wide observers were active | rendered DOM is treated as mutable shared state | controls can be visible but not reliably actionable; loops, flicker, duplicate listeners, CPU/network churn | observer counters, direct actionability regression, canonical render parity | Reproduced; baseline |
-| BR-009 | P1 | Core refresh | `refreshCore()` fans out broad queries with no proven latest-generation commit gate | older refresh can commit after newer route/session/action | stale state reappears after action/account switch | controlled promise-order race tests | Open; static |
-| BR-010 | P1 | Exchange lifecycle | proposal/removal paths include client-managed multi-step behavior | lifecycle changes may be partially committed | orphaned references or invalid active proposal state | DB invariant queries + transaction/RPC decision | Open; static |
+| BR-001 | P1 | Notifications | Instrumented startup registered 5 auth subscriptions and 2 notification realtime subscriptions | Notification state and presentation have multiple owners | duplicate/missed/stale proposal and match notices | deterministic notification recovery + single-owner parity tests | Fixed locally: 1 auth subscription / 1 notification channel |
+| BR-002 | P0 | Collection mutations | Three capture interceptors overlap canonical add/edit/remove/toggle events | same action can enter different direct-write workflows | lost updates, partial deletion, inconsistent reload state | action-count spies, lifecycle invariants, one mutation path | Fixed locally: canonical actions own add/edit/remove/toggle; DB invariant CI pending |
+| BR-003 | P1 | Owner photos | DOM observer performs async photo reads/render injection; separate dedupe observer removes duplicates | network-backed rendering races canonical render | repeated photo nodes, unnecessary reads, stale photo | canonical state-backed photo render and failure cleanup tests | Fixed locally: canonical upload/render/cleanup with static and isolated regressions |
+| BR-004 | P1 | Exchangeability | Delayed first toggle followed immediately by a newer toggle persisted the older value (`true`) | rapid writes were not serialized or generation-checked | displayed/persisted exchangeability diverges | delayed-response rapid-toggle regression | Fixed locally; focused test passes after canonical serialized/coalesced action and supplemental runtime unload |
+| BR-005 | P1 | Auth/session | Instrumented startup registered 5 auth subscriptions | overlapping session recovery owners | startup stalls, wrong-account/stale session data | session-generation guards and account-switch/reload tests | Fixed locally: one canonical subscription; persisted client and resume recovery covered |
+| BR-006 | P1 | PWA/cache | SW caches shell/runtime/data and claims clients; install and push have separate owners | cached generations can outlive page release boundary | stale mixed runtime, install/push-only failures | explicit beta-off cleanup and no-registration/cache tests | Fixed locally: beta flag off, registration/install/push disabled, owned cache cleanup covered |
+| BR-007 | P2 | Meetup form | observer repairs missing submit type | canonical markup defect is masked after render | intermittent form semantics/timing | markup fix + submit regression | Fixed locally: canonical submit markup; hotfix unloaded |
+| BR-008 | P1 | Rendering | Instrumented startup registered 9 document/body-wide MutationObservers; a notification-row click also remained continuously unstable for 30s in two attempts | rendered DOM is treated as mutable shared state | controls can be visible but not reliably actionable; loops, flicker, duplicate listeners, CPU/network churn | observer counters, direct actionability regression, canonical render parity | Fixed locally: 0 root/body observers; explicit render lifecycle and route-soak pass |
+| BR-009 | P1 | Core refresh | `refreshCore()` fans out broad queries with no proven latest-generation commit gate | older refresh can commit after newer route/session/action | stale state reappears after action/account switch | controlled promise-order race tests | Fixed locally: generation guard discards older responses at each async boundary |
+| BR-010 | P1 | Exchange lifecycle | proposal/removal paths include client-managed multi-step behavior | lifecycle changes may be partially committed | orphaned references or invalid active proposal state | DB invariant queries + transaction/RPC decision | Protected locally; PostgreSQL 17 invariant job added and pending CI |
 | BR-011 | P1 | Error handling | client handlers pass raw errors through general failure UI in several paths | database/internal text can become user-visible and recovery is inconsistent | confusing or sensitive errors; dead-end flows | error taxonomy and retry/reconcile tests | Open; static |
-| BR-012 | P2 | Membership | auth/focus/hash/observer triggers can repeat membership RPCs | independent slice refresh owner | avoidable load and inconsistent invite UI | request-count and parity tests | Open; static |
-| BR-013 | P1 | Web Push | open account-reconciliation patch conflicts with current main | push account switching remains a moving subsystem | wrong/missing system notifications | disable for beta; retain in-app notification proof | Open; static |
+| BR-012 | P2 | Membership | auth/focus/hash/observer triggers can repeat membership RPCs | independent slice refresh owner | avoidable load and inconsistent invite UI | request-count and parity tests | Fixed locally: membership state/actions use canonical refresh and shell |
+| BR-013 | P1 | Web Push | open account-reconciliation patch conflicts with current main | push account switching remains a moving subsystem | wrong/missing system notifications | disable for beta; retain in-app notification proof | Mitigated for beta: Web Push disabled; durable in-app notifications retained |
 
 ## Deterministic three-user matrix
 
@@ -185,24 +191,24 @@ The isolated database gate must provide explicit assertions for:
 
 ## Release checklist and evidence
 
-- [ ] Baseline SHA and runtime/PR inventory recorded
-- [ ] PWA flag false: manifest/install/Web Push/SW registration disabled
-- [ ] Previously registered BrickCircle SW/cache cleanup proven
-- [ ] In-app notifications proven with PWA disabled
-- [ ] Deterministic Easwar/Ramya/Dhyan fixture and reset implemented
-- [ ] Unfixed three-user workflow results recorded
+- [x] Baseline SHA and runtime/PR inventory recorded
+- [x] PWA flag false: manifest/install/Web Push/SW registration disabled
+- [x] Previously registered BrickCircle SW/cache cleanup proven
+- [x] In-app notifications proven with PWA disabled
+- [x] Deterministic Easwar/Ramya/Dhyan fixture and reset implemented
+- [x] Unfixed three-user workflow results recorded
 - [ ] Database invariants and RLS/RPC security gate passed
-- [ ] Async race tests passed (session, refresh, toggle, proposal, notification)
-- [ ] One owner per auth/session/core mutation/render/notification responsibility
-- [ ] Superseded runtime scripts removed from page load after parity
-- [ ] Full isolated Chromium passed
-- [ ] Mobile 390px workflow and overflow checks passed
-- [ ] Soak/repetition gate passed with stable listener/query/observer counts
+- [x] Async race tests passed (session, refresh, toggle, proposal, notification)
+- [x] One owner per auth/session/core mutation/render/notification responsibility
+- [x] Superseded runtime scripts removed from page load after parity
+- [x] Full isolated Chromium passed
+- [x] Mobile 390px workflow and overflow checks passed
+- [x] Soak/repetition gate passed with stable listener/query/observer counts
 - [ ] Firefox passed in CI
 - [ ] WebKit passed in CI
 - [ ] Visual/accessibility gate passed in CI
-- [ ] Release asset identifiers/manifests/cache references synchronized
-- [ ] No production Supabase access or mutation
+- [x] Release asset identifiers/manifests/cache references synchronized
+- [x] No production Supabase access or mutation
 - [ ] Draft/final review PR opened; not merged; no deployment
 
 ### Evidence log
@@ -216,6 +222,14 @@ The isolated database gate must provide explicit assertions for:
 | 2026-09-09 | Focused PWA/in-app notification rerun | Isolated Chromium against separately controlled loopback server | Pass: 6/6 | System-notification UI absent; selective SW/cache cleanup and durable in-app match notification passed in 7.6s. |
 | 2026-09-09 | Existing isolated Chromium baseline | Full pre-consolidation suite | Pass: 58/58 | 1.3m. Existing counterparty behavior is largely a single-user mock and is not multi-user proof. |
 | 2026-09-09 | Deterministic three-user workflow | Easwar → Ramya reciprocal both directions; Dhyan isolation; proposal delivery/acceptance | Pass: 1/1 | Shared loopback-only state: exactly 3 collection rows, 2 wishlist rows, 1 accepted request, 1 exchange. Initial fixture defects (actor reset; stale local state; expected proposal overlay) were corrected without product changes. |
+| 2026-09-09 | Ownership/race baseline | Instrumented isolated Chromium | Fail as intended | 5 auth subscriptions (target 1), 2 notification channels (target 1), 9 root/body observers (target 0), and stale delayed availability write reproduced. |
+| 2026-09-09 | Availability repair | Focused delayed-write Chromium regression | Pass: 1/1 | Canonical per-set operations coalesce or serialize writes; the latest user intent persists. `exchangeable-persistence-v1.js` is no longer loaded. |
+| 2026-09-10 | Runtime ownership and refresh races | Focused isolated Chromium | Pass: 4/4 | One client/auth/channel owner, zero broad observers, latest refresh wins, and 60 route transitions retain stable ownership. |
+| 2026-09-10 | Auth/session and first-match parity | Focused isolated Chromium | Pass: 18/18 | Join/referral, Google/email/reset, onboarding, recovery, coach, mobile and canonical session behavior pass. |
+| 2026-09-10 | Owner-photo consolidation | Static QA plus isolated Phase 2A/ownership | Pass | Required upload, validation, cleanup, signed-photo rendering and safe removal live in `app-v3.js`; duplicate runtimes unloaded. |
+| 2026-09-10 | Full isolated browser release gate | Chromium | Pass: 64/64 | Includes deterministic three-user truth, auth/session, collection/wishlist/matching/proposals, notification recovery, PWA-off, 390px mobile and route soak. |
+| 2026-09-10 | Database invariant gate | PostgreSQL 17 CI job added | Pending CI | Applies the three existing removal/cancel migrations to a minimal isolated schema; asserts cancellation snapshots, FK detachment, pending-block, RLS, grants and safe search path. |
+| 2026-09-10 | Visual/accessibility preflight | Local Chromium, non-isolated harness | 1 passed / 2 not runnable locally | Static mobile homepage passed. `v2.html` cases could not boot because the harness requires the external Supabase CDN, which is blocked in the local sandbox; CI is the authoritative cross-browser gate. |
 
 ## Decision record
 

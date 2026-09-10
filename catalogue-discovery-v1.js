@@ -143,7 +143,7 @@ function scheduleEnhance(){
   requestAnimationFrame(()=>{scheduled=false;enhanceBrowse();});
 }
 
-new MutationObserver(scheduleEnhance).observe(document.documentElement,{subtree:true,childList:true});
+document.addEventListener('bc:render',scheduleEnhance);
 window.addEventListener('hashchange',scheduleEnhance);
 window.addEventListener('DOMContentLoaded',scheduleEnhance);
 scheduleEnhance();

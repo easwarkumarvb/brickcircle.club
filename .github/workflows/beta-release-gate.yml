@@ -94,6 +94,34 @@ jobs:
       - name: Verify exact, alias, locality and availability behavior
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/reciprocal_set_alias_matching.sql
 
+  collection-removal-invariants:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_collection
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_collection"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_collection
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load isolated collection lifecycle schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/collection_removal_base.sql
+      - name: Apply collection-removal migrations
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260908123500_safe_collection_item_removal.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260908235500_release_cancelled_exchange_items.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260909001000_fix_cancel_before_handoff_owner_photo_trigger.sql
+      - name: Verify cancellation, snapshots, active-reference guards and RLS
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/cancelled_exchange_collection_removal.sql
+
   dependency-audit:
     if: startsWith(github.head_ref, 'qa-beta-release-gate')
     runs-on: ubuntu-latest

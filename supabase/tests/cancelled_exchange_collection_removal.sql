@@ -13,6 +13,13 @@ insert into public.collection_items(id,user_id,set_number,available_for_exchange
   ('7a000000-0000-0000-0000-000000000001','71000000-0000-0000-0000-000000000001','42115-1',true),
   ('7b000000-0000-0000-0000-000000000002','72000000-0000-0000-0000-000000000002','21309-1',true);
 
+-- Simulate legacy rows that predate mandatory owner photos, then enable the
+-- production guard before cancellation exercises the regression path.
+drop trigger if exists bc_require_owner_photo_for_exchange on public.collection_items;
+create trigger bc_require_owner_photo_for_exchange
+before insert or update of available_for_exchange,owner_photo_path on public.collection_items
+for each row execute function public.bc_require_owner_photo_for_exchange();
+
 insert into public.exchange_requests(
   id,requester_id,responder_id,offered_item_id,requested_item_id,duration_days,status
 ) values (
@@ -73,8 +80,8 @@ select pg_temp.assert_true(
 );
 
 -- Regression guard: a genuinely pending proposal must still prevent removal.
-insert into public.collection_items(id,user_id,set_number,available_for_exchange) values
-  ('7e000000-0000-0000-0000-000000000005','71000000-0000-0000-0000-000000000001','42083-1',true);
+insert into public.collection_items(id,user_id,set_number,owner_photo_path,available_for_exchange) values
+  ('7e000000-0000-0000-0000-000000000005','71000000-0000-0000-0000-000000000001','42083-1','71000000-0000-0000-0000-000000000001/bugatti.jpg',true);
 insert into public.exchange_requests(
   id,requester_id,responder_id,offered_item_id,requested_item_id,duration_days,status
 ) values (
@@ -104,4 +111,27 @@ reset role;
 select pg_temp.assert_true(
   exists(select 1 from public.collection_items where id='7e000000-0000-0000-0000-000000000005'),
   'pending proposal still blocks collection removal'
+);
+
+insert into public.collection_items(id,user_id,set_number,owner_photo_path,available_for_exchange) values
+  ('7e000000-0000-0000-0000-000000000007','71000000-0000-0000-0000-000000000001','42143-1',null,false);
+set role authenticated;
+set request.jwt.claim.sub='72000000-0000-0000-0000-000000000002';
+delete from public.collection_items where id='7e000000-0000-0000-0000-000000000007';
+reset role;
+select pg_temp.assert_true(
+  exists(select 1 from public.collection_items where id='7e000000-0000-0000-0000-000000000007'),
+  'RLS prevents a different collector from removing an owned set'
+);
+select pg_temp.assert_true(
+  not has_function_privilege('anon','public.cancel_in_person_exchange(uuid,text)','EXECUTE'),
+  'anonymous role cannot execute cancellation RPC'
+);
+select pg_temp.assert_true(
+  has_function_privilege('authenticated','public.cancel_in_person_exchange(uuid,text)','EXECUTE'),
+  'authenticated role can execute cancellation RPC'
+);
+select pg_temp.assert_true(
+  exists(select 1 from pg_proc where oid='public.cancel_in_person_exchange(uuid,text)'::regprocedure and 'search_path=public'=any(proconfig)),
+  'security-definer cancellation RPC pins search_path to public'
 );
