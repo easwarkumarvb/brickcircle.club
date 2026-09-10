@@ -19,6 +19,8 @@ test('signed-out auth entry exposes both sign-in and account creation paths',asy
   await expect(page.locator('#bc-email-signup [name="name"]')).toBeVisible();
   await expect(page.locator('#bc-email-signup [name="email"]')).toBeVisible();
   await expect(page.locator('#bc-email-signup [name="password"]')).toBeVisible();
+  await expect(page.locator('#bc-email-signup [name="email"]')).toHaveAttribute('id',/bc-a11y-/);
+  await expect(page.locator('#bc-email-signup label').filter({hasText:'Email'})).toHaveAttribute('for',/bc-a11y-/);
 });
 
 test('email account creation uses the canonical client and onboarding metadata',async({page})=>{
