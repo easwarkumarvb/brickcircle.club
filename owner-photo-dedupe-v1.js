@@ -31,19 +31,7 @@ function schedule(root=document){
   });
 }
 
-const observer=new MutationObserver(mutations=>{
-  for(const mutation of mutations){
-    for(const node of mutation.addedNodes){
-      if(node.nodeType!==1)continue;
-      if(node.matches?.('.bc-owner-proof,.bc-match')||node.querySelector?.('.bc-owner-proof,.bc-match')){
-        schedule(document);
-        return;
-      }
-    }
-  }
-});
-
-observer.observe(document.documentElement,{childList:true,subtree:true});
+document.addEventListener('bc:render',()=>schedule(document));
 window.addEventListener('DOMContentLoaded',()=>dedupeOwnerProofs());
 window.addEventListener('load',()=>dedupeOwnerProofs());
 dedupeOwnerProofs();

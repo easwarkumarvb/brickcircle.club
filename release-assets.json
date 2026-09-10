@@ -1,5 +1,5 @@
 {
-  "release": "20260909-match-notifications-r2",
+  "release": "20260910-beta-reliability-exchange-integrity-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -10,28 +10,12 @@
     "/zen-ux-v1.css",
     "/analytics.js",
     "/product-analytics.js",
-    "/session-persistence-v1.js",
     "/observability-v26.js",
     "/locations-v3.js",
     "/web-push-config.js",
-    "/web-push-v1.js",
     "/app-v3.js",
     "/catalogue-discovery-v1.js",
-    "/install-promo.js",
-    "/collection-owner-photo.js",
-    "/collection-remove-safety.js",
-    "/exchangeable-persistence-v1.js",
-    "/meetup-submit-hotfix.js",
-    "/exchange-lifecycle-notifications.js",
-    "/admin-nav.js",
-    "/login-match-notification.js",
-    "/membership-v31.js",
-    "/a11y-v1.js",
-    "/phase-2f-first-match.js",
-    "/legal-links.js",
     "/zen-ux-v1.js",
-    "/manifest.webmanifest",
-    "/assets/brickcircle-logo.webp",
-    "/assets/pwa-icon.svg"
+    "/assets/brickcircle-logo.webp"
   ]
 }

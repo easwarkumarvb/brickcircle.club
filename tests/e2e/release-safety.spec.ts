@@ -35,7 +35,7 @@ test('@static current destructive actions remain scoped to the signed-in owner',
   const app=read('app-v3.js');
   const exchangeGuard=read('supabase/migrations/20260822_v23_single_active_exchange_lock.sql');
   expect(app).toContain("from('wishlists').delete().eq('id',existing.id).eq('user_id',S.user.id)");
-  expect(app).toContain("from('collection_items').delete().eq('id',existing.id).eq('user_id',S.user.id)");
+  expect(app).toContain("removeCollectionItem(existing.id");
   expect(app).toContain("from('collection_items').delete().eq('id',id).eq('user_id',user.id).select('id')");
   expect(exchangeGuard).toContain("raise exception 'One of these LEGO sets is already reserved in another active exchange'");
   expect(exchangeGuard).toContain("set available_for_exchange=false");

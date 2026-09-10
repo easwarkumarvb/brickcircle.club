@@ -3,16 +3,14 @@ import fs from 'node:fs';
 
 const read=(path:string)=>fs.readFileSync(path,'utf8');
 
-test('membership policy layer is loaded after the V3 app',()=>{
+test('membership policy is app-owned without a supplemental runtime',()=>{
   const html=read('v2.html');
-  const app=html.indexOf('/app-v3.js');
-  const membership=html.indexOf('/membership-v31.js');
-  expect(app).toBeGreaterThan(-1);
-  expect(membership).toBeGreaterThan(app);
+  expect(html).toContain('/app-v3.js');
+  expect(html).not.toContain('/membership-v31.js');
 });
 
 test('membership policy preserves Founding 100 and Early 1000 rules',()=>{
-  const js=read('membership-v31.js');
+  const js=read('app-v3.js');
   expect(js).toContain('complimentary marketplace membership for life');
   expect(js).toContain('Members #101–#1000');
   expect(js).toContain('free throughout beta');

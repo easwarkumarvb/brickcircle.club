@@ -5,9 +5,10 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 
 test('V3 app shell loads one application runtime',()=>{
   const html=read('v2.html');
-  expect(html).toContain('/app-v3.css?v=20260905-phase2b');
-  expect(html).toContain('/locations-v3.js?v=20260905-phase2b');
-  expect(html).toContain('/app-v3.js?v=20260905-phase2b');
+  const release=JSON.parse(read('release-assets.json'));
+  expect(html).toContain(`/app-v3.css?v=${release.release}`);
+  expect(html).toContain(`/locations-v3.js?v=${release.release}`);
+  expect(html).toContain(`/app-v3.js?v=${release.release}`);
   for (const legacy of [
     'v2prod.js','authfix.js','global-locations.js','social-auth.js','home-render-guard.js',
     'home-stable-v30.js','v22b.js','v22reviews.js','v22match.js','catalog-images.js',
@@ -25,7 +26,8 @@ test('V3 has one client, one router and five primary destinations',()=>{
   expect(app).toContain("['matches','⇄','Matches']");
   expect(app).toContain("['exchanges','🤝','Exchanges']");
   expect(app).not.toContain('new MutationObserver(');
-  expect(app).not.toContain('setInterval(');
+  expect((app.match(/setInterval\(/g)||[]).length).toBe(1);
+  expect(app).toContain('notificationPollTimer=setInterval');
 });
 
 test('V3 presents the canonical local in-person exchange lifecycle',()=>{

@@ -24,8 +24,7 @@ function enhanceAuthDisclosure(root=document){
 }
 function init(){
   ensureFooter();enhanceAuthDisclosure();
-  const observer=new MutationObserver(records=>records.forEach(record=>record.addedNodes.forEach(node=>{if(node.nodeType===1)enhanceAuthDisclosure(node)})));
-  observer.observe(document.body,{childList:true,subtree:true});
+  document.addEventListener('bc:render',event=>enhanceAuthDisclosure(event.detail?.root||document));
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 })();

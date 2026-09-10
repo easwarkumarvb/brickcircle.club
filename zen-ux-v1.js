@@ -86,7 +86,7 @@ function apply(){
 
 let queued=false;
 const schedule=()=>{if(queued)return;queued=true;requestAnimationFrame(()=>{queued=false;apply()})};
-new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+document.addEventListener('bc:render',schedule);
 window.addEventListener('hashchange',schedule);
 document.addEventListener('DOMContentLoaded',schedule,{once:true});
 schedule();

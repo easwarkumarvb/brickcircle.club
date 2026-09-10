@@ -19,6 +19,8 @@ test('signed-out auth entry exposes both sign-in and account creation paths',asy
   await expect(page.locator('#bc-email-signup [name="name"]')).toBeVisible();
   await expect(page.locator('#bc-email-signup [name="email"]')).toBeVisible();
   await expect(page.locator('#bc-email-signup [name="password"]')).toBeVisible();
+  await expect(page.locator('#bc-email-signup [name="email"]')).toHaveAttribute('id',/bc-a11y-/);
+  await expect(page.locator('#bc-email-signup label').filter({hasText:'Email'})).toHaveAttribute('for',/bc-a11y-/);
 });
 
 test('email account creation uses the canonical client and onboarding metadata',async({page})=>{
@@ -54,6 +56,16 @@ test('canonical runtime creates one client and recovers the stored session',asyn
   await page.goto('/v2.html#profile');
   await expect(page.locator('.bc-profile-hero')).toContainText('Isolated Collector');
   expect(await page.evaluate(()=>window.__bcClientCreateCount)).toBe(1);
+  expect(await page.evaluate(()=>window.__bcIsolated.clientOptions.auth)).toMatchObject({persistSession:true,autoRefreshToken:true,detectSessionInUrl:true});
+});
+
+test('spurious resume-window sign-out recovers the still-valid session',async({page})=>{
+  await page.goto('/v2.html?isolated=ready-one#profile');
+  await expect(page.locator('.bc-profile-hero')).toContainText('Isolated Collector');
+  await page.evaluate(()=>window.__bcIsolated.emitAuth('SIGNED_OUT',null));
+  await page.waitForTimeout(600);
+  await expect(page.locator('.bc-profile-hero')).toContainText('Isolated Collector');
+  await expect(page.locator('[data-signout]')).toBeVisible();
 });
 
 test('email sign-in and reset stay on the canonical client',async({page})=>{

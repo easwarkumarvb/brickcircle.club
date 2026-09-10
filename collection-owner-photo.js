@@ -166,6 +166,6 @@ async function hydrateCounterpartyPhotos(){
 }
 
 async function hydratePhotos(){await hydrateOwnerPhotos();await hydrateCounterpartyPhotos()}
-let timer=0;const observer=new MutationObserver(()=>{clearTimeout(timer);timer=setTimeout(hydratePhotos,120)});observer.observe(document.documentElement,{childList:true,subtree:true});
+let timer=0;document.addEventListener('bc:render',()=>{clearTimeout(timer);timer=setTimeout(hydratePhotos,120)});
 window.addEventListener('load',hydratePhotos);
 })();
