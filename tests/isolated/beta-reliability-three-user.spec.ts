@@ -95,4 +95,61 @@ test('Easwar, Ramya and Dhyan share deterministic reciprocal and proposal truth'
   expect(result.wishlist).toHaveLength(2);
 });
 
+
+test('active third-party reservation is hidden from matches and failed acceptance recovers its button',async({page})=>{
+  test.setTimeout(120000);
+  await page.goto('/v2.html?isolated=three-user#home');
+  await addOwned(page,'42172-1','McLaren');
+  await addWanted(page,'42143-1','Ferrari');
+  await makeAvailable(page);
+
+  await switchActor(page,'ramya');
+  await addOwned(page,'42143-1','Ferrari');
+  await addWanted(page,'42172-1','McLaren');
+  await makeAvailable(page);
+
+  await switchActor(page,'easwar');
+  await page.locator('[data-nav="matches"]').first().click();
+  await expect(page.locator('.bc-match')).toHaveCount(1);
+  await page.locator('[data-propose]').click();
+  await page.locator('#bc-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.requests.length)).toBe(1);
+
+  await page.evaluate(()=>{
+    const state=window.__bcThreeUser;
+    const request=state.data.requests[0];
+    state.data.exchanges.push({
+      id:'exchange-third-party-lock',
+      request_id:'older-request',
+      user_a:request.requester_id,
+      user_b:state.actors.dhyan.id,
+      item_a:request.offered_item_id,
+      item_b:'third-party-item',
+      duration_days:60,
+      state:'swap_active',
+      created_at:'2026-09-01T12:00:00.000Z',
+      updated_at:'2026-09-01T12:00:00.000Z'
+    });
+    state.persist();
+  });
+
+  await switchActor(page,'ramya');
+  await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
+  const request=page.locator('[data-request-card="request-1"]');
+  const accept=request.getByRole('button',{name:'Accept'});
+  await accept.click();
+  await expect(accept).toBeEnabled();
+  await expect(accept).toHaveText('Accept');
+  await expect(page.getByText('One of these LEGO sets is already reserved in another active exchange')).toBeVisible();
+  const result=await page.evaluate(()=>({
+    requestStatus:window.__bcThreeUser.data.requests[0].status,
+    exchanges:window.__bcThreeUser.data.exchanges.length
+  }));
+  expect(result).toEqual({requestStatus:'pending',exchanges:1});
+
+  await switchActor(page,'easwar');
+  await page.locator('[data-nav="matches"]').first().click();
+  await expect(page.locator('.bc-match')).toHaveCount(0);
+});
+
 declare global {interface Window {__bcThreeUser:any}}
