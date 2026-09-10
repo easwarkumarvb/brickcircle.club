@@ -393,6 +393,7 @@ function guidedProgress(){
   ];
   let action;if(matches)action={label:matches===1?'View my match':`View my ${matches} matches`,go:'matches'};else if(owned<3)action={label:`Add ${3-owned===1?'one more set':`${3-owned} more sets`}`,go:'browse'};else if(wanted<3)action={label:'Build my wishlist',go:'browse'};else if(available<1)action={label:'Make 1 set available',go:'sets'};else action={label:'Explore more sets',go:'browse'};
   const gaps=[];if(owned<3)gaps.push(`${3-owned} more owned set${3-owned===1?'':'s'}`);if(wanted<3)gaps.push(`${3-wanted} wanted set${3-wanted===1?'':'s'}`);if(available<1)gaps.push('1 more set available to exchange');
+  const guidance=gaps.length?`Add ${gaps.join(' and ')} to improve your chances.`:'Your sets are ready for reciprocal matching.';
   return {steps,action,guidance,setupRemaining,status:matches?'Match found':setupRemaining?`${setupRemaining} setup step${setupRemaining===1?'':'s'} left`:'Ready for matching'};
 }
 function membershipPolicy(){
