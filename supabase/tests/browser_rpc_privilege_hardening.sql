@@ -62,7 +62,7 @@ rollback;
 
 set role postgres;
 create function public.bc_default_acl_probe()
-returns boolean language sql set search_path='' as $ select true $;
+returns boolean language sql set search_path='' as $$ select true $$;
 reset role;
 
 do $$
