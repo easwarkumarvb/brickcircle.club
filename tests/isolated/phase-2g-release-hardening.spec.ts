@@ -78,6 +78,31 @@ test('failed slices stay visible while successful slices refresh, then true sign
   await expect(page.locator('.bc-refresh-warning')).toHaveCount(0);
 });
 
+
+test('iconic discovery shows 50 image-led sets without eager-loading the full gallery',async({page})=>{
+  await page.goto('/v2.html?isolated=ready-zero#browse');
+  const discovery=page.locator('[data-bc-iconic-discovery]');
+  await expect(discovery).toBeVisible();
+  await expect(discovery.locator('[data-bc-iconic-set]')).toHaveCount(50);
+  await expect(discovery.locator('[data-bc-iconic-image]')).toHaveCount(50);
+  await expect(discovery.locator('[data-bc-iconic-image][loading="eager"]')).toHaveCount(6);
+  await expect(discovery.locator('[data-bc-iconic-image][loading="lazy"]')).toHaveCount(44);
+  await expect(discovery.locator('[data-bc-iconic-image][fetchpriority="high"]')).toHaveCount(3);
+
+  const malformedSources=await discovery.locator('[data-bc-iconic-image]').evaluateAll(images=>images
+    .map(image=>image.getAttribute('src')||image.getAttribute('data-src')||'')
+    .filter(source=>source.includes('-1-1.jpg')));
+  expect(malformedSources).toEqual([]);
+
+  await discovery.getByRole('button',{name:'Space & flight'}).click();
+  await expect(discovery.locator('[data-bc-iconic-group="space"]:not([hidden])')).toHaveCount(7);
+  await expect(discovery.locator('[data-bc-iconic-group]:not([hidden])')).toHaveCount(7);
+
+  await discovery.getByRole('button',{name:'All 50'}).click();
+  await discovery.locator('[data-bc-iconic-set="42143"]').click();
+  await expect(page.locator('#bc-q')).toHaveValue('42143');
+});
+
 declare global {
   interface Window {__bcIsolated:any;bcV3Refresh:()=>Promise<void>}
 }
