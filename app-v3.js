@@ -354,7 +354,7 @@ function showUnreadProposalNotice(){
   const close=()=>{window.BC_PROPOSAL_NOTICE_ACTIVE=false;closeOverlay()};
   const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill gold">New proposal</span><h2 style="margin-top:8px">You have a new exchange proposal</h2><p class="bc-muted">${esc(notification.body||'A collector proposed an exchange with you.')}</p></div><button class="bc-close" data-close>×</button></div><div class="bc-form-actions"><button class="bc-btn" data-close>Not now</button><button class="bc-btn primary" data-view-proposal>View proposal</button></div>`);
   o.dataset.bcNotificationPresentation='proposal';
-  $('[data-close]',o).forEach(button=>button.onclick=close);
+  o.querySelectorAll('[data-close]').forEach(button=>button.onclick=close);
   $('[data-view-proposal]',o).onclick=async()=>{window.BC_PROPOSAL_NOTICE_ACTIVE=false;closeOverlay();await openNotification(notification)};
   return true;
 }
