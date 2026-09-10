@@ -5,6 +5,8 @@ do $$ begin
   if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role; end if;
 end $$;
 
+grant usage,create on schema public to postgres;
+
 create schema if not exists auth;
 create or replace function auth.uid() returns uuid language sql stable set search_path='' as $$
   select nullif(pg_catalog.current_setting('request.jwt.claim.sub',true),'')::uuid;
