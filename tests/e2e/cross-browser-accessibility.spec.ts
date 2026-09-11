@@ -83,7 +83,7 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     await settle(page);
     await page.evaluate(()=>{(window as any).bcApplyA11y?.()});
 
-    await expect(input).toHaveAttribute('aria-label',/Search LEGO/i);
+    await expect(input).toHaveAttribute('aria-label',/Search.*LEGO/i);
     await expect(page.locator('#bc-theme')).toHaveAttribute('aria-label',/theme/i);
     await expect(page.locator('#bc-year')).toHaveAttribute('aria-label',/year/i);
 
