@@ -119,7 +119,7 @@ test('existing OAuth members must complete the one-time adult attestation',async
   await page.goto('/v2.html?isolated=adult-pending#home');
   const form=page.locator('#bc-onboard');
   await expect(form).toBeVisible();
-  await expect(form).toContainText('Before you can participate');
+  await expect(form).toContainText('I confirm that I am at least 18 years old');
   await form.locator('[name="adult_confirmation"]').check();
   await form.getByRole('button',{name:'Continue to add my LEGO sets'}).click();
   await expect(page).toHaveURL(/#browse/);
