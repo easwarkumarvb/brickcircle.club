@@ -6,6 +6,7 @@ do $$ begin
   if not exists(select 1 from pg_roles where rolname='authenticated') then create role authenticated; end if;
   if not exists(select 1 from pg_roles where rolname='service_role') then create role service_role; end if;
 end $$;
+alter role service_role bypassrls;
 
 create schema if not exists auth;
 create table auth.users(id uuid primary key, email text);
@@ -39,4 +40,3 @@ insert into auth.users(id,email) values
 
 create or replace function pg_temp.assert_true(ok boolean,message text)
 returns void language plpgsql as $$ begin if not coalesce(ok,false) then raise exception 'assertion failed: %',message; end if; end $$;
-
