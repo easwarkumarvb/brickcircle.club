@@ -30,7 +30,7 @@ Deno.serve(async (req) => {
 
     const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } })
     const [profilesR, collectionR, wishlistR, requestsR, exchangesR, setsR] = await Promise.all([
-      admin.from('profiles').select('id,display_name,email,country,city,trust_score,created_at,member_since'),
+      admin.from('profiles').select('id,display_name,email,country,city,trust_score,created_at,member_since,adult_confirmed_at,adult_confirmation_version'),
       admin.from('collection_items').select('user_id,set_number,condition,completeness,available_for_exchange,created_at'),
       admin.from('wishlists').select('user_id,set_number,priority,created_at'),
       admin.from('exchange_requests').select('requester_id,responder_id,status,created_at'),
