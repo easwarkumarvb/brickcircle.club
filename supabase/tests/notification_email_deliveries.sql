@@ -1,3 +1,6 @@
+create or replace function pg_temp.assert_true(ok boolean,message text)
+returns void language plpgsql as $$ begin if not coalesce(ok,false) then raise exception 'assertion failed: %',message; end if; end $$;
+
 set role service_role;
 
 insert into public.notifications(id,user_id,kind,title,body,entity_type,entity_id) values
