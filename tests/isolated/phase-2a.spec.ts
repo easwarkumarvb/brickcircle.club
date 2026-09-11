@@ -17,6 +17,7 @@ test('new collector completes onboarding through the canonical reliability layer
   await form.locator('[name="name"]').fill('New Collector');
   await form.locator('[name="country"]').selectOption('India');
   await form.locator('[name="city"]').selectOption('Bengaluru');
+  await form.locator('[name="adult_confirmation"]').check();
   await form.locator('button').click();
   await expect(page).toHaveURL(/#browse/);
   await expect(page.locator('#bc-q')).toBeVisible();

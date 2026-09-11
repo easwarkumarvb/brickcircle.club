@@ -55,10 +55,10 @@ function renderUsers(){
   const rows=(payload.users||[]).filter(u=>!q||userSearchText(u).includes(q));
   $('#users').innerHTML=rows.length?rows.map(u=>`<tr>
     <td><button class="user-btn" type="button" data-user="${esc(u.id)}">${esc(u.display_name||'Unnamed member')}</button><div class="muted">${esc(u.email||'')}</div></td>
-    <td>${fmt(u.created_at)}</td><td>${esc([u.city,u.country].filter(Boolean).join(', ')||'—')}</td>
+    <td>${fmt(u.created_at)}</td><td>${u.adult_confirmed_at?`<span class="pill good" title="Confirmed ${esc(fmt(u.adult_confirmed_at))}">18+ confirmed</span>`:'<span class="pill">Pending</span>'}</td><td>${esc([u.city,u.country].filter(Boolean).join(', ')||'—')}</td>
     <td>${u.collection?.length||0}</td><td>${u.wishlist?.length||0}</td><td>${(u.collection||[]).filter(x=>x.available_for_exchange).length}</td>
     <td>${u.request_count||0}</td><td>${u.exchange_count||0}</td>
-  </tr>`).join(''):`<tr><td colspan="8" class="empty">No users match this search.</td></tr>`;
+  </tr>`).join(''):`<tr><td colspan="9" class="empty">No users match this search.</td></tr>`;
   document.querySelectorAll('[data-user]').forEach(b=>b.addEventListener('click',()=>{selectedId=b.dataset.user;renderDetail(selectedId);$('#detail-panel').scrollIntoView({behavior:'smooth',block:'start'})}));
 }
 function renderCollection(items=[]){return items.length?items.map(x=>{const name=setName(x.set_number);return `<div class="row"><div class="set-info">${setThumb(x.set_number,name)}<div class="set-copy"><b>${esc(x.set_number)}</b>${name?`<span class="set-name">${esc(name)}</span>`:''}<small>${esc([x.condition,x.completeness].filter(Boolean).join(' · '))}</small></div></div>${x.available_for_exchange?'<span class="pill good">Exchangeable</span>':'<span class="pill">Collection</span>'}</div>`}).join(''):'<div class="empty">No sets added.</div>'}
