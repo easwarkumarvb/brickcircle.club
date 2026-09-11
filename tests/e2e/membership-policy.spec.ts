@@ -2,28 +2,34 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 
 const read=(path:string)=>fs.readFileSync(path,'utf8');
+const currentReleaseAssets=['index.html','v2.html','app-v3.js'];
 
-test('membership policy is app-owned without a supplemental runtime',()=>{
+test('current release surfaces use one free-beta membership policy',()=>{
   const html=read('v2.html');
+  const release=currentReleaseAssets.map(read).join('\n');
   expect(html).toContain('/app-v3.js');
   expect(html).not.toContain('/membership-v31.js');
+  expect(release).toContain('BrickCircle is free during beta');
+  expect(release).toContain('members will be informed well in advance');
+  expect(release).not.toContain('complimentary marketplace membership for life');
+  expect(release).not.toContain('Members #101–#1000');
+  expect(release).not.toContain('Join the Founding 100');
+  expect(release).not.toContain('Paid membership is enabled');
 });
 
-test('membership policy preserves Founding 100 and Early 1000 rules',()=>{
-  const js=read('app-v3.js');
-  expect(js).toContain('complimentary marketplace membership for life');
-  expect(js).toContain('Members #101–#1000');
-  expect(js).toContain('free throughout beta');
-  expect(js).toContain('Paid membership will be introduced city-by-city');
-  expect(js).toContain("db.rpc('bc_membership_status')");
+test('free-beta migration removes signup-order entitlement without rewriting history',()=>{
+  const sql=read('supabase/migrations/20260911081710_free_beta_membership_phase.sql');
+  expect(sql).toContain("membership_phase='beta_free'");
+  expect(sql).toContain('drop trigger if exists trg_assign_founding_member');
+  expect(sql).toContain("when uid is not null and p.id is not null then 'beta'");
+  expect(sql).toContain("when uid is not null and p.id is not null then 'free_beta'");
+  expect(sql).toContain('my_number integer');
+  expect(sql).toContain('false;');
+  expect(sql).not.toMatch(/update\s+public\.profiles/i);
+  expect(sql).not.toMatch(/delete\s+from\s+public\.profiles/i);
 });
 
-test('database migration defines city liquidity gates without auto-enabling pricing',()=>{
-  const sql=read('supabase/migrations/20260829_membership_program_v31.sql');
-  expect(sql).toContain('city_min_members integer not null default 100');
-  expect(sql).toContain('city_min_exchangeable_sets integer not null default 200');
-  expect(sql).toContain('city_min_wishlist_items integer not null default 300');
-  expect(sql).toContain('pricing_enabled boolean not null default false');
-  expect(sql).toContain("when p.membership_ordinal<=cfg.founding_cap then 'free_lifetime'");
-  expect(sql).toContain("when cfg.beta_free then 'free_beta'");
+test('obsolete supplemental membership runtimes are absent',()=>{
+  expect(fs.existsSync('membership-v31.js')).toBe(false);
+  expect(fs.existsSync('founding-100.js')).toBe(false);
 });
