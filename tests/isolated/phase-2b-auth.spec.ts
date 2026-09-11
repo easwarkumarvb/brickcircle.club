@@ -115,6 +115,21 @@ test('onboarding persists with an owner-scoped upsert',async({page})=>{
   expect(await page.evaluate(()=>JSON.parse(localStorage.getItem('bc_isolated_profile')||'null'))).toMatchObject({id:'00000000-0000-4000-8000-000000000007',display_name:'Canonical Collector',country:'India',city:'Bengaluru'});
 });
 
+test('existing OAuth members must complete the one-time adult attestation',async({page})=>{
+  await page.goto('/v2.html?isolated=adult-pending#home');
+  const form=page.locator('#bc-onboard');
+  await expect(form).toBeVisible();
+  await expect(form).toContainText('Before you can participate');
+  await form.locator('[name="adult_confirmation"]').check();
+  await form.getByRole('button',{name:'Continue to add my LEGO sets'}).click();
+  await expect(page).toHaveURL(/#browse/);
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.profile?.adult_confirmed_at)).not.toBeNull();
+  expect(await page.evaluate(()=>window.__bcIsolated.profile)).toMatchObject({
+    adult_confirmation_version:'2026-09-11',
+    adult_confirmation_text:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'
+  });
+});
+
 test('OAuth callback cleanup preserves referral continuity',async({page})=>{
   await page.goto('/v2.html?code=isolated-code&ref=PHASE2B#home');
   await expect(page.locator('[data-nav="profile"]').first()).toBeVisible();
