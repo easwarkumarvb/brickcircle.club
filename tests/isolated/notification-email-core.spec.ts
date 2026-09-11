@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readFile} from 'node:fs/promises';
 import {buildBrevoMessage,dispatchNotificationEmail,isTransientEmailFailure,retryDelaySeconds,SUPPORTED_EMAIL_KINDS,type EmailDelivery,type EmailNotification} from '../../supabase/functions/send-notification-email/core';
 
 const notification:EmailNotification={id:'10000000-0000-4000-8000-000000000001',user_id:'20000000-0000-4000-8000-000000000002',kind:'request_received',title:'New exchange proposal',body:'A collector proposed an exchange.',entity_type:'exchange_request',entity_id:'30000000-0000-4000-8000-000000000003'};
@@ -31,6 +32,21 @@ test('recipient is resolved from the queued Auth user and request input cannot s
   expect(resolvedUser).toBe(notification.user_id);
   expect(sentTo).toBe('auth-owner@example.com');
   expect(JSON.stringify(delivery)).not.toContain('@');
+});
+
+test('every supported kind resolves its recipient from the source notification owner',async()=>{
+  for(const kind of SUPPORTED_EMAIL_KINDS){
+    const event={...notification,kind};
+    let resolvedUser='';let sentTo='';
+    await dispatchNotificationEmail({...delivery,notification_kind:kind},{
+      loadNotification:async()=>event,
+      resolveRecipientEmail:async(userId)=>{resolvedUser=userId;return `${kind}@example.com`},
+      send:async(message)=>{sentTo=message.to[0].email;return {ok:true,status:201,messageId:`brevo-${kind}`}},
+      sent:async()=>{},retry:async()=>{},permanentFailure:async()=>{}
+    });
+    expect(resolvedUser).toBe(event.user_id);
+    expect(sentTo).toBe(`${kind}@example.com`);
+  }
 });
 
 test('transient Brevo failure is queued for bounded retry without removing the in-app source',async()=>{
@@ -67,3 +83,10 @@ test('mismatched or unsupported source rows cannot be emailed',async()=>{
   expect(sends).toBe(0);expect(permanent).toBe(2);
 });
 
+test('browser and release assets contain no Brevo endpoint or credential hook',async()=>{
+  const assets=await Promise.all(['app-v3.js','v2.html','catalogue-cache-sw.js','release-assets.json'].map(path=>readFile(path,'utf8')));
+  const shipped=assets.join('\n');
+  expect(shipped).not.toContain('BREVO_API_KEY');
+  expect(shipped).not.toContain('api.brevo.com');
+  expect(shipped).not.toContain('send-notification-email');
+});
