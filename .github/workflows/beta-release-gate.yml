@@ -44,6 +44,35 @@ jobs:
       - name: Verify RLS, reciprocal events and deduplication
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/web_push_notifications.sql
 
+  transactional-notification-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_email
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_email"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_email
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with: { deno-version: v2.5.2 }
+      - name: Type-check Brevo notification Edge Function
+        run: deno check --config supabase/functions/send-notification-email/deno.json supabase/functions/send-notification-email/index.ts
+      - name: Load isolated notification email schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/notification_email_base.sql
+      - name: Apply durable notification email migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260911080000_durable_marketplace_email_notifications.sql
+      - name: Verify allowlist, outbox durability, isolation and retry claims
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/notification_email_deliveries.sql
+
   exchange-proposal-notifications:
     runs-on: ubuntu-latest
     timeout-minutes: 10
