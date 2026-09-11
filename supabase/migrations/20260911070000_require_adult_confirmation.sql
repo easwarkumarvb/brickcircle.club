@@ -15,7 +15,7 @@ create or replace function public.protect_adult_confirmation()
 returns trigger
 language plpgsql
 security invoker
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 begin
   if new.adult_confirmed_at is distinct from old.adult_confirmed_at
@@ -42,7 +42,7 @@ create or replace function public.confirm_adult_status(
 returns timestamptz
 language plpgsql
 security definer
-set search_path = public, pg_temp
+set search_path = ''
 as $$
 declare
   v_user_id uuid := auth.uid();
