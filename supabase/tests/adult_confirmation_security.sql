@@ -18,7 +18,7 @@ $$;
 set role authenticated;
 reset request.jwt.claim.sub;
 
-do $
+do $$
 begin
   begin
     perform public.confirm_adult_status('I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.', '2026-09-11');
@@ -27,7 +27,7 @@ begin
     null;
   end;
 end
-$;
+$$;
 
 reset role;
 
@@ -45,7 +45,7 @@ begin
 end
 $$;
 
-do $
+do $$
 begin
   begin
     perform public.confirm_adult_status('I do not confirm adult eligibility.', '2026-09-11');
@@ -54,21 +54,21 @@ begin
     null;
   end;
 end
-$;
+$$;
 
 select public.confirm_adult_status(
   'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.',
   '2026-09-11'
 );
 
-do $
+do $$
 declare v_first timestamptz; v_repeat timestamptz;
 begin
   select adult_confirmed_at into v_first from public.profiles where id = '00000000-0000-4000-8000-000000000007';
   v_repeat := public.confirm_adult_status('I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.','2026-09-11');
   if v_first is distinct from v_repeat then raise exception 'repeat confirmation changed the original timestamp'; end if;
 end
-$;
+$$;
 
 reset role;
 reset request.jwt.claim.sub;
