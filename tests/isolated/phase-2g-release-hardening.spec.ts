@@ -103,6 +103,14 @@ test('iconic discovery shows 50 image-led sets without eager-loading the full ga
   await expect(page.locator('#bc-q')).toHaveValue('42143');
 });
 
+test('landing and header reinforce the Exchange Experience Connect brand promise',async({page})=>{
+  await page.goto('/v2.html?isolated=ready-zero#home');
+  await page.evaluate(async()=>{window.__bcIsolated.setSignedOut(true);await window.bcV3Refresh()});
+  await expect(page.locator('.bc-logo')).toHaveAttribute('aria-label',/Exchange · Experience · Connect/);
+  await expect(page.locator('.bc-logo .bc-brand-tagline')).toHaveText('Exchange · Experience · Connect');
+  await expect(page.locator('.bc-landing-hero .bc-brand-promise')).toHaveText('Exchange · Experience · Connect');
+});
+
 declare global {
   interface Window {__bcIsolated:any;bcV3Refresh:()=>Promise<void>}
 }
