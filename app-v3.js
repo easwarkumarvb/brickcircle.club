@@ -631,8 +631,10 @@ async function setExchangeable(id,on){
   const operation=prior.catch(()=>{}).then(async()=>{
     const latest=exchangeabilityOperations.get(id);
     if(!latest||latest.revision!==revision)return;
-    const {error}=await db.from('collection_items').update({available_for_exchange:on,updated_at:new Date().toISOString()}).eq('id',id).eq('user_id',S.user.id);
+    const {data,error}=await db.from('collection_items').update({available_for_exchange:on,updated_at:new Date().toISOString()}).eq('id',id).eq('user_id',S.user.id).select('id,available_for_exchange');
     if(error)throw error;
+    const saved=(data||[]).find(row=>row.id===id);
+    if(!saved||Boolean(saved.available_for_exchange)!==Boolean(on))throw new Error('BrickCircle could not confirm this exchange setting. Please try again.');
     if(exchangeabilityOperations.get(id)?.revision!==revision)return;
     await refreshCore();renderSetsBody();toast(on?'This set is saved as Available to Exchange.':'This set is saved as Not Available.');
   }).catch(async error=>{
