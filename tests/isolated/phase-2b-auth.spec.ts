@@ -130,6 +130,20 @@ test('existing OAuth members must complete the one-time adult attestation',async
   });
 });
 
+test('onboarding keeps the adult check mandatory and hides raw RPC failures',async({page})=>{
+  await page.goto('/v2.html?isolated=adult-pending#home');
+  const form=page.locator('#bc-onboard');
+  await form.locator('[name="name"]').fill('Retry Collector');
+  await form.locator('[name="country"]').selectOption('India');
+  await form.locator('[name="city"]').selectOption('Bengaluru');
+  await form.locator('[name="adult_confirmation"]').check();
+  await page.evaluate(()=>window.__bcIsolated.failRpcs.push('confirm_adult_status'));
+  await form.getByRole('button',{name:'Continue to add my LEGO sets'}).click();
+  await expect(form).toBeVisible();
+  await expect(page.locator('.bc-toast')).toHaveText('We could not save your onboarding details. Please check your connection and try again.');
+  await expect(page.locator('body')).not.toContainText('confirm_adult_status temporarily unavailable');
+});
+
 test('OAuth callback cleanup preserves referral continuity',async({page})=>{
   await page.goto('/v2.html?code=isolated-code&ref=PHASE2B#home');
   await expect(page.locator('[data-nav="profile"]').first()).toBeVisible();
