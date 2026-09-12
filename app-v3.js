@@ -625,8 +625,6 @@ async function setExchangeable(id,on){
   if(on&&item&&!item.owner_photo_path){const input=$(`[data-exchangeable="${CSS.escape(id)}"]`);if(input)input.checked=false;addLegacyOwnerPhoto(item);return}
   const revision=(exchangeabilityOperations.get(id)?.revision||0)+1;
   exchangeabilityOperations.set(id,{revision,desired:on});
-  if(item)item.available_for_exchange=on;
-  renderSetsBody();
   const prior=exchangeabilityQueues.get(id)||Promise.resolve();
   const operation=prior.catch(()=>{}).then(async()=>{
     const latest=exchangeabilityOperations.get(id);
