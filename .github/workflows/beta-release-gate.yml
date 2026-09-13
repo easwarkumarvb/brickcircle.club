@@ -221,8 +221,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Load isolated adult-confirmation schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/adult_confirmation_base.sql
-      - name: Apply adult-confirmation migration
-        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260911070000_require_adult_confirmation.sql
+      - name: Apply adult-attestation RPC repair migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260911150911_repair_adult_attestation_rpc.sql
       - name: Verify attestation authorization, scope and immutability
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/adult_confirmation_security.sql
 

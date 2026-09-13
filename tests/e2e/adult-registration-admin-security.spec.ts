@@ -5,7 +5,7 @@ const read=(path:string)=>fs.readFileSync(path,'utf8');
 
 test('adult confirmation is mandatory, server-stamped and immutable',()=>{
   const app=read('app-v3.js');
-  const migration=read('supabase/migrations/20260911070000_require_adult_confirmation.sql');
+  const migration=read('supabase/migrations/20260911150911_repair_adult_attestation_rpc.sql');
 
   expect(app).toContain('name="adult_confirmation" type="checkbox" required');
   expect(app).toContain("db.rpc('confirm_adult_status'");
@@ -14,6 +14,7 @@ test('adult confirmation is mandatory, server-stamped and immutable',()=>{
   expect(migration).toContain('protect_adult_confirmation');
   expect(migration).toContain('revoke all on function public.confirm_adult_status(text, text) from public, anon');
   expect(migration).toContain('grant execute on function public.confirm_adult_status(text, text) to authenticated');
+  expect(migration).toContain("notify pgrst, 'reload schema'");
 });
 
 test('admin data remains behind the dual owner and admin-role server gate',()=>{
