@@ -81,7 +81,7 @@ function chain(table){
       let result=visibleRows(table,query);
       if(query.mode==='update'){
         const source=table==='collection_items'?data.collection:table==='wishlists'?data.wishlist:table==='notifications'?data.notifications:table==='profiles'?data.profiles:[];
-        source.filter(matches).forEach(row=>Object.assign(row,query.patch));persist();result=null;
+        source.filter(matches).forEach(row=>Object.assign(row,query.patch));persist();result=source.filter(matches).map(row=>({...row}));
       }
       if(query.mode==='delete'){
         const key=table==='collection_items'?'collection':table==='wishlists'?'wishlist':table==='notifications'?'notifications':null;

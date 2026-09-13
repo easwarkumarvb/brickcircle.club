@@ -12,7 +12,7 @@ test('Ready for Exchange remains checked only after the owner update is confirme
 test('Ready for Exchange reverts when no owner row is confirmed',async({page})=>{
   await page.goto('/v2.html?isolated=ready-zero#sets');
   await page.evaluate(()=>window.__bcIsolated.silentNoUpdate=true);
-  await page.locator('[data-exchangeable]').first().check();
+  await page.locator('[data-exchangeable]').first().evaluate((input:HTMLInputElement)=>{input.checked=true;input.dispatchEvent(new Event('change',{bubbles:true}))});
   await expect(page.locator('.bc-toast')).toContainText('could not confirm');
   await expect(page.locator('[data-exchangeable]').first()).not.toBeChecked();
 });

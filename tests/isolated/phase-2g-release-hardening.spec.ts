@@ -103,6 +103,20 @@ test('iconic discovery shows 50 image-led sets without eager-loading the full ga
   await expect(page.locator('#bc-q')).toHaveValue('42143');
 });
 
+
+test('set card controls persist exchangeability and open photo and details',async({page})=>{
+  await page.goto('/v2.html?isolated=partial#sets');
+  await page.evaluate(async()=>{const state=window.__bcIsolated;state.collection[0].owner_photo_path='00000000-0000-4000-8000-000000000007/c1.jpg';await window.bcV3Refresh()});
+  const toggle=page.locator('[data-exchangeable]').first();
+  const id=await toggle.getAttribute('data-exchangeable');
+  await toggle.check();
+  await expect.poll(()=>page.evaluate(itemId=>Boolean(window.__bcIsolated.collection.find((item:any)=>item.id===itemId)?.available_for_exchange),id)).toBe(true);
+  await page.getByRole('button',{name:'Change photo'}).first().click();
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  await page.locator('[data-close]').first().click();
+  await page.getByRole('button',{name:'Details'}).first().click();
+  await expect(page.locator('#bc-edit-item')).toBeVisible();
+});
 declare global {
   interface Window {__bcIsolated:any;bcV3Refresh:()=>Promise<void>}
 }
