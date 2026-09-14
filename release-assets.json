@@ -1,5 +1,5 @@
 {
-  "release": "20260913-brand-logo-r1",
+  "release": "20260914-release-set-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -16,6 +16,7 @@
     "/app-v3.js",
     "/catalogue-discovery-v1.js",
     "/zen-ux-v1.js",
+    "/collection-release-exchange-v1.js",
     "/assets/brickcircle-logo.png"
   ]
 }
