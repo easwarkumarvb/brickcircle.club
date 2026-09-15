@@ -152,4 +152,83 @@ test('active third-party reservation is hidden from matches and failed acceptanc
   await expect(page.locator('.bc-match')).toHaveCount(0);
 });
 
+test('an owner releases an accepted pre-handoff exchange and both sets become available',async({page})=>{
+  test.setTimeout(120000);
+  await page.goto('/v2.html?isolated=three-user#home');
+  await addOwned(page,'42172-1','McLaren');
+  await addWanted(page,'42143-1','Ferrari');
+  await makeAvailable(page);
+  await switchActor(page,'ramya');
+  await addOwned(page,'42143-1','Ferrari');
+  await addWanted(page,'42172-1','McLaren');
+  await makeAvailable(page);
+  await switchActor(page,'easwar');
+  await page.locator('[data-nav="matches"]').first().click();
+  await page.locator('[data-propose]').click();
+  await page.locator('#bc-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await switchActor(page,'ramya');
+  await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
+  await page.locator('[data-request-card="request-1"]').getByRole('button',{name:'Accept'}).click();
+  await switchActor(page,'easwar');
+  await page.locator('[data-nav="sets"]').first().click();
+  const release=page.getByRole('button',{name:'Release this set from this exchange'});
+  await expect(release).toBeVisible();
+  page.once('dialog',dialog=>dialog.accept());
+  await release.click();
+  await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('released');
+  const result=await page.evaluate(()=>({
+    request:window.__bcThreeUser.data.requests[0].status,
+    available:window.__bcThreeUser.data.collection.slice(0,2).map((row:any)=>row.available_for_exchange),
+    releaseNotes:window.__bcThreeUser.data.notifications.filter((row:any)=>row.kind==='exchange_released').length
+  }));
+  expect(result).toEqual({request:'released',available:[true,true],releaseNotes:1});
+});
+
+test('release after handoff routes to early-return guidance without unreserving either set',async({page})=>{
+  test.setTimeout(120000);
+  await page.goto('/v2.html?isolated=three-user#home');
+  await page.evaluate(()=>{
+    const state=window.__bcThreeUser;
+    state.data.collection.push(
+      {id:'active-a',user_id:state.actors.easwar.id,set_number:'42172-1',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'},
+      {id:'active-b',user_id:state.actors.ramya.id,set_number:'42143-1',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'}
+    );
+    state.data.exchanges.push({id:'active-exchange',request_id:'active-request',user_a:state.actors.easwar.id,user_b:state.actors.ramya.id,item_a:'active-a',item_b:'active-b',duration_days:60,state:'swap_active',created_at:'2026-09-01T12:00:00.000Z',updated_at:'2026-09-01T12:00:00.000Z'});
+    state.persist();
+  });
+  await page.reload();
+  await page.locator('[data-nav="sets"]').first().click();
+  const release=page.getByRole('button',{name:'Release this set from this exchange'});
+  page.once('dialog',dialog=>dialog.accept());
+  await release.click();
+  await expect(page).toHaveURL(/#exchange\/active-exchange/);
+  await expect(page.getByText(/physical handoff is complete/i)).toBeVisible();
+  const result=await page.evaluate(()=>({state:window.__bcThreeUser.data.exchanges[0].state,available:window.__bcThreeUser.data.collection.map((row:any)=>row.available_for_exchange)}));
+  expect(result).toEqual({state:'swap_active',available:[false,false]});
+});
+
+test('missing release capability hides the destructive action and preserves ordinary availability',async({page})=>{
+  await page.goto('/v2.html?isolated=three-user&release-capability=missing#home');
+  await page.evaluate(()=>{
+    const state=window.__bcThreeUser;
+    state.data.collection.push(
+      {id:'ordinary-item',user_id:state.actors.easwar.id,set_number:'42172-1',owner_photo_path:'easwar/ordinary.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'},
+      {id:'reserved-item',user_id:state.actors.easwar.id,set_number:'42143-1',owner_photo_path:'easwar/reserved.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'},
+      {id:'reserved-other',user_id:state.actors.ramya.id,set_number:'42115-1',owner_photo_path:'ramya/reserved.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'}
+    );
+    state.data.exchanges.push({id:'reserved-exchange',request_id:'reserved-request',user_a:state.actors.easwar.id,user_b:state.actors.ramya.id,item_a:'reserved-item',item_b:'reserved-other',duration_days:60,state:'accepted',created_at:'2026-09-01T12:00:00.000Z',updated_at:'2026-09-01T12:00:00.000Z'});
+    state.persist();
+  });
+  await page.reload();
+  await page.locator('[data-nav="sets"]').first().click();
+  await expect(page.locator('[data-release-unavailable]')).toContainText('Your reservation has not changed.');
+  await expect(page.getByRole('button',{name:'Release this set from this exchange'})).toHaveCount(0);
+  await page.locator('[data-exchangeable="ordinary-item"]').check();
+  await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.id==='ordinary-item')?.available_for_exchange)).toBe(true);
+  const calls=await page.evaluate(()=>window.__bcThreeUser.rpcCalls);
+  expect(calls).toContain('bc_exchange_capabilities');
+  expect(calls).not.toContain('release_exchange_item');
+  await expect(page.getByText(/schema cache/i)).toHaveCount(0);
+});
+
 declare global {interface Window {__bcThreeUser:any}}
