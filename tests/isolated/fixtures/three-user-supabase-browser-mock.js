@@ -4,6 +4,7 @@
 const NOW='2026-09-09T12:00:00.000Z';
 const STORE='bc_three_user_db';
 const ACTOR='bc_three_user_actor';
+const releaseCapabilityMissing=new URLSearchParams(location.search).get('release-capability')==='missing';
 const actors={
   easwar:{id:'00000000-0000-4000-8000-000000000101',email:'easwar@example.invalid',name:'Easwar'},
   ramya:{id:'00000000-0000-4000-8000-000000000102',email:'ramya@example.invalid',name:'Ramya'},
@@ -28,8 +29,8 @@ const active=()=>actors[actorKey];
 const user=()=>({id:active().id,email:active().email,created_at:NOW,app_metadata:{provider:'email'},identities:[{provider:'email'}]});
 const persist=()=>localStorage.setItem(STORE,JSON.stringify(data));
 const state={
-  actors,sets,get actor(){return actorKey},get data(){return data},
-  reset(){data=fresh();actorKey='easwar';localStorage.setItem(ACTOR,actorKey);persist()},
+  actors,sets,rpcCalls:[],get actor(){return actorKey},get data(){return data},
+  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;localStorage.setItem(ACTOR,actorKey);persist()},
   persist,
   switchActor(next){if(!actors[next])throw new Error(`Unknown actor ${next}`);actorKey=next;signedOut=false;localStorage.setItem(ACTOR,next)}
 };
@@ -116,6 +117,8 @@ const db={
   },
   from:chain,
   rpc:async(name,args)=>{
+    state.rpcCalls.push(name);
+    if(name==='bc_exchange_capabilities')return releaseCapabilityMissing?{data:null,error:{code:'PGRST202',message:'Function not found in schema cache'}}:{data:{contract_version:1,release_item:true},error:null};
     if(name==='bc_search_lego_sets'){const query=String(args?.p_query||'').toLowerCase().replace(/-1$/,'');return {data:sets.filter(set=>`${set.name} ${set.set_number.replace(/-1$/,'')} ${set.theme}`.toLowerCase().includes(query)),error:null}}
     if(name==='find_matches')return {data:findMatches(),error:null};
     if(name==='create_exchange_request'){

@@ -27,6 +27,7 @@ jobs:
         run: |
           psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260913090000_exchange_workflow_server_transitions.sql
           psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260914131342_canonical_exchange_workflow.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260915020630_release_workflow_capability.sql
       - name: Verify release, isolation, idempotency and privileges
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/canonical_exchange_workflow.sql
 

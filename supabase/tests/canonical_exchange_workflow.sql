@@ -1,5 +1,13 @@
 \set ON_ERROR_STOP on
 begin;
+set local role authenticated;
+do $$ declare capabilities jsonb; begin
+  capabilities:=public.bc_exchange_capabilities();
+  if capabilities->>'release_item' <> 'true' or capabilities->>'contract_version' <> '1' then
+    raise exception 'release capability contract is unavailable: %',capabilities;
+  end if;
+end $$;
+reset role;
 insert into auth.users(id) values
  ('00000000-0000-4000-8000-000000000101'),('00000000-0000-4000-8000-000000000102'),('00000000-0000-4000-8000-000000000103');
 insert into public.collection_items(id,user_id,set_number,estimated_value,available_for_exchange) values
