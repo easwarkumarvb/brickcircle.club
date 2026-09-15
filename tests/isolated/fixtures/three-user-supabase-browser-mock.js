@@ -92,7 +92,7 @@ function chain(table){
   };
   return query;
 }
-function itemReserved(itemId){return data.exchanges.some(exchange=>exchange.state!=='completed'&&exchange.state!=='cancelled'&&(exchange.item_a===itemId||exchange.item_b===itemId))}
+function itemReserved(itemId){return data.exchanges.some(exchange=>!['completed','cancelled','released'].includes(exchange.state)&&(exchange.item_a===itemId||exchange.item_b===itemId))}
 function findMatches(){
   const mine=data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange&&!itemReserved(row.id));
   const myWishes=data.wishlist.filter(row=>row.user_id===active().id);
@@ -140,6 +140,19 @@ const db={
         data.collection.filter(row=>row.id===request.offered_item_id||row.id===request.requested_item_id).forEach(row=>{row.available_for_exchange=false});
         data.notifications.push({id:`notification-${data.notifications.length+1}`,user_id:request.requester_id,kind:'exchange_accepted',title:'Exchange request accepted',body:'Your exchange request was accepted. Plan a safe meetup next.',actor_user_id:active().id,entity_type:'exchange',entity_id:exchange.id,metadata:{exchange_id:exchange.id,route:`#exchanges/${exchange.id}`},read_at:null,created_at:NOW});
       }persist();return {data:exchange?{exchange_id:exchange.id}:true,error:null};
+    }
+    if(name==='release_exchange_item'){
+      const owned=data.collection.find(row=>row.id===args.p_item_id&&row.user_id===active().id);
+      if(!owned)return {data:null,error:{message:'You can release only your own LEGO set'}};
+      const exchange=data.exchanges.find(row=>!['completed','cancelled','released'].includes(row.state)&&(row.item_a===owned.id||row.item_b===owned.id));
+      if(exchange&&['swap_active','disputed'].includes(exchange.state))return {data:{ok:false,requires_early_return:true,exchange_id:exchange.id,status:exchange.state,message:'The physical handoff is complete. Request an early return, contact the participant, or report an issue.'},error:null};
+      const request=exchange?data.requests.find(row=>row.id===exchange.request_id):data.requests.find(row=>row.status==='pending'&&(row.offered_item_id===owned.id||row.requested_item_id===owned.id));
+      if(exchange){exchange.state='released';exchange.updated_at=NOW}
+      if(request){request.status='released';request.updated_at=NOW}
+      const itemIds=exchange?[exchange.item_a,exchange.item_b]:request?[request.offered_item_id,request.requested_item_id]:[owned.id];
+      data.collection.filter(row=>itemIds.includes(row.id)).forEach(row=>{row.available_for_exchange=true});
+      if(request){const other=request.requester_id===active().id?request.responder_id:request.requester_id;data.notifications.push({id:`notification-${data.notifications.length+1}`,user_id:other,kind:'exchange_released',title:'A LEGO set was released',body:'The other collector released their set. Both sets are available for a new match.',actor_user_id:active().id,entity_type:exchange?'exchange':'exchange_request',entity_id:exchange?.id||request.id,metadata:{item_id:owned.id,route:`#exchanges/${exchange?.id||request.id}`},read_at:null,created_at:NOW})}
+      persist();return {data:{ok:true,status:request||exchange?'released':'available',idempotent:!request&&!exchange,item_id:owned.id},error:null};
     }
     if(name==='bc_founder_status')return {data:{my_is_founder:true,my_number:7},error:null};
     if(name==='bc_liquidity_status')return {data:{collection_count:visibleRows('collection_items',{filters:[],ins:[]}).length,exchangeable_count:data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange).length,wishlist_count:data.wishlist.filter(row=>row.user_id===active().id).length,referral_claims:0,liquidity_readiness:80},error:null};

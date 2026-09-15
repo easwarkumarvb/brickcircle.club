@@ -23,3 +23,21 @@ test('exchange messages derive the recipient and create durable in-app notificat
   expect(source).toContain("notification?.kind==='message_received'");
   expect(source).toContain("notification?.metadata?.exchange_id");
 });
+
+test('owner release is server-owned, preserves history and protects post-handoff sets',()=>{
+  const migration=fs.readFileSync('supabase/migrations/20260914131342_canonical_exchange_workflow.sql','utf8');
+  const source=fs.readFileSync('app-v3.js','utf8');
+  expect(migration).toContain('create or replace function public.release_exchange_item');
+  expect(migration).toContain('owned.user_id <> me');
+  expect(migration).toContain("exchange_row.state in ('swap_active','disputed')");
+  expect(migration).toContain("'requires_early_return', true");
+  expect(migration).toContain("set state = 'released'");
+  expect(migration).toContain("set status = 'released'");
+  expect(migration).toContain('on conflict (dedupe_key)');
+  expect(migration).toContain('on conflict (user_id,kind,entity_type,entity_id)');
+  expect(migration).toContain('revoke insert,update,delete on table public.exchange_requests from authenticated');
+  expect(migration).toContain('revoke insert,update,delete on table public.exchanges from authenticated');
+  expect(source).toContain("db.rpc('release_exchange_item'");
+  expect(source).toContain('Release this set from this exchange');
+  expect(source).not.toMatch(/from\('messages'\)\.insert\(\{exchange_id:e\.id,sender_id:S\.user\.id,recipient_id:/);
+});

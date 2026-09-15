@@ -110,7 +110,7 @@ begin
       and public.canonical_lego_product_identity(theirs.set_number) = public.canonical_lego_product_identity(offered.set_number)
   ) then raise exception 'This reciprocal match is no longer available'; end if;
 
-  if exists (select 1 from public.exchanges e where e.state not in ('completed','cancelled') and (e.item_a in (offered.id, requested.id) or e.item_b in (offered.id, requested.id))) then
+  if exists (select 1 from public.exchanges e where e.state not in ('completed','cancelled','released') and (e.item_a in (offered.id, requested.id) or e.item_b in (offered.id, requested.id))) then
     raise exception 'One of these LEGO sets is already reserved in another active exchange';
   end if;
 
