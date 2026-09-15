@@ -41,3 +41,17 @@ test('owner release is server-owned, preserves history and protects post-handoff
   expect(source).toContain('Release this set from this exchange');
   expect(source).not.toMatch(/from\('messages'\)\.insert\(\{exchange_id:e\.id,sender_id:S\.user\.id,recipient_id:/);
 });
+
+test('release controls use a read-only deployment capability contract',()=>{
+  const migration=fs.readFileSync('supabase/migrations/20260915020630_release_workflow_capability.sql','utf8');
+  const source=fs.readFileSync('app-v3.js','utf8');
+  expect(migration).toContain('create or replace function public.bc_exchange_capabilities()');
+  expect(migration).toContain("to_regprocedure('public.release_exchange_item(uuid,text)')");
+  expect(migration).toContain("has_function_privilege");
+  expect(migration).toContain("revoke all on function public.bc_exchange_capabilities() from public, anon");
+  expect(migration).toContain("grant execute on function public.bc_exchange_capabilities() to authenticated");
+  expect(migration).toContain("notify pgrst, 'reload schema'");
+  expect(source).toContain("db.rpc('bc_exchange_capabilities')");
+  expect(source).toContain('if(!S.exchangeCapabilities.releaseItem)');
+  expect(source).toContain('Your reservation has not changed.');
+});
