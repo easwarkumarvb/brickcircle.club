@@ -3,6 +3,33 @@ on:
   pull_request:
 
 jobs:
+  canonical-exchange-workflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_exchange_workflow
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_exchange_workflow"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_exchange_workflow
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load isolated canonical exchange schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_workflow_base.sql
+      - name: Apply server-owned workflow migrations
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260913090000_exchange_workflow_server_transitions.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260914131342_canonical_exchange_workflow.sql
+      - name: Verify release, isolation, idempotency and privileges
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/canonical_exchange_workflow.sql
+
   owner-photo-trust:
     runs-on: ubuntu-latest
     timeout-minutes: 5
