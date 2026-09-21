@@ -47,8 +47,12 @@ do $$ declare first_id uuid; retry jsonb; begin
     '10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002',60,
     'duplicate click','create-a-b-second-key');
   if (retry->'case'->>'id')::uuid<>first_id then raise exception 'same physical match created a duplicate case'; end if;
-  if (select count(*) from public.exchange_case_item_locks where case_id=first_id)<>2 then raise exception 'proposal did not soft-hold both physical items'; end if;
 end $$;
+reset role;
+do $$ begin
+  if (select count(*) from public.exchange_case_item_locks where case_id=(select id from test_context where name='first'))<>2 then raise exception 'proposal did not soft-hold both physical items'; end if;
+end $$;
+set local role authenticated;
 
 -- A non-participant cannot read or mutate the aggregate.
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000003';
@@ -99,18 +103,22 @@ set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000001';
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'handoff','handoff-a','{}');
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000002';
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'handoff','handoff-b','{}');
+reset role;
 do $$ begin
   if (select state from public.exchange_cases where id=(select id from test_context where name='first'))<>'ACTIVE' then raise exception 'dual handoff did not activate case'; end if;
   if (select return_due_at::date-handoff_at::date from public.exchange_cases where id=(select id from test_context where name='first'))<>30 then raise exception 'return due date is not anchored to handoff'; end if;
   if (select count(*) from public.exchange_case_item_locks where case_id=(select id from test_context where name='first') and lock_kind='ON_EXCHANGE')<>2 then raise exception 'physical custody lock missing'; end if;
 end $$;
+set local role authenticated;
 
 select public.send_exchange_case_message(:'case_id','Can we return next week?','message-b-1');
 select public.send_exchange_case_message(:'case_id','Can we return next week?','message-b-1');
+reset role;
 do $$ begin
   if (select count(*) from public.exchange_case_messages where case_id=(select id from test_context where name='first'))<>1 then raise exception 'message retry duplicated content'; end if;
   if (select count(*) from public.notifications where exchange_case_id=(select id from test_context where name='first') and kind='exchange_message')<>1 then raise exception 'message notification was not deduplicated'; end if;
 end $$;
+set local role authenticated;
 
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'early_return','early-return-b','{}');
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'propose_return','return-meetup-b',
@@ -128,12 +136,14 @@ set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000001';
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'return_confirm','return-confirm-a','{}');
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000002';
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'return_confirm','return-confirm-b','{}');
+reset role;
 do $$ begin
   if (select state from public.exchange_cases where id=(select id from test_context where name='first'))<>'COMPLETED' then raise exception 'dual return did not complete case'; end if;
   if exists(select 1 from public.exchange_case_item_locks where case_id=(select id from test_context where name='first')) then raise exception 'completed case retained item locks'; end if;
   if (select count(*) from public.collection_items where id in ('10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002') and exchange_review_required)<>2 then raise exception 'returned items were not held for owner review'; end if;
   if (select count(*) from public.notification_email_deliveries) < 1 then raise exception 'durable notification outbox remained empty'; end if;
 end $$;
+set local role authenticated;
 
 -- Blocking is bilateral for matching and proposal creation.
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000003';
@@ -152,6 +162,7 @@ delete from public.exchange_user_blocks where blocker_id='00000000-0000-4000-800
 select (public.create_exchange_case('10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000004',90,'Second case','create-c-d')->'case'->>'id')::uuid as second_case_id \gset
 insert into test_context values('second',:'second_case_id');
 select public.exchange_case_transition(:'second_case_id',(select state_version from public.exchange_cases where id=:'second_case_id'),'cancel','cancel-c-d','{"reason":"Plans changed"}');
+reset role;
 do $$ begin
   if exists(select 1 from public.exchange_case_item_locks where case_id=(select id from test_context where name='second')) then raise exception 'cancelled case retained item holds'; end if;
   if (select count(*) from public.collection_items where id in ('10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000004') and available_for_exchange)<>2 then raise exception 'cancellation did not restore availability preference'; end if;
