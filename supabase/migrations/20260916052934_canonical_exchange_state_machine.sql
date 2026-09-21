@@ -10,7 +10,7 @@ alter table public.collection_items
 create table public.exchange_cases (
   id uuid primary key default extensions.gen_random_uuid(),
   match_key text generated always as (
-    pg_catalog.least(item_a::text,item_b::text) || ':' || pg_catalog.greatest(item_a::text,item_b::text)
+    least(item_a::text,item_b::text) || ':' || greatest(item_a::text,item_b::text)
   ) stored,
   user_a uuid not null references auth.users(id),
   user_b uuid not null references auth.users(id),
@@ -352,7 +352,7 @@ begin
   if not exists(select 1 from public.wishlists w where w.user_id=me and public.canonical_lego_product_identity(w.set_number)=public.canonical_lego_product_identity(requested.set_number))
      or not exists(select 1 from public.wishlists w where w.user_id=requested.user_id and public.canonical_lego_product_identity(w.set_number)=public.canonical_lego_product_identity(offered.set_number)) then raise exception 'This reciprocal match is no longer available'; end if;
   if exists(select 1 from public.exchange_case_item_locks where item_id in (offered.id,requested.id)) then
-    select c.id into existing_id from public.exchange_cases c where c.match_key=pg_catalog.least(offered.id::text,requested.id::text)||':'||pg_catalog.greatest(offered.id::text,requested.id::text)
+    select c.id into existing_id from public.exchange_cases c where c.match_key=least(offered.id::text,requested.id::text)||':'||greatest(offered.id::text,requested.id::text)
       and not private.bc_case_is_terminal(c.state) limit 1;
     if existing_id is not null then return private.bc_case_snapshot(existing_id,true); end if;
     raise exception 'One of these LEGO sets is already participating in another case';
@@ -612,7 +612,7 @@ returns integer language plpgsql security definer set search_path=''
 as $$
 declare c public.exchange_cases%rowtype; event_id uuid; expired_count integer:=0;
 begin
-  for c in select * from public.exchange_cases where state='PROPOSED' and response_deadline<=pg_catalog.now() order by response_deadline for update skip locked limit pg_catalog.greatest(1,pg_catalog.least(p_limit,1000)) loop
+  for c in select * from public.exchange_cases where state='PROPOSED' and response_deadline<=pg_catalog.now() order by response_deadline for update skip locked limit greatest(1,least(p_limit,1000)) loop
     update public.exchange_cases set state='EXPIRED',cancelled_at=pg_catalog.now(),state_version=state_version+1,updated_at=pg_catalog.now() where id=c.id returning * into c;
     perform private.bc_restore_case_preferences(c);
     insert into public.exchange_case_events(case_id,event_type,previous_state,resulting_state,actor_user_id,state_version,idempotency_key,metadata)
@@ -633,7 +633,7 @@ begin
   for c in select * from public.exchange_cases where
     (state='PROPOSED' and response_deadline between p_now and p_now+interval '24 hours')
     or (state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION') and return_due_at is not null and return_due_at<=p_now+interval '7 days')
-    order by updated_at limit pg_catalog.greatest(1,pg_catalog.least(p_limit,2000))
+    order by updated_at limit greatest(1,least(p_limit,2000))
   loop
     if c.state='PROPOSED' then recipient:=c.recipient_id;reminder_kind:='proposal_reminder';reminder_key:='proposal-24h:'||c.id::text;
     elsif c.return_due_at<p_now then reminder_kind:='return_overdue';reminder_key:='return-overdue:'||c.id::text||':'||p_now::date::text;
