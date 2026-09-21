@@ -170,8 +170,12 @@ end $$;
 
 -- Legacy lifecycle procedures and direct workflow table writes are unavailable.
 do $$ begin
-  if has_function_privilege('authenticated','public.create_exchange_request(uuid,uuid,integer,text)','EXECUTE') then raise exception 'legacy proposal RPC is still executable'; end if;
-  if has_function_privilege('authenticated','public.respond_exchange_request(uuid,text)','EXECUTE') then raise exception 'legacy response RPC is still executable'; end if;
+  if to_regprocedure('public.create_exchange_request(uuid,uuid,integer,text)') is not null
+     and has_function_privilege('authenticated', to_regprocedure('public.create_exchange_request(uuid,uuid,integer,text)'), 'EXECUTE')
+  then raise exception 'legacy proposal RPC is still executable'; end if;
+  if to_regprocedure('public.respond_exchange_request(uuid,text)') is not null
+     and has_function_privilege('authenticated', to_regprocedure('public.respond_exchange_request(uuid,text)'), 'EXECUTE')
+  then raise exception 'legacy response RPC is still executable'; end if;
   if has_table_privilege('authenticated','public.exchanges','INSERT,UPDATE,DELETE') then raise exception 'legacy lifecycle table remains browser-writable'; end if;
 end $$;
 
