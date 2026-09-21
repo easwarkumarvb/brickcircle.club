@@ -9,9 +9,9 @@ test('stored unread proposal appears on login and opens the exact request',async
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveText('1');
 
   await notice.getByRole('button',{name:'View proposal'}).click();
-  await expect(page).toHaveURL(/#exchanges\/proposal-request-1$/);
-  await expect(page.locator('[data-request-card="proposal-request-1"]')).toContainText('Incoming proposal');
-  await expect(page.locator('[data-request-card="proposal-request-1"]')).toContainText('Ramya');
+  await expect(page).toHaveURL(/#exchange\/proposal-request-1$/);
+  await expect(page.locator('#bc-flow')).toContainText('Proposal pending');
+  await expect(page.locator('main')).toContainText('Ramya');
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.notifications[0].read_at)).not.toBeNull();
 });
@@ -41,7 +41,7 @@ test('refresh preserves one durable unread row without repeating the login inter
   await page.reload();
   await expect(page.locator('#bc-overlay')).toHaveCount(0);
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveText('1');
-  expect(await page.evaluate(()=>window.__bcIsolated.notifications.filter((item:any)=>item.entity_id==='proposal-request-1').length)).toBe(1);
+  expect(await page.evaluate(()=>window.__bcIsolated.notifications.filter((item:any)=>item.exchange_case_id==='proposal-request-1').length)).toBe(1);
 });
 
 test('cancelled request is presented once as lifecycle—not as a new proposal',async({page})=>{
@@ -86,9 +86,9 @@ test('online recipient receives a live badge and clean proposal notification',as
 
   await page.evaluate(()=>{
     const state=window.__bcIsolated;
-    const request={id:'live-request-1',requester_id:'00000000-0000-4000-8000-000000000099',responder_id:'00000000-0000-4000-8000-000000000007',offered_item_id:'other-item-1',requested_item_id:'c1',duration_days:60,status:'pending',created_at:'2026-09-03T12:00:00.000Z'};
-    state.requests.unshift(request);
-    state.emitNotification({id:'live-note-1',user_id:request.responder_id,kind:'request_received',title:'New exchange proposal',body:'Ramya proposed an exchange with you.',actor_user_id:request.requester_id,entity_type:'exchange_request',entity_id:request.id,metadata:{exchange_request_id:request.id,route:'#exchanges/live-request-1'},read_at:null,created_at:request.created_at});
+    const request={id:'live-request-1',user_a:'00000000-0000-4000-8000-000000000099',user_b:'00000000-0000-4000-8000-000000000007',proposer_id:'00000000-0000-4000-8000-000000000099',recipient_id:'00000000-0000-4000-8000-000000000007',item_a:'other-item-1',item_b:'c1',duration_days:60,state:'PROPOSED',state_version:1,created_at:'2026-09-03T12:00:00.000Z'};
+    state.exchanges.unshift(request);
+    state.emitNotification({id:'live-note-1',user_id:request.recipient_id,kind:'exchange_proposed',title:'New exchange proposal',body:'Ramya proposed an exchange with you.',actor_user_id:request.proposer_id,entity_type:'exchange_case_event',entity_id:'10000000-0000-4000-8000-000000000098',exchange_case_id:request.id,metadata:{exchange_case_id:request.id,route:'#exchange/live-request-1'},read_at:null,created_at:request.created_at});
   });
 
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveText('1');
@@ -98,8 +98,8 @@ test('online recipient receives a live badge and clean proposal notification',as
   await expect(notification).toContainText('New exchange proposal');
   await expect(notification).toContainText('View proposal');
   await notification.click();
-  await expect(page).toHaveURL(/#exchanges\/live-request-1$/);
-  await expect(page.locator('[data-request-card="live-request-1"]')).toBeVisible();
+  await expect(page).toHaveURL(/#exchange\/live-request-1$/);
+  await expect(page.locator('#bc-flow')).toContainText('Proposal pending');
 });
 
 test('existing reciprocal-match login notice still appears when no proposal is unread',async({page})=>{
