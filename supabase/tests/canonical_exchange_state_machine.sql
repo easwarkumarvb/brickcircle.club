@@ -47,6 +47,151 @@ do $$ declare conflict_case public.exchange_cases%rowtype; begin
 end $$;
 reset role;
 
+-- Quarantine reconciliation is visible and executable only through the
+-- approved service-side administrator boundary.
+insert into auth.users(id,email) values('00000000-0000-4000-8000-000000000099','exchange-admin@example.test');
+insert into private.exchange_admins(user_id) values('00000000-0000-4000-8000-000000000099');
+do $$ begin
+  if has_function_privilege('authenticated',
+    'public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text)','EXECUTE') then
+    raise exception 'participants can execute quarantine reconciliation directly';
+  end if;
+  if has_table_privilege('authenticated','public.exchange_case_item_locks','SELECT,INSERT,UPDATE,DELETE') then
+    raise exception 'participants can access the item lock table directly';
+  end if;
+end $$;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+do $$ begin
+  begin
+    perform public.reconcile_exchange_quarantine_case(
+      '00000000-0000-4000-8000-000000000099',
+      (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'),
+      1,'CANCELLED','Unauthorized participant attempt',
+      '[]'::jsonb,'unauthorized-quarantine-attempt');
+    raise exception 'participant quarantine reconciliation unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='participant quarantine reconciliation unexpectedly succeeded' then raise; end if;
+    if position('permission denied' in sqlerrm)=0 then raise; end if;
+  end;
+end $$;
+reset role;
+set local role service_role;
+do $$ declare report jsonb; begin
+  report:=public.exchange_quarantine_report('00000000-0000-4000-8000-000000000099');
+  if pg_catalog.jsonb_array_length(report->'cases')<>2 then raise exception 'administrator report omitted conflicting cases'; end if;
+  if position('legacy_request' in report::text)=0 or position('current_lock' in report::text)=0
+     or position('recorded_custody' in report::text)=0 then
+    raise exception 'administrator report omitted legacy evidence, locks, or custody records';
+  end if;
+  begin
+    perform public.exchange_quarantine_report('00000000-0000-4000-8000-000000000054');
+    raise exception 'unapproved service-side identity unexpectedly read quarantine report';
+  exception when others then
+    if sqlerrm='unapproved service-side identity unexpectedly read quarantine report' then raise; end if;
+    if position('Approved server-side administrator identity' in sqlerrm)=0 then raise; end if;
+  end;
+end $$;
+
+-- Record one case. The shared item and both cases must remain quarantined.
+select public.reconcile_exchange_quarantine_case(
+  '00000000-0000-4000-8000-000000000099',
+  (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'),
+  1,'CANCELLED','Verified both physical sets were returned to their registered owners.',
+  pg_catalog.jsonb_build_array(
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000004','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 confirmed possession with timestamped set photographs.'),
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000005','verified_holder_user_id','00000000-0000-4000-8000-000000000052','lock_case_id',null,'evidence','Owner 52 confirmed possession with timestamped set photographs.')
+  ),'legacy-reconcile-case-003'
+);
+do $$ declare events_before integer; notifications_before integer; retry jsonb; begin
+  if not exists(select 1 from public.exchange_case_item_locks where item_id='51000000-0000-4000-8000-000000000004' and case_id is null) then
+    raise exception 'resolving one case released the shared quarantine lock';
+  end if;
+  if (select count(*) from public.exchange_cases where legacy_exchange_id in
+      ('53000000-0000-4000-8000-000000000003','53000000-0000-4000-8000-000000000004') and migration_review_required)<>2 then
+    raise exception 'a partial reconciliation unblocked a conflicting case';
+  end if;
+  select count(*) into events_before from public.exchange_case_events where idempotency_key='legacy-reconcile-case-003';
+  select count(*) into notifications_before from public.notifications where kind='exchange_quarantine_reviewed';
+  retry:=public.reconcile_exchange_quarantine_case(
+    '00000000-0000-4000-8000-000000000099',
+    (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'),
+    1,'CANCELLED','Verified both physical sets were returned to their registered owners.',
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000004','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 confirmed possession with timestamped set photographs.'),
+      pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000005','verified_holder_user_id','00000000-0000-4000-8000-000000000052','lock_case_id',null,'evidence','Owner 52 confirmed possession with timestamped set photographs.')
+    ),'legacy-reconcile-case-003');
+  if retry->>'idempotent'<>'true' then raise exception 'quarantine retry was not idempotent'; end if;
+  if (select count(*) from public.exchange_case_events where idempotency_key='legacy-reconcile-case-003')<>events_before
+     or (select count(*) from public.notifications where kind='exchange_quarantine_reviewed')<>notifications_before then
+    raise exception 'quarantine retry duplicated an event or notification';
+  end if;
+end $$;
+reset role;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000054';
+do $$ declare conflict_case public.exchange_cases%rowtype; begin
+  select * into conflict_case from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000004';
+  begin
+    perform public.exchange_case_transition(conflict_case.id,conflict_case.state_version,'cancel','still-quarantined-transition','{}');
+    raise exception 'affected participant transitioned an unresolved quarantine case';
+  exception when others then
+    if sqlerrm='affected participant transitioned an unresolved quarantine case' then raise; end if;
+    if position('quarantined' in sqlerrm)=0 then raise; end if;
+  end;
+end $$;
+reset role;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+do $$ begin
+  begin
+    perform public.set_exchange_item_availability('51000000-0000-4000-8000-000000000004',true);
+    raise exception 'owner re-enabled a still-quarantined shared item';
+  exception when others then if sqlerrm='owner re-enabled a still-quarantined shared item' then raise; end if; end;
+end $$;
+reset role;
+
+-- The second consistent decision completes the connected component atomically.
+set local role service_role;
+select public.reconcile_exchange_quarantine_case(
+  '00000000-0000-4000-8000-000000000099',
+  (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000004'),
+  1,'CANCELLED','Verified both physical sets were returned to their registered owners.',
+  pg_catalog.jsonb_build_array(
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000004','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 confirmed possession with timestamped set photographs.'),
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000006','verified_holder_user_id','00000000-0000-4000-8000-000000000054','lock_case_id',null,'evidence','Owner 54 confirmed possession with timestamped set photographs.')
+  ),'legacy-reconcile-case-004'
+);
+reset role;
+do $$ begin
+  if exists(select 1 from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000004','51000000-0000-4000-8000-000000000005','51000000-0000-4000-8000-000000000006')) then
+    raise exception 'fully reconciled owner-held items retained a quarantine lock';
+  end if;
+  if (select count(*) from public.collection_items where id in
+      ('51000000-0000-4000-8000-000000000004','51000000-0000-4000-8000-000000000005','51000000-0000-4000-8000-000000000006')
+      and exchange_review_required and not available_for_exchange)<>3 then
+    raise exception 'reconciled owner-held items did not enter owner review';
+  end if;
+  if (select count(*) from public.exchange_cases where legacy_exchange_id in
+      ('53000000-0000-4000-8000-000000000003','53000000-0000-4000-8000-000000000004')
+      and state='CANCELLED' and not migration_review_required)<>2 then
+    raise exception 'all connected quarantine cases were not finalized';
+  end if;
+  if (select count(*) from private.exchange_quarantine_reconciliations where finalized_at is not null)<>2 then
+    raise exception 'reconciliation audit rows were not finalized';
+  end if;
+end $$;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+select public.set_exchange_item_availability('51000000-0000-4000-8000-000000000004',true);
+do $$ begin
+  if public.collection_item_exchange_status('51000000-0000-4000-8000-000000000004')<>'AVAILABLE' then
+    raise exception 'verified owner could not re-enable the safely released item';
+  end if;
+end $$;
+reset role;
+
 insert into auth.users(id,email) values
   ('00000000-0000-4000-8000-000000000001','a@example.test'),
   ('00000000-0000-4000-8000-000000000002','b@example.test'),

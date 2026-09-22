@@ -10,6 +10,93 @@ This runbook is for an isolated staging project only. It does not authorize a pr
 - Review every migration_review_required case before enabling writes.
 - Keep the previous web release available for frontend rollback; database rollback is forward repair only.
 
+## Administrator legacy-quarantine reconciliation
+
+This procedure runs only from the approved server-side administration service with the `service_role` credential. The service must authenticate the human administrator, pass that administrator's UUID as `p_administrator_id`, and confirm that UUID already exists in `private.exchange_admins`. Never expose the service credential or either reconciliation RPC to a browser. Ordinary participants intentionally have no `EXECUTE` privilege and no access to the lock or reconciliation tables.
+
+### Preconditions
+
+1. Pause exchange writes for the affected legacy cases. Do not alter or delete the legacy `exchange_requests` or `exchanges` rows.
+2. Record the migration backup identifier, operator identity, incident/ticket reference, and current case versions.
+3. Obtain direct evidence for the physical holder of every affected set. Acceptable evidence must identify the exact physical set and holder; a legacy status alone is not custody evidence.
+4. For a set verified with its registered owner, use that owner's UUID and a null `lock_case_id`. For a set held by somebody else, identify the affected case that involves that holder, supply it as `lock_case_id`, and keep every case reporting that set consistent. Any case containing non-owner custody must use `DISPUTED`.
+
+### Inspect the complete evidence bundle
+
+Call this through the server administration service before making a decision:
+
+```sql
+select public.exchange_quarantine_report(:approved_administrator_id);
+```
+
+For every case, review `legacy_request`, `legacy_exchange`, both `items`, each `current_lock`, all `referencing_cases`, and `recorded_custody`. The report deliberately shows evidence without inferring custody.
+
+### Record each case decision
+
+Submit each quarantined case once with its current `state_version`, a unique durable idempotency key, a specific reason, and exactly one outcome for each case item:
+
+```sql
+select public.reconcile_exchange_quarantine_case(
+  :approved_administrator_id,
+  :case_id,
+  :expected_state_version,
+  :resolution, -- CANCELLED, COMPLETED, or DISPUTED
+  :reason,
+  jsonb_build_array(
+    jsonb_build_object(
+      'item_id',:item_a,
+      'verified_holder_user_id',:verified_holder_a,
+      'lock_case_id',:lock_case_a,
+      'evidence',:custody_evidence_a
+    ),
+    jsonb_build_object(
+      'item_id',:item_b,
+      'verified_holder_user_id',:verified_holder_b,
+      'lock_case_id',:lock_case_b,
+      'evidence',:custody_evidence_b
+    )
+  ),
+  :idempotency_key
+);
+```
+
+The first decision in a connected conflict group records an immutable audit event but does not release any group lock. Once every connected case has a consistent decision, the final call atomically updates all cases, item locks, owner-review flags, audit rows, events, and participant notifications. Owner-held items become unavailable and require owner review before re-enabling. Non-owner-held items retain a `MANUAL_REVIEW` lock assigned to the explicitly selected disputed case.
+
+### Audit after reconciliation
+
+Run the report again and retain it with the incident record. Verify the database invariants through the server-side audit connection:
+
+```sql
+select id,state,state_version,migration_review_required,migration_note
+from public.exchange_cases
+where id = any(:connected_case_ids)
+order by id;
+
+select ci.id,ci.user_id,ci.available_for_exchange,ci.exchange_review_required,
+       l.case_id,l.lock_kind
+from public.collection_items ci
+left join public.exchange_case_item_locks l on l.item_id=ci.id
+where ci.id = any(:affected_item_ids)
+order by ci.id;
+
+select case_id,event_type,actor_user_id,idempotency_key,metadata,created_at
+from public.exchange_case_events
+where case_id = any(:connected_case_ids)
+  and event_type in ('legacy_quarantine_decision_recorded','legacy_quarantine_reconciled')
+order by created_at,id;
+```
+
+Confirm that every reconciliation row is finalized, every owner-held item has no lock and has `exchange_review_required=true`, and every non-owner-held item has exactly one `MANUAL_REVIEW` lock attached to the recorded case. The owner may call the normal availability action only after the lock is absent and the physical set has been reviewed.
+
+### Failure recovery
+
+- If the server loses the response, retry the identical payload with the same idempotency key. Do not generate a new key for the same intended decision.
+- If evidence conflicts with an earlier recorded outcome, stop. The function rejects the call and leaves the connected group quarantined. Escalate for evidence review; do not delete or edit audit rows.
+- If a stale version is reported, regenerate the quarantine report and reassess before submitting a new intended action.
+- If only some cases are recorded, leave the NULL-attributed `MANUAL_REVIEW` locks in place. Continue with the remaining explicit decisions; never delete those locks manually.
+- If the atomic finalization fails, the transaction rolls back case, lock, item, event, and notification changes together. Correct the input or database fault, then retry with the same key.
+- A non-owner custody result remains `DISPUTED` and locked. After a separately verified return, use the existing administrator resolution workflow; preserve its reason and evidence in the audit trail.
+
 ## Two-user smoke test
 
 Use two ordinary adult accounts in the same city. Each account needs an owned set with an owner photo, condition and completeness, and each must wishlist the other set.
@@ -46,7 +133,7 @@ Use two ordinary adult accounts in the same city. Each account needs an owned se
 1. Freeze overlapping exchange PRs and record the exact main SHA.
 2. Back up and count legacy requests, exchanges, meetups, returns and exchange-linked messages.
 3. Apply the forward-only migration in staging; compare source and migrated counts plus item-lock coverage.
-4. Resolve or quarantine every migration_review_required case.
+4. Reconcile every `migration_review_required` conflict group through the administrator procedure above; do not manually delete NULL-case locks.
 5. Deploy the versioned frontend to staging and complete this runbook in Chromium, Firefox, WebKit and 390px mobile.
 6. Obtain technical, security and product approval for the migration report.
 7. Schedule production separately with monitoring for RPC errors, lock conflicts, notification-outbox backlog and migration-review rows.

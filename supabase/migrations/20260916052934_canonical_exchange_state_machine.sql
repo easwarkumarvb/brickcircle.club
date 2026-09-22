@@ -194,6 +194,20 @@ create table private.exchange_admins (
 revoke all on private.exchange_admins from public,anon,authenticated;
 grant all on private.exchange_admins to service_role;
 
+create table private.exchange_quarantine_reconciliations (
+  id uuid primary key default extensions.gen_random_uuid(),
+  case_id uuid not null unique references public.exchange_cases(id) on delete restrict,
+  administrator_id uuid not null references auth.users(id) on delete restrict,
+  requested_resolution text not null check (requested_resolution in ('CANCELLED','COMPLETED','DISPUTED')),
+  reason text not null check (pg_catalog.length(pg_catalog.btrim(reason)) between 10 and 2000),
+  item_outcomes jsonb not null check (pg_catalog.jsonb_typeof(item_outcomes)='array'),
+  idempotency_key text not null unique,
+  recorded_at timestamptz not null default pg_catalog.now(),
+  finalized_at timestamptz
+);
+revoke all on private.exchange_quarantine_reconciliations from public,anon,authenticated;
+grant all on private.exchange_quarantine_reconciliations to service_role;
+
 create table public.exchange_user_blocks (
   blocker_id uuid not null references auth.users(id) on delete cascade,
   blocked_id uuid not null references auth.users(id) on delete cascade,
@@ -425,6 +439,256 @@ begin
   perform private.bc_case_notify(c,event_id,c.user_a,'exchange_resolved','Exchange issue resolved','An authorised BrickCircle administrator resolved the exchange case.',me);
   perform private.bc_case_notify(c,event_id,c.user_b,'exchange_resolved','Exchange issue resolved','An authorised BrickCircle administrator resolved the exchange case.',me);
   return pg_catalog.jsonb_build_object('ok',true,'idempotent',false,'case',pg_catalog.to_jsonb(c));
+end;
+$$;
+
+create or replace function public.exchange_quarantine_report(p_administrator_id uuid)
+returns jsonb language plpgsql stable security definer set search_path=''
+as $$
+declare report jsonb;
+begin
+  if p_administrator_id is null or not exists(
+    select 1 from private.exchange_admins a where a.user_id=p_administrator_id
+  ) then raise exception 'Approved server-side administrator identity is required'; end if;
+  select pg_catalog.jsonb_build_object(
+    'generated_at',pg_catalog.now(),
+    'cases',coalesce(pg_catalog.jsonb_agg(case_record order by case_record->>'created_at'),'[]'::jsonb)
+  ) into report
+  from (
+    select pg_catalog.jsonb_build_object(
+      'id',c.id,'created_at',c.created_at,'state',c.state,'state_version',c.state_version,
+      'migration_review_required',c.migration_review_required,'migration_note',c.migration_note,
+      'participants',pg_catalog.jsonb_build_array(c.user_a,c.user_b),
+      'legacy_request',pg_catalog.to_jsonb(r),'legacy_exchange',pg_catalog.to_jsonb(e),
+      'reconciliation',pg_catalog.to_jsonb(q),
+      'items',(
+        select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+          'item',pg_catalog.to_jsonb(ci),'current_lock',pg_catalog.to_jsonb(l),
+          'recorded_custody',coalesce((
+            select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+              'case_id',qr.case_id,'administrator_id',qr.administrator_id,
+              'requested_resolution',qr.requested_resolution,'reason',qr.reason,
+              'outcome',outcome,'recorded_at',qr.recorded_at,'finalized_at',qr.finalized_at
+            ) order by qr.recorded_at)
+            from private.exchange_quarantine_reconciliations qr
+            cross join lateral pg_catalog.jsonb_array_elements(qr.item_outcomes) outcome
+            where (outcome->>'item_id')::uuid=ci.id
+          ),'[]'::jsonb),
+          'referencing_cases',coalesce((
+            select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
+              'case_id',related.id,'state',related.state,'migration_review_required',related.migration_review_required,
+              'legacy_request_id',related.legacy_request_id,'legacy_exchange_id',related.legacy_exchange_id
+            ) order by related.created_at)
+            from public.exchange_cases related
+            where ci.id in (related.item_a,related.item_b)
+              and (related.migration_review_required or exists(
+                select 1 from private.exchange_quarantine_reconciliations prior where prior.case_id=related.id
+              ))
+          ),'[]'::jsonb)
+        ) order by ci.id)
+        from public.collection_items ci
+        left join public.exchange_case_item_locks l on l.item_id=ci.id
+        where ci.id in (c.item_a,c.item_b)
+      )
+    ) case_record
+    from public.exchange_cases c
+    left join public.exchange_requests r on r.id=c.legacy_request_id
+    left join public.exchanges e on e.id=c.legacy_exchange_id
+    left join private.exchange_quarantine_reconciliations q on q.case_id=c.id
+    where c.migration_review_required or q.id is not null
+  ) visible_quarantine;
+  return coalesce(report,pg_catalog.jsonb_build_object('generated_at',pg_catalog.now(),'cases','[]'::jsonb));
+end;
+$$;
+
+create or replace function public.reconcile_exchange_quarantine_case(
+  p_administrator_id uuid,
+  p_case_id uuid,
+  p_expected_version bigint,
+  p_resolution text,
+  p_reason text,
+  p_item_outcomes jsonb,
+  p_idempotency_key text
+)
+returns jsonb language plpgsql security definer set search_path=''
+as $$
+declare
+  c public.exchange_cases%rowtype; related public.exchange_cases%rowtype;
+  existing private.exchange_quarantine_reconciliations%rowtype;
+  reconciliation_id uuid; decision_event_id uuid; final_event_id uuid;
+  clean_key text:=nullif(pg_catalog.btrim(p_idempotency_key),'');
+  clean_reason text:=nullif(pg_catalog.btrim(p_reason),'');
+  clean_resolution text:=pg_catalog.upper(pg_catalog.btrim(p_resolution));
+  outcome jsonb; outcome_item uuid; outcome_holder uuid; outcome_lock_case uuid; outcome_evidence text;
+  item_owner uuid; prior_holder uuid; prior_lock_case uuid;
+  component_ids uuid[]; affected_item uuid;
+  final_holder uuid; final_lock_case uuid; pending_count integer; finalised_count integer:=0; previous_state text;
+begin
+  if p_administrator_id is null or not exists(
+    select 1 from private.exchange_admins a where a.user_id=p_administrator_id
+  ) then raise exception 'Approved server-side administrator identity is required'; end if;
+  if clean_key is null then raise exception 'An idempotency key is required'; end if;
+  if clean_reason is null or pg_catalog.length(clean_reason)<10 then raise exception 'A specific reconciliation reason is required'; end if;
+  if clean_resolution not in ('CANCELLED','COMPLETED','DISPUTED') then raise exception 'Choose CANCELLED, COMPLETED, or DISPUTED'; end if;
+
+  select * into existing from private.exchange_quarantine_reconciliations where idempotency_key=clean_key;
+  if found then
+    if existing.case_id<>p_case_id then raise exception 'Idempotency key belongs to another quarantine case'; end if;
+    return pg_catalog.jsonb_build_object('ok',true,'idempotent',true,'case_id',existing.case_id,
+      'finalized',existing.finalized_at is not null,'report',public.exchange_quarantine_report(p_administrator_id));
+  end if;
+
+  select * into c from public.exchange_cases where id=p_case_id for update;
+  if not found or not c.migration_review_required or c.legacy_exchange_id is null then
+    raise exception 'A quarantined legacy exchange case is required';
+  end if;
+  if p_expected_version is null or p_expected_version<>c.state_version then raise exception 'This exchange changed. Refresh and try again.'; end if;
+  if exists(select 1 from private.exchange_quarantine_reconciliations q where q.case_id=c.id) then
+    raise exception 'This quarantine case already has a recorded administrator decision';
+  end if;
+  if pg_catalog.jsonb_typeof(p_item_outcomes)<>'array' or pg_catalog.jsonb_array_length(p_item_outcomes)<>2 then
+    raise exception 'Record exactly one custody outcome for each physical item';
+  end if;
+  if (select pg_catalog.count(distinct (entry->>'item_id')::uuid) from pg_catalog.jsonb_array_elements(p_item_outcomes) entry)<>2
+     or exists(
+       select 1 from pg_catalog.jsonb_array_elements(p_item_outcomes) entry
+       where (entry->>'item_id')::uuid not in (c.item_a,c.item_b)
+     ) then raise exception 'Custody outcomes must identify both case items exactly once'; end if;
+
+  for outcome in select entry from pg_catalog.jsonb_array_elements(p_item_outcomes) entry loop
+    begin
+      outcome_item:=(outcome->>'item_id')::uuid;
+      outcome_holder:=(outcome->>'verified_holder_user_id')::uuid;
+      outcome_lock_case:=nullif(outcome->>'lock_case_id','')::uuid;
+    exception when others then raise exception 'Each custody outcome requires valid item and verified-holder UUIDs'; end;
+    outcome_evidence:=nullif(pg_catalog.btrim(outcome->>'evidence'),'');
+    if outcome_evidence is null or pg_catalog.length(outcome_evidence)<10 then
+      raise exception 'Each physical item requires specific custody evidence';
+    end if;
+    select ci.user_id into item_owner from public.collection_items ci where ci.id=outcome_item for update;
+    if item_owner is null then raise exception 'Physical item is unavailable'; end if;
+    if not exists(select 1 from auth.users u where u.id=outcome_holder) then raise exception 'Verified custody holder is unavailable'; end if;
+    if outcome_holder=item_owner and outcome_lock_case is not null then
+      raise exception 'An owner-verified item must not be assigned a custody lock';
+    elsif outcome_holder<>item_owner then
+      if outcome_lock_case is null or not exists(
+        select 1 from public.exchange_cases lock_case
+        where lock_case.id=outcome_lock_case and outcome_item in (lock_case.item_a,lock_case.item_b)
+          and outcome_holder in (lock_case.user_a,lock_case.user_b) and lock_case.migration_review_required
+      ) then raise exception 'Non-owner custody requires an explicit affected lock case involving that holder'; end if;
+      if clean_resolution<>'DISPUTED' then raise exception 'A case with non-owner custody must remain DISPUTED'; end if;
+    end if;
+    select (prior_outcome->>'verified_holder_user_id')::uuid,
+      nullif(prior_outcome->>'lock_case_id','')::uuid into prior_holder,prior_lock_case
+    from private.exchange_quarantine_reconciliations prior
+    cross join lateral pg_catalog.jsonb_array_elements(prior.item_outcomes) prior_outcome
+    where (prior_outcome->>'item_id')::uuid=outcome_item limit 1;
+    if found and (prior_holder<>outcome_holder or prior_lock_case is distinct from outcome_lock_case) then
+      raise exception 'Recorded custody evidence conflicts with another case for this physical item';
+    end if;
+  end loop;
+
+  insert into private.exchange_quarantine_reconciliations(
+    case_id,administrator_id,requested_resolution,reason,item_outcomes,idempotency_key
+  ) values(c.id,p_administrator_id,clean_resolution,clean_reason,p_item_outcomes,clean_key)
+  returning id into reconciliation_id;
+  insert into public.exchange_case_events(
+    case_id,event_type,previous_state,resulting_state,actor_user_id,state_version,idempotency_key,metadata
+  ) values(c.id,'legacy_quarantine_decision_recorded',c.state,c.state,p_administrator_id,c.state_version,clean_key,
+    pg_catalog.jsonb_build_object('resolution',clean_resolution,'reason',clean_reason,'item_outcomes',p_item_outcomes))
+  returning id into decision_event_id;
+  perform private.bc_case_notify(c,decision_event_id,c.user_a,'exchange_quarantine_reviewed','Legacy exchange custody reviewed',
+    'An administrator recorded verified custody evidence. Conflicting cases remain locked until every related case is reconciled.',p_administrator_id);
+  perform private.bc_case_notify(c,decision_event_id,c.user_b,'exchange_quarantine_reviewed','Legacy exchange custody reviewed',
+    'An administrator recorded verified custody evidence. Conflicting cases remain locked until every related case is reconciled.',p_administrator_id);
+
+  with recursive component(case_id) as (
+    select c.id
+    union
+    select neighbour.id
+    from component member
+    join public.exchange_cases linked on linked.id=member.case_id
+    join public.exchange_cases neighbour on neighbour.id<>linked.id
+      and (neighbour.item_a in (linked.item_a,linked.item_b) or neighbour.item_b in (linked.item_a,linked.item_b))
+    where neighbour.migration_review_required or exists(
+      select 1 from private.exchange_quarantine_reconciliations recorded where recorded.case_id=neighbour.id
+    )
+  ) select pg_catalog.array_agg(case_id order by case_id) into component_ids from component;
+
+  select pg_catalog.count(*) into pending_count
+  from pg_catalog.unnest(component_ids) member_id
+  where not exists(select 1 from private.exchange_quarantine_reconciliations q where q.case_id=member_id);
+  if pending_count>0 then
+    return pg_catalog.jsonb_build_object('ok',true,'idempotent',false,'case_id',c.id,'finalized',false,
+      'pending_related_cases',pending_count,'report',public.exchange_quarantine_report(p_administrator_id));
+  end if;
+
+  perform 1 from public.exchange_cases locked where locked.id=any(component_ids) order by locked.id for update;
+  perform pg_catalog.set_config('brickcircle.workflow_transition','on',true);
+  for affected_item in
+    select distinct item_id from (
+      select grouped.item_a item_id from public.exchange_cases grouped where grouped.id=any(component_ids)
+      union all
+      select grouped.item_b from public.exchange_cases grouped where grouped.id=any(component_ids)
+    ) items order by item_id
+  loop
+    select (recorded_outcome->>'verified_holder_user_id')::uuid,
+      nullif(recorded_outcome->>'lock_case_id','')::uuid into final_holder,final_lock_case
+    from private.exchange_quarantine_reconciliations recorded
+    cross join lateral pg_catalog.jsonb_array_elements(recorded.item_outcomes) recorded_outcome
+    where recorded.case_id=any(component_ids) and (recorded_outcome->>'item_id')::uuid=affected_item limit 1;
+    select ci.user_id into item_owner from public.collection_items ci where ci.id=affected_item for update;
+    if final_holder=item_owner then
+      delete from public.exchange_case_item_locks l where l.item_id=affected_item and l.lock_kind='MANUAL_REVIEW'
+        and (l.case_id is null or l.case_id=any(component_ids));
+      update public.collection_items set available_for_exchange=false,exchange_review_required=true,updated_at=pg_catalog.now()
+        where id=affected_item;
+    else
+      insert into public.exchange_case_item_locks(item_id,case_id,lock_kind)
+      values(affected_item,final_lock_case,'MANUAL_REVIEW')
+      on conflict(item_id) do update set case_id=excluded.case_id,lock_kind='MANUAL_REVIEW',updated_at=pg_catalog.now();
+      update public.collection_items set available_for_exchange=false,exchange_review_required=false,updated_at=pg_catalog.now()
+        where id=affected_item;
+    end if;
+  end loop;
+
+  for related in
+    select grouped.* from public.exchange_cases grouped where grouped.id=any(component_ids) order by grouped.id for update
+  loop
+    select * into existing from private.exchange_quarantine_reconciliations q where q.case_id=related.id;
+    if existing.finalized_at is not null then continue; end if;
+    previous_state:=related.state;
+    if existing.requested_resolution='COMPLETED' then
+      update public.exchange_cases set state='COMPLETED',completed_at=pg_catalog.now(),migration_review_required=false,
+        migration_note=existing.reason,state_version=state_version+1,updated_at=pg_catalog.now()
+        where id=related.id returning * into related;
+      update public.exchange_case_conversations set archived_at=pg_catalog.now() where case_id=related.id;
+    elsif existing.requested_resolution='CANCELLED' then
+      update public.exchange_cases set state='CANCELLED',cancelled_at=pg_catalog.now(),cancelled_reason=existing.reason,
+        migration_review_required=false,migration_note=existing.reason,state_version=state_version+1,updated_at=pg_catalog.now()
+        where id=related.id returning * into related;
+      update public.exchange_case_conversations set archived_at=pg_catalog.now() where case_id=related.id;
+    else
+      update public.exchange_cases set state='DISPUTED',issue_type='legacy_custody',issue_note=existing.reason,
+        migration_review_required=false,migration_note=existing.reason,state_version=state_version+1,updated_at=pg_catalog.now()
+        where id=related.id returning * into related;
+    end if;
+    update private.exchange_quarantine_reconciliations set finalized_at=pg_catalog.now() where id=existing.id;
+    insert into public.exchange_case_events(
+      case_id,event_type,previous_state,resulting_state,actor_user_id,state_version,idempotency_key,metadata
+    ) values(related.id,'legacy_quarantine_reconciled',previous_state,related.state,
+      existing.administrator_id,related.state_version,'legacy-quarantine-final:'||existing.id::text,
+      pg_catalog.jsonb_build_object('resolution',existing.requested_resolution,'reason',existing.reason,'item_outcomes',existing.item_outcomes))
+    returning id into final_event_id;
+    perform private.bc_case_notify(related,final_event_id,related.user_a,'exchange_quarantine_resolved','Legacy exchange reconciliation completed',
+      'Verified custody evidence was recorded and the legacy exchange quarantine was reconciled.',existing.administrator_id);
+    perform private.bc_case_notify(related,final_event_id,related.user_b,'exchange_quarantine_resolved','Legacy exchange reconciliation completed',
+      'Verified custody evidence was recorded and the legacy exchange quarantine was reconciled.',existing.administrator_id);
+    finalised_count:=finalised_count+1;
+  end loop;
+  perform pg_catalog.set_config('brickcircle.workflow_transition','off',true);
+  return pg_catalog.jsonb_build_object('ok',true,'idempotent',false,'case_id',c.id,'finalized',true,
+    'finalized_cases',finalised_count,'report',public.exchange_quarantine_report(p_administrator_id));
 end;
 $$;
 
@@ -920,6 +1184,8 @@ revoke all on function public.set_exchange_item_availability(uuid,boolean) from 
 revoke all on function public.create_exchange_case(uuid,uuid,integer,text,text) from public,anon;
 revoke all on function public.exchange_case_transition(uuid,bigint,text,text,jsonb) from public,anon;
 revoke all on function public.resolve_exchange_case(uuid,bigint,text,text,text) from public,anon;
+revoke all on function public.exchange_quarantine_report(uuid) from public,anon,authenticated;
+revoke all on function public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text) from public,anon,authenticated;
 revoke all on function public.send_exchange_case_message(uuid,text,text) from public,anon;
 revoke all on function public.submit_exchange_case_review(uuid,integer,text) from public,anon;
 revoke all on function public.expire_exchange_cases(integer) from public,anon,authenticated;
@@ -932,11 +1198,14 @@ grant execute on function public.collection_item_exchange_status(uuid),public.se
   public.send_exchange_case_message(uuid,text,text),public.submit_exchange_case_review(uuid,integer,text),public.find_matches(uuid) to authenticated;
 grant execute on function public.resolve_exchange_case(uuid,bigint,text,text,text) to service_role;
 grant execute on function public.resolve_exchange_case(uuid,bigint,text,text,text) to authenticated;
+grant execute on function public.exchange_quarantine_report(uuid),
+  public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text) to service_role;
 grant execute on function public.expire_exchange_cases(integer),public.queue_exchange_case_reminders(timestamptz,integer) to service_role;
 
 comment on table public.exchange_cases is 'Authoritative BrickCircle reciprocal exchange lifecycle aggregate.';
 comment on table public.exchange_case_events is 'Append-only exchange case audit and idempotency history.';
 comment on table public.exchange_case_item_locks is 'Server-owned physical item soft-hold/reservation/custody locks.';
 comment on function public.exchange_case_transition(uuid,bigint,text,text,jsonb) is 'Only participant workflow mutation boundary after proposal creation.';
+comment on function public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text) is 'Service-role-only, administrator-approved legacy custody reconciliation boundary.';
 
 notify pgrst,'reload schema';
