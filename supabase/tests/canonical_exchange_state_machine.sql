@@ -107,6 +107,7 @@ select public.reconcile_exchange_quarantine_case(
     pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000005','verified_holder_user_id','00000000-0000-4000-8000-000000000052','lock_case_id',null,'evidence','Owner 52 confirmed possession with timestamped set photographs.')
   ),'legacy-reconcile-case-003'
 );
+reset role;
 do $$ declare events_before integer; notifications_before integer; retry jsonb; begin
   if not exists(select 1 from public.exchange_case_item_locks where item_id='51000000-0000-4000-8000-000000000004' and case_id is null) then
     raise exception 'resolving one case released the shared quarantine lock';
