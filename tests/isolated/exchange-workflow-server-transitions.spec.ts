@@ -4,7 +4,7 @@ import {test,expect} from './fixtures';
 test('proposal creation is a server-owned, idempotent reciprocal transition',()=>{
   const source=fs.readFileSync('app-v3.js','utf8');
   const migration=fs.readFileSync('supabase/migrations/20260916052934_canonical_exchange_state_machine.sql','utf8');
-  expect(source).toContain("db.rpc('create_exchange_case'");
+  expect(source).toContain("canonicalRpc('create_exchange_case'");
   expect(source).not.toContain("db.from('exchange_requests').insert");
   expect(migration).toContain('create or replace function public.create_exchange_case');
   expect(migration).toContain('exchange_case_item_locks');
@@ -20,7 +20,7 @@ test('case messages derive the recipient and produce a durable deduplicated noti
   expect(migration).toContain('other_user:=private.bc_case_other_user(c,me)');
   expect(migration).toContain("'exchange_message'");
   expect(migration).toContain("'case-message:'");
-  expect(source).toContain("db.rpc('send_exchange_case_message'");
+  expect(source).toContain("canonicalRpc('send_exchange_case_message'");
   expect(source).toContain("notification?.exchange_case_id");
 });
 
@@ -32,7 +32,7 @@ test('owner release is server-owned, preserves history and protects post-handoff
   expect(migration).toContain('private.bc_restore_case_preferences(c)');
   expect(migration).toContain("lock_kind='MANUAL_REVIEW'");
   expect(migration).toContain('revoke insert,update,delete on public.exchange_requests,public.exchanges');
-  expect(source).toContain("db.rpc('exchange_case_transition'");
+  expect(source).toContain("canonicalRpc('exchange_case_transition'");
   expect(source).toContain('Open safe release options');
   expect(source).not.toMatch(/from\('messages'\)\.insert\(\{exchange_id:e\.id,sender_id:S\.user\.id,recipient_id:/);
 });

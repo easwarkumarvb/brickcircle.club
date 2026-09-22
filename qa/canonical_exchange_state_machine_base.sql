@@ -13,7 +13,8 @@ $$;
 
 create table public.profiles(
   id uuid primary key references auth.users(id),display_name text,country text,city text,
-  adult_confirmed_at timestamptz,updated_at timestamptz not null default now()
+  adult_confirmed_at timestamptz,rating numeric not null default 0,review_count integer not null default 0,
+  updated_at timestamptz not null default now()
 );
 create table public.lego_sets(
   set_number text primary key,name text not null,theme text,estimated_value numeric
@@ -83,6 +84,12 @@ for each row execute function public.enqueue_marketplace_notification_email();
 create table public.messages(
   id uuid primary key default extensions.gen_random_uuid(),exchange_id uuid references public.exchanges(id),
   sender_id uuid not null references auth.users(id),recipient_id uuid references auth.users(id),body text not null,created_at timestamptz not null default now()
+);
+create table public.reviews(
+  id uuid primary key default extensions.gen_random_uuid(),exchange_id uuid not null references public.exchanges(id) on delete cascade,
+  reviewer_id uuid not null references public.profiles(id),reviewee_id uuid not null references public.profiles(id),
+  rating integer not null check(rating between 1 and 5),comment text,created_at timestamptz not null default now(),
+  unique(exchange_id,reviewer_id)
 );
 
 create or replace function public.canonical_lego_product_identity(p_set text)

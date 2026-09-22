@@ -87,7 +87,7 @@ where state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION');
 
 create table public.exchange_case_item_locks (
   item_id uuid primary key references public.collection_items(id) on delete restrict,
-  case_id uuid not null references public.exchange_cases(id) on delete cascade,
+  case_id uuid references public.exchange_cases(id) on delete cascade,
   lock_kind text not null check (lock_kind in ('PROPOSAL_PENDING','RESERVED','ON_EXCHANGE','RETURN_PENDING','MANUAL_REVIEW')),
   created_at timestamptz not null default pg_catalog.now(),
   updated_at timestamptz not null default pg_catalog.now()
@@ -128,6 +128,16 @@ create table public.exchange_case_messages (
   unique(sender_id,idempotency_key)
 );
 create index exchange_case_messages_case_created_idx on public.exchange_case_messages(case_id,created_at,id);
+
+-- Legacy reviews remain attached to legacy exchanges. Canonical reviews use
+-- case_id instead, so a canonical UUID is never sent to the legacy review RPC.
+alter table public.reviews
+  alter column exchange_id drop not null,
+  add column case_id uuid references public.exchange_cases(id) on delete cascade;
+alter table public.reviews add constraint reviews_exactly_one_exchange_source
+  check ((exchange_id is null) <> (case_id is null));
+create unique index reviews_case_id_reviewer_id_key on public.reviews(case_id,reviewer_id)
+  where case_id is not null;
 
 alter table public.notifications
   add column if not exists exchange_case_id uuid references public.exchange_cases(id) on delete set null,
@@ -275,12 +285,12 @@ create or replace function public.collection_item_exchange_status(p_item_id uuid
 returns text language sql stable security definer set search_path=''
 as $$
   select case
-    when ci.exchange_review_required then 'NEEDS_OWNER_REVIEW'
     when l.lock_kind='PROPOSAL_PENDING' then 'PROPOSAL_PENDING'
     when l.lock_kind='RESERVED' then 'RESERVED'
     when l.lock_kind='ON_EXCHANGE' then 'ON_EXCHANGE'
     when l.lock_kind='RETURN_PENDING' then 'RETURN_PENDING'
     when l.lock_kind='MANUAL_REVIEW' then 'NEEDS_OWNER_REVIEW'
+    when ci.exchange_review_required then 'NEEDS_OWNER_REVIEW'
     when ci.available_for_exchange then 'AVAILABLE'
     else 'NOT_AVAILABLE'
   end
@@ -438,6 +448,9 @@ begin
   if exists(select 1 from public.exchange_case_events where case_id=p_case_id and idempotency_key=clean_key) then return private.bc_case_snapshot(p_case_id,true); end if;
   select * into c from public.exchange_cases where id=p_case_id for update;
   if not found or me not in (c.user_a,c.user_b) then raise exception 'Exchange case unavailable'; end if;
+  if c.migration_review_required then
+    raise exception 'This migrated exchange is quarantined until BrickCircle reconciles physical custody and item locks';
+  end if;
   if p_expected_version is null or p_expected_version<>c.state_version then raise exception 'This exchange changed. Refresh and try again.'; end if;
   if private.bc_case_is_terminal(c.state) then raise exception 'This exchange case is closed'; end if;
   before_state:=c.state; after_state:=c.state; other_user:=private.bc_case_other_user(c,me); is_a:=me=c.user_a;
@@ -607,6 +620,39 @@ begin
 end;
 $$;
 
+create or replace function public.submit_exchange_case_review(
+  p_case_id uuid,p_rating integer,p_comment text default null
+)
+returns jsonb language plpgsql security definer set search_path=''
+as $$
+declare
+  me uuid:=auth.uid(); c public.exchange_cases%rowtype; other_user uuid;
+  created_review public.reviews%rowtype;
+begin
+  if me is null then raise exception 'Not authenticated'; end if;
+  if p_rating not between 1 and 5 then raise exception 'Rating must be between 1 and 5'; end if;
+  select * into c from public.exchange_cases where id=p_case_id for share;
+  if not found or me not in (c.user_a,c.user_b) then raise exception 'Exchange case unavailable'; end if;
+  if c.state<>'COMPLETED' then raise exception 'Reviews are available only after completion'; end if;
+  other_user:=private.bc_case_other_user(c,me);
+  insert into public.reviews(exchange_id,case_id,reviewer_id,reviewee_id,rating,comment,created_at)
+  values(null,c.id,me,other_user,p_rating,nullif(pg_catalog.btrim(p_comment),''),pg_catalog.now())
+  returning * into created_review;
+  update public.profiles p set
+    rating=(select pg_catalog.round(pg_catalog.avg(r.rating)::numeric,2) from public.reviews r where r.reviewee_id=p.id),
+    review_count=(select pg_catalog.count(*) from public.reviews r where r.reviewee_id=p.id),
+    updated_at=pg_catalog.now()
+  where p.id=other_user;
+  insert into public.notifications(user_id,kind,title,body,actor_user_id,entity_type,entity_id,metadata,exchange_case_id,dedupe_key)
+  values(other_user,'review_received','New collector review','You received a review for a completed BrickCircle exchange.',me,
+    'exchange_case_review',created_review.id,pg_catalog.jsonb_build_object('exchange_case_id',c.id,'route','#exchange/'||c.id::text),
+    c.id,'case-review:'||c.id::text||':'||me::text)
+  on conflict (dedupe_key) where dedupe_key is not null do nothing;
+  return pg_catalog.jsonb_build_object('ok',true,'review',pg_catalog.to_jsonb(created_review));
+exception when unique_violation then raise exception 'You already reviewed this exchange';
+end;
+$$;
+
 create or replace function public.expire_exchange_cases(p_limit integer default 100)
 returns integer language plpgsql security definer set search_path=''
 as $$
@@ -763,29 +809,48 @@ select c.id,'legacy_migrated',null,c.state,null,c.state_version,'legacy-case:'||
 from public.exchange_cases c on conflict (idempotency_key) do nothing;
 
 with candidates as (
-  select c.id case_id,c.item_a item_id,c.state,c.created_at from public.exchange_cases c where not private.bc_case_is_terminal(c.state)
+  select c.id case_id,c.item_a item_id from public.exchange_cases c where not private.bc_case_is_terminal(c.state)
   union all
-  select c.id,c.item_b,c.state,c.created_at from public.exchange_cases c where not private.bc_case_is_terminal(c.state)
-), ranked as (
-  select *,row_number() over(partition by item_id order by case when state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','HANDOFF_ISSUE') then 0 else 1 end,created_at,case_id) rank
-  from candidates
+  select c.id,c.item_b from public.exchange_cases c where not private.bc_case_is_terminal(c.state)
+), conflict_items as (
+  select item_id from candidates group by item_id having pg_catalog.count(distinct case_id)>1
+), affected_cases as (
+  select distinct c.case_id from candidates c join conflict_items i using(item_id)
 )
-insert into public.exchange_case_item_locks(item_id,case_id,lock_kind)
-select item_id,case_id,case when state='PROPOSED' then 'PROPOSAL_PENDING' when state in ('ACTIVE') then 'ON_EXCHANGE' when state in ('EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION') then 'RETURN_PENDING' when state in ('DISPUTED','HANDOFF_ISSUE') then 'MANUAL_REVIEW' else 'RESERVED' end
-from ranked where rank=1 on conflict (item_id) do nothing;
-
 update public.exchange_cases c set migration_review_required=true,
-  migration_note=coalesce(c.migration_note||' ','')||'A physical item is referenced by multiple open legacy cases.'
-where not private.bc_case_is_terminal(c.state) and exists(
-  select 1 from public.exchange_cases other where other.id<>c.id and not private.bc_case_is_terminal(other.state)
-    and (other.item_a in (c.item_a,c.item_b) or other.item_b in (c.item_a,c.item_b))
-);
+  migration_note=coalesce(c.migration_note||' ','')||'Conflicting open legacy cases reference the same physical item; custody and locks require administrator reconciliation.'
+where c.id in (select case_id from affected_cases);
+
+-- Do not guess which conflicting case has custody. Every item referenced by an
+-- affected case receives an unattributed manual-review lock.
+insert into public.exchange_case_item_locks(item_id,case_id,lock_kind)
+select distinct item_id,null,'MANUAL_REVIEW'
+from (
+  select c.item_a item_id from public.exchange_cases c where c.migration_review_required and not private.bc_case_is_terminal(c.state)
+  union all
+  select c.item_b from public.exchange_cases c where c.migration_review_required and not private.bc_case_is_terminal(c.state)
+) quarantined
+on conflict (item_id) do update set case_id=null,lock_kind='MANUAL_REVIEW',updated_at=pg_catalog.now();
+
+insert into public.exchange_case_item_locks(item_id,case_id,lock_kind)
+select item_id,case_id,case when state='PROPOSED' then 'PROPOSAL_PENDING' when state='ACTIVE' then 'ON_EXCHANGE'
+  when state in ('EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION') then 'RETURN_PENDING'
+  when state in ('DISPUTED','HANDOFF_ISSUE') then 'MANUAL_REVIEW' else 'RESERVED' end
+from (
+  select c.id case_id,c.item_a item_id,c.state from public.exchange_cases c
+    where not private.bc_case_is_terminal(c.state) and not c.migration_review_required
+  union all
+  select c.id,c.item_b,c.state from public.exchange_cases c
+    where not private.bc_case_is_terminal(c.state) and not c.migration_review_required
+) safe_cases
+on conflict (item_id) do nothing;
 
 select pg_catalog.set_config('brickcircle.workflow_transition','on',false);
-update public.collection_items ci set available_for_exchange=false,updated_at=pg_catalog.now()
+update public.collection_items ci set available_for_exchange=false,exchange_review_required=false,updated_at=pg_catalog.now()
 where exists(select 1 from public.exchange_case_item_locks l where l.item_id=ci.id);
 update public.collection_items ci set available_for_exchange=false,exchange_review_required=true,updated_at=pg_catalog.now()
-where exists(select 1 from public.exchange_cases c where c.state='COMPLETED' and ci.id in (c.item_a,c.item_b));
+where not exists(select 1 from public.exchange_case_item_locks l where l.item_id=ci.id)
+  and exists(select 1 from public.exchange_cases c where c.state='COMPLETED' and ci.id in (c.item_a,c.item_b));
 select pg_catalog.set_config('brickcircle.workflow_transition','off',false);
 
 -- Direct messages remain supported, but workflow conversation writes now go
@@ -856,6 +921,7 @@ revoke all on function public.create_exchange_case(uuid,uuid,integer,text,text) 
 revoke all on function public.exchange_case_transition(uuid,bigint,text,text,jsonb) from public,anon;
 revoke all on function public.resolve_exchange_case(uuid,bigint,text,text,text) from public,anon;
 revoke all on function public.send_exchange_case_message(uuid,text,text) from public,anon;
+revoke all on function public.submit_exchange_case_review(uuid,integer,text) from public,anon;
 revoke all on function public.expire_exchange_cases(integer) from public,anon,authenticated;
 revoke all on function public.queue_exchange_case_reminders(timestamptz,integer) from public,anon,authenticated;
 revoke all on function public.bc_guard_collection_case_fields() from public,anon,authenticated;
@@ -863,7 +929,7 @@ revoke all on function public.bc_guard_collection_case_delete() from public,anon
 revoke all on function public.find_matches(uuid) from public,anon;
 grant execute on function public.collection_item_exchange_status(uuid),public.set_exchange_item_availability(uuid,boolean),
   public.create_exchange_case(uuid,uuid,integer,text,text),public.exchange_case_transition(uuid,bigint,text,text,jsonb),
-  public.send_exchange_case_message(uuid,text,text),public.find_matches(uuid) to authenticated;
+  public.send_exchange_case_message(uuid,text,text),public.submit_exchange_case_review(uuid,integer,text),public.find_matches(uuid) to authenticated;
 grant execute on function public.resolve_exchange_case(uuid,bigint,text,text,text) to service_role;
 grant execute on function public.resolve_exchange_case(uuid,bigint,text,text,text) to authenticated;
 grant execute on function public.expire_exchange_cases(integer),public.queue_exchange_case_reminders(timestamptz,integer) to service_role;

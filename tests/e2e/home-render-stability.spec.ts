@@ -32,9 +32,9 @@ test('V3 has one client, one router and five primary destinations',()=>{
 
 test('V3 presents the canonical local in-person exchange lifecycle',()=>{
   const app=read('app-v3.js');
-  expect(app).toContain("db.rpc('create_exchange_case'");
-  expect(app).toContain("db.rpc('exchange_case_transition'");
-  expect(app).toContain("db.rpc('send_exchange_case_message'");
+  expect(app).toContain("canonicalRpc('create_exchange_case'");
+  expect(app).toContain("canonicalRpc('exchange_case_transition'");
+  expect(app).toContain("canonicalRpc('send_exchange_case_message'");
   expect(app).toContain("db.from('exchange_cases')");
   expect(app).not.toContain("db.rpc('respond_exchange_request'");
   expect(app).not.toContain("db.rpc('cancel_in_person_exchange'");

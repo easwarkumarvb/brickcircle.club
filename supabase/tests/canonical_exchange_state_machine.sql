@@ -3,6 +3,50 @@ begin;
 create temporary table test_context(name text primary key,id uuid not null);
 grant all on test_context to authenticated;
 
+-- Upgrade safety: completed history cannot override a newer active custody lock.
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+do $$ begin
+  if public.collection_item_exchange_status('51000000-0000-4000-8000-000000000001')<>'ON_EXCHANGE' then
+    raise exception 'completed history overrode the newer active item status';
+  end if;
+end $$;
+reset role;
+do $$ begin
+  if (select exchange_review_required from public.collection_items where id='51000000-0000-4000-8000-000000000001') then
+    raise exception 'newer active item was incorrectly marked for owner review';
+  end if;
+  if not (select exchange_review_required from public.collection_items where id='51000000-0000-4000-8000-000000000002') then
+    raise exception 'unlocked item from completed history was not marked for owner review';
+  end if;
+  if (select count(*) from public.exchange_case_item_locks l join public.exchange_cases c on c.id=l.case_id
+      where l.item_id='51000000-0000-4000-8000-000000000001' and c.legacy_exchange_id='53000000-0000-4000-8000-000000000002' and l.lock_kind='ON_EXCHANGE')<>1 then
+    raise exception 'newer active legacy case did not retain its physical lock';
+  end if;
+  if (select count(*) from public.exchange_cases where legacy_exchange_id in
+      ('53000000-0000-4000-8000-000000000003','53000000-0000-4000-8000-000000000004') and migration_review_required)<>2 then
+    raise exception 'not every conflicting legacy case was quarantined';
+  end if;
+  if (select count(*) from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000004','51000000-0000-4000-8000-000000000005','51000000-0000-4000-8000-000000000006')
+      and case_id is null and lock_kind='MANUAL_REVIEW')<>3 then
+    raise exception 'conflicting legacy custody was guessed instead of quarantined';
+  end if;
+end $$;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+do $$ declare conflict_case public.exchange_cases%rowtype; begin
+  select * into conflict_case from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003';
+  begin
+    perform public.exchange_case_transition(conflict_case.id,conflict_case.state_version,'cancel','legacy-conflict-transition','{}');
+    raise exception 'quarantined participant transition unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='quarantined participant transition unexpectedly succeeded' then raise; end if;
+    if position('quarantined' in sqlerrm)=0 then raise; end if;
+  end;
+end $$;
+reset role;
+
 insert into auth.users(id,email) values
   ('00000000-0000-4000-8000-000000000001','a@example.test'),
   ('00000000-0000-4000-8000-000000000002','b@example.test'),
@@ -142,6 +186,34 @@ do $$ begin
   if exists(select 1 from public.exchange_case_item_locks where case_id=(select id from test_context where name='first')) then raise exception 'completed case retained item locks'; end if;
   if (select count(*) from public.collection_items where id in ('10000000-0000-4000-8000-000000000001','10000000-0000-4000-8000-000000000002') and exchange_review_required)<>2 then raise exception 'returned items were not held for owner review'; end if;
   if (select count(*) from public.notification_email_deliveries) < 1 then raise exception 'durable notification outbox remained empty'; end if;
+end $$;
+set local role authenticated;
+
+-- Each participant can review a newly completed canonical case exactly once.
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000001';
+select public.submit_exchange_case_review(:'case_id',4,'Safe meetup and accurate set.');
+do $$ begin
+  begin
+    perform public.submit_exchange_case_review((select id from test_context where name='first'),5,'Duplicate');
+    raise exception 'duplicate canonical review unexpectedly succeeded';
+  exception when others then if sqlerrm='duplicate canonical review unexpectedly succeeded' then raise; end if; end;
+end $$;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000002';
+select public.submit_exchange_case_review(:'case_id',5,'Everything returned as agreed.');
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000003';
+do $$ begin
+  begin
+    perform public.submit_exchange_case_review((select id from test_context where name='first'),5,'Not a participant');
+    raise exception 'non-participant canonical review unexpectedly succeeded';
+  exception when others then if sqlerrm='non-participant canonical review unexpectedly succeeded' then raise; end if; end;
+end $$;
+reset role;
+do $$ begin
+  if (select count(*) from public.reviews where case_id=(select id from test_context where name='first'))<>2 then raise exception 'canonical participant reviews were not persisted'; end if;
+  if (select rating from public.profiles where id='00000000-0000-4000-8000-000000000002')<>4
+     or (select review_count from public.profiles where id='00000000-0000-4000-8000-000000000002')<>1 then
+    raise exception 'canonical review did not update collector rating';
+  end if;
 end $$;
 set local role authenticated;
 
