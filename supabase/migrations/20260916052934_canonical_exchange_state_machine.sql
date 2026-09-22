@@ -824,7 +824,7 @@ where c.id in (select case_id from affected_cases);
 -- Do not guess which conflicting case has custody. Every item referenced by an
 -- affected case receives an unattributed manual-review lock.
 insert into public.exchange_case_item_locks(item_id,case_id,lock_kind)
-select distinct item_id,null,'MANUAL_REVIEW'
+select distinct item_id,null::uuid,'MANUAL_REVIEW'
 from (
   select c.item_a item_id from public.exchange_cases c where c.migration_review_required and not private.bc_case_is_terminal(c.state)
   union all
