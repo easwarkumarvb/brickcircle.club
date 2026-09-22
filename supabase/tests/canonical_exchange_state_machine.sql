@@ -1,7 +1,7 @@
 \set ON_ERROR_STOP on
 begin;
 create temporary table test_context(name text primary key,id uuid not null);
-grant all on test_context to authenticated;
+grant all on test_context to authenticated,service_role;
 
 -- Upgrade safety: completed history cannot override a newer active custody lock.
 set local role authenticated;
@@ -51,6 +51,10 @@ reset role;
 -- approved service-side administrator boundary.
 insert into auth.users(id,email) values('00000000-0000-4000-8000-000000000099','exchange-admin@example.test');
 insert into private.exchange_admins(user_id) values('00000000-0000-4000-8000-000000000099');
+insert into test_context(name,id)
+select 'legacy_conflict_case_003',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'
+union all
+select 'legacy_conflict_case_004',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000004';
 do $$ begin
   if has_function_privilege('authenticated',
     'public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text)','EXECUTE') then
@@ -96,7 +100,7 @@ end $$;
 -- Record one case. The shared item and both cases must remain quarantined.
 select public.reconcile_exchange_quarantine_case(
   '00000000-0000-4000-8000-000000000099',
-  (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'),
+  (select id from test_context where name='legacy_conflict_case_003'),
   1,'CANCELLED','Verified both physical sets were returned to their registered owners.',
   pg_catalog.jsonb_build_array(
     pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000004','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 confirmed possession with timestamped set photographs.'),
@@ -115,7 +119,7 @@ do $$ declare events_before integer; notifications_before integer; retry jsonb; 
   select count(*) into notifications_before from public.notifications where kind='exchange_quarantine_reviewed';
   retry:=public.reconcile_exchange_quarantine_case(
     '00000000-0000-4000-8000-000000000099',
-    (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'),
+    (select id from test_context where name='legacy_conflict_case_003'),
     1,'CANCELLED','Verified both physical sets were returned to their registered owners.',
     pg_catalog.jsonb_build_array(
       pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000004','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 confirmed possession with timestamped set photographs.'),
@@ -155,7 +159,7 @@ reset role;
 set local role service_role;
 select public.reconcile_exchange_quarantine_case(
   '00000000-0000-4000-8000-000000000099',
-  (select id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000004'),
+  (select id from test_context where name='legacy_conflict_case_004'),
   1,'CANCELLED','Verified both physical sets were returned to their registered owners.',
   pg_catalog.jsonb_build_array(
     pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000004','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 confirmed possession with timestamped set photographs.'),
