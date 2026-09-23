@@ -205,8 +205,7 @@ create table private.exchange_quarantine_reconciliations (
   recorded_at timestamptz not null default pg_catalog.now(),
   finalized_at timestamptz
 );
-revoke all on private.exchange_quarantine_reconciliations from public,anon,authenticated;
-grant all on private.exchange_quarantine_reconciliations to service_role;
+revoke all on private.exchange_quarantine_reconciliations from public,anon,authenticated,service_role;
 
 create table public.exchange_user_blocks (
   blocker_id uuid not null references auth.users(id) on delete cascade,
@@ -458,6 +457,12 @@ begin
     select pg_catalog.jsonb_build_object(
       'id',c.id,'created_at',c.created_at,'state',c.state,'state_version',c.state_version,
       'migration_review_required',c.migration_review_required,'migration_note',c.migration_note,
+      'legacy_source_kind',case
+        when c.legacy_request_id is not null and c.legacy_exchange_id is null then 'request-only'
+        when c.legacy_request_id is null and c.legacy_exchange_id is not null then 'exchange-backed'
+        when c.legacy_request_id is not null and c.legacy_exchange_id is not null then 'request-and-exchange'
+        else 'missing-legacy-evidence'
+      end,
       'participants',pg_catalog.jsonb_build_array(c.user_a,c.user_b),
       'legacy_request',pg_catalog.to_jsonb(r),'legacy_exchange',pg_catalog.to_jsonb(e),
       'reconciliation',pg_catalog.to_jsonb(q),
@@ -521,7 +526,7 @@ declare
   clean_resolution text:=pg_catalog.upper(pg_catalog.btrim(p_resolution));
   outcome jsonb; outcome_item uuid; outcome_holder uuid; outcome_lock_case uuid; outcome_evidence text;
   item_owner uuid; prior_holder uuid; prior_lock_case uuid;
-  component_ids uuid[]; affected_item uuid;
+  component_ids uuid[]; component_item_ids uuid[]; affected_item uuid;
   final_holder uuid; final_lock_case uuid; pending_count integer; finalised_count integer:=0; previous_state text;
 begin
   if p_administrator_id is null or not exists(
@@ -538,9 +543,56 @@ begin
       'finalized',existing.finalized_at is not null,'report',public.exchange_quarantine_report(p_administrator_id));
   end if;
 
-  select * into c from public.exchange_cases where id=p_case_id for update;
-  if not found or not c.migration_review_required or c.legacy_exchange_id is null then
-    raise exception 'A quarantined legacy exchange case is required';
+  select * into c from public.exchange_cases where id=p_case_id;
+  if not found or not c.migration_review_required
+     or (c.legacy_request_id is null and c.legacy_exchange_id is null) then
+    raise exception 'A quarantined case with legacy request or exchange evidence is required';
+  end if;
+  if c.legacy_exchange_id is null and clean_resolution='COMPLETED' then
+    raise exception 'A request-only legacy case cannot be resolved as COMPLETED';
+  end if;
+  if p_expected_version is null or p_expected_version<>c.state_version then raise exception 'This exchange changed. Refresh and try again.'; end if;
+  if exists(select 1 from private.exchange_quarantine_reconciliations q where q.case_id=c.id) then
+    raise exception 'This quarantine case already has a recorded administrator decision';
+  end if;
+
+  with recursive component(case_id) as (
+    select c.id
+    union
+    select neighbour.id
+    from component member
+    join public.exchange_cases linked on linked.id=member.case_id
+    join public.exchange_cases neighbour on neighbour.id<>linked.id
+      and (neighbour.item_a in (linked.item_a,linked.item_b) or neighbour.item_b in (linked.item_a,linked.item_b))
+    where neighbour.migration_review_required or exists(
+      select 1 from private.exchange_quarantine_reconciliations recorded where recorded.case_id=neighbour.id
+    )
+  ) select pg_catalog.array_agg(case_id order by case_id) into component_ids from component;
+  select pg_catalog.array_agg(item_id order by item_id) into component_item_ids
+  from (
+    select grouped.item_a item_id from public.exchange_cases grouped where grouped.id=any(component_ids)
+    union
+    select grouped.item_b from public.exchange_cases grouped where grouped.id=any(component_ids)
+  ) component_items;
+
+  -- Serialize every reconciliation in a connected component using stable UUID
+  -- ordering before validating evidence or changing an audit row.
+  perform 1 from public.exchange_cases locked
+    where locked.id=any(component_ids) order by locked.id for update;
+  perform 1 from public.collection_items locked_item
+    where locked_item.id=any(component_item_ids) order by locked_item.id for update;
+  perform 1 from public.exchange_case_item_locks locked_item_lock
+    where locked_item_lock.item_id=any(component_item_ids) order by locked_item_lock.item_id for update;
+  perform 1 from private.exchange_quarantine_reconciliations locked_decision
+    where locked_decision.case_id=any(component_ids) order by locked_decision.case_id for update;
+
+  select * into c from public.exchange_cases where id=p_case_id;
+  if not found or not c.migration_review_required
+     or (c.legacy_request_id is null and c.legacy_exchange_id is null) then
+    raise exception 'A quarantined case with legacy request or exchange evidence is required';
+  end if;
+  if c.legacy_exchange_id is null and clean_resolution='COMPLETED' then
+    raise exception 'A request-only legacy case cannot be resolved as COMPLETED';
   end if;
   if p_expected_version is null or p_expected_version<>c.state_version then raise exception 'This exchange changed. Refresh and try again.'; end if;
   if exists(select 1 from private.exchange_quarantine_reconciliations q where q.case_id=c.id) then
@@ -565,7 +617,7 @@ begin
     if outcome_evidence is null or pg_catalog.length(outcome_evidence)<10 then
       raise exception 'Each physical item requires specific custody evidence';
     end if;
-    select ci.user_id into item_owner from public.collection_items ci where ci.id=outcome_item for update;
+    select ci.user_id into item_owner from public.collection_items ci where ci.id=outcome_item;
     if item_owner is null then raise exception 'Physical item is unavailable'; end if;
     if not exists(select 1 from auth.users u where u.id=outcome_holder) then raise exception 'Verified custody holder is unavailable'; end if;
     if outcome_holder=item_owner and outcome_lock_case is not null then
@@ -602,19 +654,6 @@ begin
   perform private.bc_case_notify(c,decision_event_id,c.user_b,'exchange_quarantine_reviewed','Legacy exchange custody reviewed',
     'An administrator recorded verified custody evidence. Conflicting cases remain locked until every related case is reconciled.',p_administrator_id);
 
-  with recursive component(case_id) as (
-    select c.id
-    union
-    select neighbour.id
-    from component member
-    join public.exchange_cases linked on linked.id=member.case_id
-    join public.exchange_cases neighbour on neighbour.id<>linked.id
-      and (neighbour.item_a in (linked.item_a,linked.item_b) or neighbour.item_b in (linked.item_a,linked.item_b))
-    where neighbour.migration_review_required or exists(
-      select 1 from private.exchange_quarantine_reconciliations recorded where recorded.case_id=neighbour.id
-    )
-  ) select pg_catalog.array_agg(case_id order by case_id) into component_ids from component;
-
   select pg_catalog.count(*) into pending_count
   from pg_catalog.unnest(component_ids) member_id
   where not exists(select 1 from private.exchange_quarantine_reconciliations q where q.case_id=member_id);
@@ -623,7 +662,6 @@ begin
       'pending_related_cases',pending_count,'report',public.exchange_quarantine_report(p_administrator_id));
   end if;
 
-  perform 1 from public.exchange_cases locked where locked.id=any(component_ids) order by locked.id for update;
   perform pg_catalog.set_config('brickcircle.workflow_transition','on',true);
   for affected_item in
     select distinct item_id from (
@@ -636,8 +674,9 @@ begin
       nullif(recorded_outcome->>'lock_case_id','')::uuid into final_holder,final_lock_case
     from private.exchange_quarantine_reconciliations recorded
     cross join lateral pg_catalog.jsonb_array_elements(recorded.item_outcomes) recorded_outcome
-    where recorded.case_id=any(component_ids) and (recorded_outcome->>'item_id')::uuid=affected_item limit 1;
-    select ci.user_id into item_owner from public.collection_items ci where ci.id=affected_item for update;
+    where recorded.case_id=any(component_ids) and (recorded_outcome->>'item_id')::uuid=affected_item
+    order by recorded.case_id limit 1;
+    select ci.user_id into item_owner from public.collection_items ci where ci.id=affected_item;
     if final_holder=item_owner then
       delete from public.exchange_case_item_locks l where l.item_id=affected_item and l.lock_kind='MANUAL_REVIEW'
         and (l.case_id is null or l.case_id=any(component_ids));

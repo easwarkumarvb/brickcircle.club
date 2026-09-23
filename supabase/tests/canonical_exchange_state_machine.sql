@@ -27,10 +27,22 @@ do $$ begin
       ('53000000-0000-4000-8000-000000000003','53000000-0000-4000-8000-000000000004') and migration_review_required)<>2 then
     raise exception 'not every conflicting legacy case was quarantined';
   end if;
+  if (select count(*) from public.exchange_cases where legacy_request_id in
+      ('52000000-0000-4000-8000-000000000005','52000000-0000-4000-8000-000000000006',
+       '52000000-0000-4000-8000-000000000007','52000000-0000-4000-8000-000000000008')
+      and migration_review_required)<>4 then
+    raise exception 'mixed request/exchange conflicts were not all quarantined';
+  end if;
   if (select count(*) from public.exchange_case_item_locks where item_id in
       ('51000000-0000-4000-8000-000000000004','51000000-0000-4000-8000-000000000005','51000000-0000-4000-8000-000000000006')
       and case_id is null and lock_kind='MANUAL_REVIEW')<>3 then
     raise exception 'conflicting legacy custody was guessed instead of quarantined';
+  end if;
+  if (select count(*) from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000007','51000000-0000-4000-8000-000000000008','51000000-0000-4000-8000-000000000009',
+       '51000000-0000-4000-8000-000000000010','51000000-0000-4000-8000-000000000011','51000000-0000-4000-8000-000000000012')
+      and case_id is null and lock_kind='MANUAL_REVIEW')<>6 then
+    raise exception 'mixed request/exchange items did not receive unattributed quarantine locks';
   end if;
 end $$;
 set local role authenticated;
@@ -54,19 +66,40 @@ insert into private.exchange_admins(user_id) values('00000000-0000-4000-8000-000
 insert into test_context(name,id)
 select 'legacy_conflict_case_003',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000003'
 union all
-select 'legacy_conflict_case_004',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000004';
+select 'legacy_conflict_case_004',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000004'
+union all
+select 'mixed_owner_request',id from public.exchange_cases where legacy_request_id='52000000-0000-4000-8000-000000000005'
+union all
+select 'mixed_owner_exchange',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000005'
+union all
+select 'non_owner_request',id from public.exchange_cases where legacy_request_id='52000000-0000-4000-8000-000000000007'
+union all
+select 'non_owner_exchange',id from public.exchange_cases where legacy_exchange_id='53000000-0000-4000-8000-000000000006';
 do $$ begin
   if has_function_privilege('authenticated',
     'public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text)','EXECUTE') then
     raise exception 'participants can execute quarantine reconciliation directly';
   end if;
+  if has_function_privilege('authenticated','public.exchange_quarantine_report(uuid)','EXECUTE') then
+    raise exception 'participants can execute quarantine reporting directly';
+  end if;
   if has_table_privilege('authenticated','public.exchange_case_item_locks','SELECT,INSERT,UPDATE,DELETE') then
     raise exception 'participants can access the item lock table directly';
+  end if;
+  if has_table_privilege('service_role','private.exchange_quarantine_reconciliations','INSERT,UPDATE,DELETE') then
+    raise exception 'service role can bypass the immutable quarantine decision RPC';
   end if;
 end $$;
 set local role authenticated;
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
 do $$ begin
+  begin
+    perform public.exchange_quarantine_report('00000000-0000-4000-8000-000000000099');
+    raise exception 'participant quarantine report unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='participant quarantine report unexpectedly succeeded' then raise; end if;
+    if position('permission denied' in sqlerrm)=0 then raise; end if;
+  end;
   begin
     perform public.reconcile_exchange_quarantine_case(
       '00000000-0000-4000-8000-000000000099',
@@ -83,11 +116,18 @@ reset role;
 set local role service_role;
 do $$ declare report jsonb; begin
   report:=public.exchange_quarantine_report('00000000-0000-4000-8000-000000000099');
-  if pg_catalog.jsonb_array_length(report->'cases')<>2 then raise exception 'administrator report omitted conflicting cases'; end if;
+  if pg_catalog.jsonb_array_length(report->'cases')<>6 then raise exception 'administrator report omitted conflicting cases'; end if;
   if position('legacy_request' in report::text)=0 or position('current_lock' in report::text)=0
      or position('recorded_custody' in report::text)=0 then
     raise exception 'administrator report omitted legacy evidence, locks, or custody records';
   end if;
+  if not exists(
+    select 1 from pg_catalog.jsonb_array_elements(report->'cases') entry
+    where entry->>'legacy_source_kind'='request-only'
+      and entry->'legacy_request'->>'id'='52000000-0000-4000-8000-000000000005'
+      and entry->'legacy_exchange'='null'::jsonb
+      and pg_catalog.jsonb_array_length(entry->'items')=2
+  ) then raise exception 'request-only quarantine evidence was not fully reported'; end if;
   begin
     perform public.exchange_quarantine_report('00000000-0000-4000-8000-000000000054');
     raise exception 'unapproved service-side identity unexpectedly read quarantine report';
@@ -194,6 +234,264 @@ do $$ begin
   if public.collection_item_exchange_status('51000000-0000-4000-8000-000000000004')<>'AVAILABLE' then
     raise exception 'verified owner could not re-enable the safely released item';
   end if;
+end $$;
+reset role;
+
+-- Request-only cases remain quarantined, participate in connected components,
+-- and cannot claim a physical completion that never existed.
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+do $$ declare request_case public.exchange_cases%rowtype; begin
+  select * into request_case from public.exchange_cases
+    where id=(select id from test_context where name='mixed_owner_request');
+  begin
+    perform public.exchange_case_transition(request_case.id,request_case.state_version,'cancel','request-only-blocked-transition','{}');
+    raise exception 'request-only quarantined participant transition unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='request-only quarantined participant transition unexpectedly succeeded' then raise; end if;
+    if position('quarantined' in sqlerrm)=0 then raise; end if;
+  end;
+end $$;
+reset role;
+do $$ declare decisions_before integer; events_before integer; notifications_before integer; begin
+  select count(*) into decisions_before from private.exchange_quarantine_reconciliations;
+  select count(*) into events_before from public.exchange_case_events;
+  select count(*) into notifications_before from public.notifications;
+  begin
+    perform public.reconcile_exchange_quarantine_case(
+      '00000000-0000-4000-8000-000000000099',
+      (select id from test_context where name='mixed_owner_request'),
+      1,'COMPLETED','No physical exchange exists for this request-only case.',
+      pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000007','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 supplied timestamped custody photographs.'),
+        pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000008','verified_holder_user_id','00000000-0000-4000-8000-000000000052','lock_case_id',null,'evidence','Owner 52 supplied timestamped custody photographs.')
+      ),'request-only-completed-invalid');
+    raise exception 'request-only case was incorrectly completed';
+  exception when others then
+    if sqlerrm='request-only case was incorrectly completed' then raise; end if;
+    if position('request-only legacy case cannot be resolved as COMPLETED' in sqlerrm)=0 then raise; end if;
+  end;
+  if (select count(*) from private.exchange_quarantine_reconciliations)<>decisions_before
+     or (select count(*) from public.exchange_case_events)<>events_before
+     or (select count(*) from public.notifications)<>notifications_before then
+    raise exception 'invalid request-only completion left partial audit or notification writes';
+  end if;
+end $$;
+
+-- Record the non-owner component's request-only decision first. Its entire
+-- component must remain protected while other, unrelated components resolve.
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000055';
+do $$ declare request_case public.exchange_cases%rowtype; begin
+  select * into request_case from public.exchange_cases
+    where id=(select id from test_context where name='non_owner_request');
+  begin
+    perform public.exchange_case_transition(request_case.id,request_case.state_version,'cancel','non-owner-blocked-transition','{}');
+    raise exception 'non-owner quarantined participant transition unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='non-owner quarantined participant transition unexpectedly succeeded' then raise; end if;
+    if position('quarantined' in sqlerrm)=0 then raise; end if;
+  end;
+end $$;
+reset role;
+set local role service_role;
+select public.reconcile_exchange_quarantine_case(
+  '00000000-0000-4000-8000-000000000099',
+  (select id from test_context where name='non_owner_request'),
+  1,'DISPUTED','Verified item 10 remains in non-owner 56 custody pending a supervised return.',
+  pg_catalog.jsonb_build_array(
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000010','verified_holder_user_id','00000000-0000-4000-8000-000000000056','lock_case_id',(select id from test_context where name='non_owner_request'),'evidence','Collector 56 presented the exact photographed set during administrator video verification.'),
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000011','verified_holder_user_id','00000000-0000-4000-8000-000000000056','lock_case_id',null,'evidence','Owner 56 presented the unique companion set during administrator video verification.')
+  ),'non-owner-request-decision'
+);
+reset role;
+do $$ declare events_before integer; notifications_before integer; retry jsonb; begin
+  if (select count(*) from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000010','51000000-0000-4000-8000-000000000011','51000000-0000-4000-8000-000000000012')
+      and case_id is null and lock_kind='MANUAL_REVIEW')<>3 then
+    raise exception 'partial non-owner reconciliation changed a component lock';
+  end if;
+  select count(*) into events_before from public.exchange_case_events
+    where idempotency_key='non-owner-request-decision';
+  select count(*) into notifications_before from public.notifications
+    where exchange_case_id=(select id from test_context where name='non_owner_request')
+      and kind='exchange_quarantine_reviewed';
+  retry:=public.reconcile_exchange_quarantine_case(
+    '00000000-0000-4000-8000-000000000099',
+    (select id from test_context where name='non_owner_request'),
+    1,'DISPUTED','Verified item 10 remains in non-owner 56 custody pending a supervised return.',
+    pg_catalog.jsonb_build_array(
+      pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000010','verified_holder_user_id','00000000-0000-4000-8000-000000000056','lock_case_id',(select id from test_context where name='non_owner_request'),'evidence','Collector 56 presented the exact photographed set during administrator video verification.'),
+      pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000011','verified_holder_user_id','00000000-0000-4000-8000-000000000056','lock_case_id',null,'evidence','Owner 56 presented the unique companion set during administrator video verification.')
+    ),'non-owner-request-decision');
+  if retry->>'idempotent'<>'true' then raise exception 'non-owner retry was not idempotent'; end if;
+  if (select count(*) from public.exchange_case_events where idempotency_key='non-owner-request-decision')<>events_before
+     or (select count(*) from public.notifications
+         where exchange_case_id=(select id from test_context where name='non_owner_request')
+           and kind='exchange_quarantine_reviewed')<>notifications_before then
+    raise exception 'non-owner retry duplicated events or notifications';
+  end if;
+end $$;
+do $$ declare decisions_before integer; events_before integer; notifications_before integer; begin
+  select count(*) into decisions_before from private.exchange_quarantine_reconciliations;
+  select count(*) into events_before from public.exchange_case_events;
+  select count(*) into notifications_before from public.notifications;
+  begin
+    perform public.reconcile_exchange_quarantine_case(
+      '00000000-0000-4000-8000-000000000099',
+      (select id from test_context where name='non_owner_exchange'),
+      1,'DISPUTED','Conflicting custody claim must roll back without changing this component.',
+      pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000010','verified_holder_user_id','00000000-0000-4000-8000-000000000057','lock_case_id',(select id from test_context where name='non_owner_exchange'),'evidence','Collector 57 asserted custody without matching the already verified evidence.'),
+        pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000012','verified_holder_user_id','00000000-0000-4000-8000-000000000057','lock_case_id',null,'evidence','Owner 57 presented the unique companion set during administrator video verification.')
+      ),'non-owner-conflicting-evidence');
+    raise exception 'conflicting custody evidence unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='conflicting custody evidence unexpectedly succeeded' then raise; end if;
+    if position('Recorded custody evidence conflicts' in sqlerrm)=0 then raise; end if;
+  end;
+  if (select count(*) from private.exchange_quarantine_reconciliations)<>decisions_before
+     or (select count(*) from public.exchange_case_events)<>events_before
+     or (select count(*) from public.notifications)<>notifications_before then
+    raise exception 'conflicting custody evidence did not roll back atomically';
+  end if;
+end $$;
+
+-- Resolve the mixed request/exchange owner-held component. A first decision
+-- cannot release any shared or unshared item lock.
+set local role service_role;
+select public.reconcile_exchange_quarantine_case(
+  '00000000-0000-4000-8000-000000000099',
+  (select id from test_context where name='mixed_owner_request'),
+  1,'CANCELLED','Verified request-only proposal never exchanged custody and both owners retain their sets.',
+  pg_catalog.jsonb_build_array(
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000007','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 supplied timestamped custody photographs for item 7.'),
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000008','verified_holder_user_id','00000000-0000-4000-8000-000000000052','lock_case_id',null,'evidence','Owner 52 supplied timestamped custody photographs for item 8.')
+  ),'mixed-owner-request-decision'
+);
+reset role;
+do $$ declare decisions_before integer; begin
+  if (select count(*) from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000007','51000000-0000-4000-8000-000000000008','51000000-0000-4000-8000-000000000009')
+      and case_id is null and lock_kind='MANUAL_REVIEW')<>3 then
+    raise exception 'partial mixed request/exchange reconciliation released a lock';
+  end if;
+  select count(*) into decisions_before from private.exchange_quarantine_reconciliations;
+  begin
+    perform public.reconcile_exchange_quarantine_case(
+      '00000000-0000-4000-8000-000000000099',
+      (select id from test_context where name='mixed_owner_exchange'),
+      1,'DISPUTED','Deliberately conflicting evidence must not change the recorded shared-item custody.',
+      pg_catalog.jsonb_build_array(
+        pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000007','verified_holder_user_id','00000000-0000-4000-8000-000000000054','lock_case_id',(select id from test_context where name='mixed_owner_exchange'),'evidence','Conflicting claim intentionally supplied to verify atomic rejection.'),
+        pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000009','verified_holder_user_id','00000000-0000-4000-8000-000000000054','lock_case_id',null,'evidence','Owner 54 supplied timestamped custody photographs for item 9.')
+      ),'mixed-owner-conflicting-evidence');
+    raise exception 'mixed conflicting custody evidence unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='mixed conflicting custody evidence unexpectedly succeeded' then raise; end if;
+    if position('Recorded custody evidence conflicts' in sqlerrm)=0 then raise; end if;
+  end;
+  if (select count(*) from private.exchange_quarantine_reconciliations)<>decisions_before then
+    raise exception 'mixed conflicting evidence left a reconciliation decision';
+  end if;
+end $$;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000051';
+do $$ begin
+  begin
+    perform public.set_exchange_item_availability('51000000-0000-4000-8000-000000000007',true);
+    raise exception 'owner re-enabled an item before mixed component reconciliation';
+  exception when others then if sqlerrm='owner re-enabled an item before mixed component reconciliation' then raise; end if; end;
+end $$;
+reset role;
+set local role service_role;
+select public.reconcile_exchange_quarantine_case(
+  '00000000-0000-4000-8000-000000000099',
+  (select id from test_context where name='mixed_owner_exchange'),
+  1,'CANCELLED','Verified accepted exchange never transferred custody and all owners retain their physical sets.',
+  pg_catalog.jsonb_build_array(
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000007','verified_holder_user_id','00000000-0000-4000-8000-000000000051','lock_case_id',null,'evidence','Owner 51 supplied timestamped custody photographs for item 7.'),
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000009','verified_holder_user_id','00000000-0000-4000-8000-000000000054','lock_case_id',null,'evidence','Owner 54 supplied timestamped custody photographs for item 9.')
+  ),'mixed-owner-exchange-decision'
+);
+reset role;
+do $$ begin
+  if exists(select 1 from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000007','51000000-0000-4000-8000-000000000008','51000000-0000-4000-8000-000000000009')) then
+    raise exception 'mixed owner-held component retained a stale lock';
+  end if;
+  if (select count(*) from public.collection_items where id in
+      ('51000000-0000-4000-8000-000000000007','51000000-0000-4000-8000-000000000008','51000000-0000-4000-8000-000000000009')
+      and exchange_review_required and not available_for_exchange)<>3 then
+    raise exception 'mixed owner-held items did not enter owner review';
+  end if;
+  if (select count(*) from public.exchange_cases where id in
+      ((select id from test_context where name='mixed_owner_request'),(select id from test_context where name='mixed_owner_exchange'))
+      and state='CANCELLED' and not migration_review_required)<>2 then
+    raise exception 'mixed request/exchange component did not finalize atomically';
+  end if;
+  if (select count(*) from public.exchange_case_item_locks where item_id in
+      ('51000000-0000-4000-8000-000000000010','51000000-0000-4000-8000-000000000011','51000000-0000-4000-8000-000000000012')
+      and case_id is null and lock_kind='MANUAL_REVIEW')<>3 then
+    raise exception 'resolving an unrelated component changed non-owner custody locks';
+  end if;
+end $$;
+
+-- The matching second decision atomically finalizes the non-owner component,
+-- retaining exactly one attributed lock for the verified non-owner-held item.
+set local role service_role;
+select public.reconcile_exchange_quarantine_case(
+  '00000000-0000-4000-8000-000000000099',
+  (select id from test_context where name='non_owner_exchange'),
+  1,'DISPUTED','Verified item 10 remains in non-owner 56 custody pending a supervised return.',
+  pg_catalog.jsonb_build_array(
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000010','verified_holder_user_id','00000000-0000-4000-8000-000000000056','lock_case_id',(select id from test_context where name='non_owner_request'),'evidence','Collector 56 presented the exact photographed set during administrator video verification.'),
+    pg_catalog.jsonb_build_object('item_id','51000000-0000-4000-8000-000000000012','verified_holder_user_id','00000000-0000-4000-8000-000000000057','lock_case_id',null,'evidence','Owner 57 presented the unique companion set during administrator video verification.')
+  ),'non-owner-exchange-decision'
+);
+reset role;
+do $$ begin
+  if (select count(*) from public.exchange_cases where id in
+      ((select id from test_context where name='non_owner_request'),(select id from test_context where name='non_owner_exchange'))
+      and state='DISPUTED' and not migration_review_required)<>2 then
+    raise exception 'non-owner component did not finalize every case as disputed';
+  end if;
+  if (select count(*) from public.exchange_case_item_locks
+      where item_id='51000000-0000-4000-8000-000000000010'
+        and case_id=(select id from test_context where name='non_owner_request')
+        and lock_kind='MANUAL_REVIEW')<>1 then
+    raise exception 'non-owner item did not retain exactly one attributed manual-review lock';
+  end if;
+  if exists(select 1 from public.exchange_case_item_locks
+      where item_id in ('51000000-0000-4000-8000-000000000011','51000000-0000-4000-8000-000000000012')) then
+    raise exception 'owner-held companion item retained a stale lock';
+  end if;
+  if exists(select 1 from public.exchange_case_item_locks
+      where item_id in ('51000000-0000-4000-8000-000000000010','51000000-0000-4000-8000-000000000011','51000000-0000-4000-8000-000000000012')
+        and case_id is null) then
+    raise exception 'non-owner component retained a stale unattributed lock';
+  end if;
+  if (select available_for_exchange or exchange_review_required from public.collection_items
+      where id='51000000-0000-4000-8000-000000000010') then
+    raise exception 'non-owner-held item became available or entered owner review';
+  end if;
+  if (select count(*) from public.collection_items where id in
+      ('51000000-0000-4000-8000-000000000011','51000000-0000-4000-8000-000000000012')
+      and exchange_review_required and not available_for_exchange)<>2 then
+    raise exception 'owner-held companion items did not enter owner review';
+  end if;
+  if (select count(*) from public.exchange_case_events
+      where idempotency_key in ('non-owner-request-decision','non-owner-exchange-decision'))<>2 then
+    raise exception 'non-owner decisions did not emit exactly one decision event each';
+  end if;
+end $$;
+set local role authenticated;
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000055';
+do $$ begin
+  begin
+    perform public.set_exchange_item_availability('51000000-0000-4000-8000-000000000010',true);
+    raise exception 'owner re-enabled a verified non-owner-held item';
+  exception when others then if sqlerrm='owner re-enabled a verified non-owner-held item' then raise; end if; end;
 end $$;
 reset role;
 

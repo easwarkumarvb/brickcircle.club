@@ -29,7 +29,7 @@ Call this through the server administration service before making a decision:
 select public.exchange_quarantine_report(:approved_administrator_id);
 ```
 
-For every case, review `legacy_request`, `legacy_exchange`, both `items`, each `current_lock`, all `referencing_cases`, and `recorded_custody`. The report deliberately shows evidence without inferring custody.
+Conflict groups may mix request-only proposals with exchange-backed cases. For every case, review `legacy_source_kind`, `legacy_request`, `legacy_exchange`, both `items`, each `current_lock`, all `referencing_cases`, and `recorded_custody`. `request-only` means no legacy `exchanges` row exists; `request-and-exchange` means both source records exist; `exchange-backed` identifies the defensive exchange-only form. A missing source record is not evidence of custody, and the report deliberately makes no custody inference from legacy status.
 
 ### Record each case decision
 
@@ -62,6 +62,15 @@ select public.reconcile_exchange_quarantine_case(
 
 The first decision in a connected conflict group records an immutable audit event but does not release any group lock. Once every connected case has a consistent decision, the final call atomically updates all cases, item locks, owner-review flags, audit rows, events, and participant notifications. Owner-held items become unavailable and require owner review before re-enabling. Non-owner-held items retain a `MANUAL_REVIEW` lock assigned to the explicitly selected disputed case.
 
+Apply this resolution matrix:
+
+- A request-only case may be `CANCELLED` when both physical items are verified with their registered owners.
+- A request-only case must be `DISPUTED` when any item is verified with a non-owner. It can never be `COMPLETED`, because no legacy physical exchange record supports that result.
+- A case with a legacy exchange may be `CANCELLED`, `COMPLETED`, or `DISPUTED`, but any non-owner-held item forces that case to remain `DISPUTED`.
+- Every connected case that reports the same item must record the same verified holder and `lock_case_id`. The selected lock case must involve both the item and non-owner holder.
+
+After each call, inspect `pending_related_cases` and the returned report. A value greater than zero means the component is intentionally still quarantined: identify the cases in each item's `referencing_cases` that have no `reconciliation` record, gather their evidence, and submit those cases separately. Do not interpret a recorded first decision as permission to release any item.
+
 ### Audit after reconciliation
 
 Run the report again and retain it with the incident record. Verify the database invariants through the server-side audit connection:
@@ -90,9 +99,10 @@ Confirm that every reconciliation row is finalized, every owner-held item has no
 
 ### Failure recovery
 
-- If the server loses the response, retry the identical payload with the same idempotency key. Do not generate a new key for the same intended decision.
+- If the server loses the response, retry the identical payload with the same idempotency key. The existing decision is returned without another event, notification, lock change, or version increment. Do not generate a new key for the same intended decision.
+- If a resolution is rejected (including `COMPLETED` on a request-only case), correct the proposed decision only after reviewing the source evidence. The rejected transaction leaves no decision, event, notification, or lock mutation.
 - If evidence conflicts with an earlier recorded outcome, stop. The function rejects the call and leaves the connected group quarantined. Escalate for evidence review; do not delete or edit audit rows.
-- If a stale version is reported, regenerate the quarantine report and reassess before submitting a new intended action.
+- If a stale version is reported, regenerate the quarantine report, confirm the current version and pending connected cases, and reassess before submitting a new intended action.
 - If only some cases are recorded, leave the NULL-attributed `MANUAL_REVIEW` locks in place. Continue with the remaining explicit decisions; never delete those locks manually.
 - If the atomic finalization fails, the transaction rolls back case, lock, item, event, and notification changes together. Correct the input or database fault, then retry with the same key.
 - A non-owner custody result remains `DISPUTED` and locked. After a separately verified return, use the existing administrator resolution workflow; preserve its reason and evidence in the audit trail.
