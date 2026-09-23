@@ -1,0 +1,76 @@
+name: Hosted Supabase Exchange Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head_sha:
+        description: Exact 40-character commit SHA approved for the staging smoke
+        required: true
+        type: string
+      confirmation:
+        description: Type RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-supabase-exchange-smoke
+  cancel-in-progress: false
+
+jobs:
+  hosted-exchange-smoke:
+    name: guarded two-user canonical exchange smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: hosted-supabase-staging
+    env:
+      BC_HOSTED_SMOKE_CONFIRMATION: ${{ inputs.confirmation }}
+      BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+      BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+      BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+      BC_STAGING_NOTIFICATION_MODE: ${{ vars.BC_STAGING_NOTIFICATION_MODE }}
+      BC_STAGING_SUPABASE_PROJECT_REF: ${{ vars.BC_STAGING_SUPABASE_PROJECT_REF }}
+      BC_PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.BC_PRODUCTION_SUPABASE_PROJECT_REF }}
+      BC_STAGING_USER_A_EMAIL: ${{ secrets.BC_STAGING_USER_A_EMAIL }}
+      BC_STAGING_USER_A_PASSWORD: ${{ secrets.BC_STAGING_USER_A_PASSWORD }}
+      BC_STAGING_USER_B_EMAIL: ${{ secrets.BC_STAGING_USER_B_EMAIL }}
+      BC_STAGING_USER_B_PASSWORD: ${{ secrets.BC_STAGING_USER_B_PASSWORD }}
+      BC_STAGING_USER_C_EMAIL: ${{ secrets.BC_STAGING_USER_C_EMAIL }}
+      BC_STAGING_USER_C_PASSWORD: ${{ secrets.BC_STAGING_USER_C_PASSWORD }}
+      BC_STAGING_SET_A: ${{ vars.BC_STAGING_SET_A }}
+      BC_STAGING_SET_B: ${{ vars.BC_STAGING_SET_B }}
+      BC_HOSTED_SMOKE_REPORT: artifacts/hosted-exchange-smoke.json
+    steps:
+      - name: Refuse an unexpected commit
+        shell: bash
+        env:
+          EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
+        run: |
+          if [[ ! "$EXPECTED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "expected_head_sha must be a full lowercase commit SHA" >&2
+            exit 1
+          fi
+          if [[ "$EXPECTED_HEAD_SHA" != "$GITHUB_SHA" ]]; then
+            echo "Refusing to run: selected workflow SHA does not match expected_head_sha" >&2
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Verify staging safety guards
+        run: npm run test:hosted:guard
+      - name: Run hosted canonical exchange smoke
+        run: npm run smoke:hosted:exchange
+      - name: Upload redacted staging evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-exchange-smoke-${{ github.sha }}
+          path: artifacts/hosted-exchange-smoke.json
+          if-no-files-found: warn
+          retention-days: 30

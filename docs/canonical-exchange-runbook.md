@@ -109,6 +109,74 @@ Confirm that every reconciliation row is finalized, every owner-held item has no
 
 ## Two-user smoke test
 
+### Automated hosted Supabase release gate
+
+`scripts/hosted-exchange-smoke.mjs` automates the hosted boundary checks without applying migrations or deploying application code. It uses the public Supabase client for three independent password-authenticated sessions and a server-only staging secret solely to inspect protected notification delivery evidence. The secret must never be exposed to browser code or stored in the repository.
+
+The harness deliberately retains its completed canonical case, events, messages, notifications and two synthetic collection items as staging audit evidence. It never deletes an Auth user, existing collection item, legacy record, canonical audit row or notification. Reset or replace the isolated staging project between release candidates when retained evidence should be discarded.
+
+#### GitHub environment setup
+
+Create a protected GitHub environment named `hosted-supabase-staging`. Require an approving reviewer and restrict it to the intended staging branch. Configure these environment secrets:
+
+- `BC_STAGING_SUPABASE_URL`: direct `https://<project-ref>.supabase.co` staging URL.
+- `BC_STAGING_SUPABASE_PUBLISHABLE_KEY`: staging publishable key, or the legacy staging anon key.
+- `BC_STAGING_SUPABASE_SECRET_KEY`: staging server secret/service-role key. It is used only by the Node process to read protected outbox evidence.
+- `BC_STAGING_USER_A_EMAIL` and `BC_STAGING_USER_A_PASSWORD`.
+- `BC_STAGING_USER_B_EMAIL` and `BC_STAGING_USER_B_PASSWORD`.
+- `BC_STAGING_USER_C_EMAIL` and `BC_STAGING_USER_C_PASSWORD`.
+
+Configure these non-secret environment variables:
+
+- `BC_STAGING_SUPABASE_PROJECT_REF`: exact project ref parsed from the staging URL.
+- `BC_PRODUCTION_SUPABASE_PROJECT_REF`: production project ref. The harness refuses to run if it matches staging.
+- `BC_STAGING_SET_A` and `BC_STAGING_SET_B`: two different set numbers already present in the staging catalogue.
+- `BC_STAGING_NOTIFICATION_MODE`: exactly `outbox-only`.
+
+Users A and B must be disposable adult-confirmed staging accounts in the same normalized city and country. User C must be a third, unrelated adult-confirmed staging account. Do not use production users. The approved canonical migration, notification-email migration and notification Realtime publication must already exist in staging; this workflow does not apply them. Pause notification delivery workers and remove real provider credentials, or route them to an approved staging sink, before setting `BC_STAGING_NOTIFICATION_MODE=outbox-only`. The variable is an operator safety acknowledgement; it does not reconfigure Edge Functions or cron jobs.
+
+Before enabling the workflow, run the guard tests locally:
+
+```sh
+npm ci
+npm run test:hosted:guard
+```
+
+#### Running the gate
+
+1. Open **Actions → Hosted Supabase Exchange Smoke → Run workflow** on the exact PR head being reviewed.
+2. Enter the full 40-character head SHA in `expected_head_sha`.
+3. Enter `RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE` in `confirmation`.
+4. Approve the protected `hosted-supabase-staging` environment after confirming the selected project ref is not production.
+5. Retain the uploaded `hosted-exchange-smoke-<sha>` artifact and the GitHub run URL with the release evidence.
+
+The workflow refuses a malformed or mismatched commit SHA. The Node harness independently refuses an unconfirmed run, HTTP/local/custom-domain target, URL/project-ref mismatch, staging/production ref equality, reused public/server key, duplicate user identity, or identical product pair.
+
+The automated path verifies:
+
+- Supabase Auth and `getUser()` for three separate sessions.
+- eligible same-city profiles, catalogue reads, authenticated collection/wishlist writes and reciprocal matching through PostgREST/RPC.
+- proposal creation, the complete meetup/handoff/return lifecycle, completion and one canonical review.
+- both-arrived enforcement for initial and return inspection.
+- persistent case messages plus recipient delivery and third-user suppression through Realtime notification subscriptions.
+- participant visibility plus third-user RLS denial for cases, events and messages.
+- committed-response-lost retries for proposal, transition and message with exactly one case/event/message/notification outcome.
+- completed item lock release, owner-review status and collector rating update.
+- durable `notifications` records, unique dedupe keys and exactly one server-only `notification_email_deliveries` row for every queue-eligible case notification.
+
+The harness does not invoke Brevo, Web Push delivery, cron/reminder jobs, or any real notification credential. `notifications` remains the durable push source; `push_delivery_log` records actual asynchronous delivery attempts rather than a separate queue. Real provider delivery and scheduled reminder/expiry execution therefore remain separate staging gates.
+
+#### Hosted failure recovery
+
+- Treat any partial run as retained staging evidence. Do not delete its case, users, events, locks or notifications to make a retry pass.
+- Correct missing profile/catalogue prerequisites or environment configuration, then start a new run. New intended actions receive a new run ID; retries inside one action retain the same idempotency key.
+- If the Realtime subscription times out but notification rows exist, verify that `public.notifications` is in the staging `supabase_realtime` publication and that recipient RLS is active. Do not weaken RLS.
+- If notification rows exist without email-delivery rows, inspect the staging `marketplace_notification_email_outbox` trigger and canonical allowlist. Do not call the delivery provider from this gate.
+- If a lifecycle step fails, preserve the case and inspect `exchange_case_events`, item locks and the redacted artifact. Repair staging forward or replace the disposable staging project; never point the harness at production.
+- A failure report contains project ref, run ID and the error only. Credentials, API keys, passwords and user emails are never written to the artifact.
+
+### Manual two-user product smoke
+
 Use two ordinary adult accounts in the same city. Each account needs an owned set with an owner photo, condition and completeness, and each must wishlist the other set.
 
 1. User A marks one owned set Available to Exchange. Confirm matching shows exactly one reciprocal result.
@@ -153,6 +221,6 @@ Use two ordinary adult accounts in the same city. Each account needs an owned se
 
 - The repository migration history does not reconstruct the oldest foundational schema without QA bootstrap fixtures. Production-equivalent reset must be solved before deployment approval.
 - Legacy ambiguous custody states cannot be inferred safely; they require human resolution.
-- PostgreSQL CI proves server behavior but not a real hosted Supabase gateway, Realtime or Edge Function delivery. Staging must cover those boundaries.
+- PostgreSQL CI proves server behavior but not a real hosted Supabase gateway, Realtime or Edge Function delivery. Run the guarded hosted workflow and retain its artifact before approval; real provider delivery remains a separate staging check.
 - Browser automation uses deterministic fixtures; the final two-person physical handoff/return smoke test remains a human gate.
 - Old lifecycle tables remain for audit and compatibility. Their write privileges are revoked, but removal is intentionally deferred to a separately reviewed migration.
