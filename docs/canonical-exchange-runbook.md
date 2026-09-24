@@ -117,6 +117,8 @@ The harness deliberately retains its completed canonical case, events, messages,
 
 #### GitHub environment setup
 
+The manual dispatcher must first exist on the repository default branch. Review and merge the dedicated prerequisite dispatcher PR before attempting to run the PR #102 gate. The dispatcher validates the requested open, same-repository PR, exact `codex/canonical-exchange-state-machine` branch and immutable head SHA in a secret-free job. Only a successful validation allows the protected environment job to start. The workflow remains manual-only and never runs for `push`, `pull_request`, `pull_request_target` or a schedule.
+
 Create a protected GitHub environment named `hosted-supabase-staging`. Require an approving reviewer and restrict it to the intended staging branch. Configure these environment secrets:
 
 - `BC_STAGING_SUPABASE_URL`: direct `https://<project-ref>.supabase.co` staging URL.
@@ -132,8 +134,10 @@ Configure these non-secret environment variables:
 - `BC_PRODUCTION_SUPABASE_PROJECT_REF`: production project ref. The harness refuses to run if it matches staging.
 - `BC_STAGING_SET_A` and `BC_STAGING_SET_B`: two different set numbers already present in the staging catalogue.
 - `BC_STAGING_NOTIFICATION_MODE`: exactly `outbox-only`.
+- `BC_STAGING_ALLOWED_EMAIL_DOMAIN`: exactly `example.test`, or the same dedicated staging sink domain configured below.
+- `BC_STAGING_APPROVED_SINK_DOMAIN`: optional dedicated staging sink domain. It is required when the allowed domain is not `example.test`.
 
-Users A and B must be disposable adult-confirmed staging accounts in the same normalized city and country. User C must be a third, unrelated adult-confirmed staging account. Do not use production users. The approved canonical migration, notification-email migration and notification Realtime publication must already exist in staging; this workflow does not apply them. Pause notification delivery workers and remove real provider credentials, or route them to an approved staging sink, before setting `BC_STAGING_NOTIFICATION_MODE=outbox-only`. The variable is an operator safety acknowledgement; it does not reconfigure Edge Functions or cron jobs.
+Users A and B must be disposable adult-confirmed staging accounts in the same normalized city and country. User C must be a third, unrelated adult-confirmed staging account. All three emails must use the exact allowed domain. The harness accepts the reserved non-routable `example.test` domain or one explicitly approved staging sink; it rejects mixed domains, common public providers and `brickcircle.club` identities before authentication or database mutation. Do not use production users. The approved canonical migration, notification-email migration and notification Realtime publication must already exist in staging; this workflow does not apply them. Pause notification delivery workers and remove real provider credentials, or route them to the approved staging sink, before setting `BC_STAGING_NOTIFICATION_MODE=outbox-only`. The variable remains an operator acknowledgement in addition to the machine-enforced email guard; it does not reconfigure Edge Functions or cron jobs.
 
 Before enabling the workflow, run the guard tests locally:
 
@@ -144,11 +148,12 @@ npm run test:hosted:guard
 
 #### Running the gate
 
-1. Open **Actions → Hosted Supabase Exchange Smoke → Run workflow** on the exact PR head being reviewed.
-2. Enter the full 40-character head SHA in `expected_head_sha`.
-3. Enter `RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE` in `confirmation`.
-4. Approve the protected `hosted-supabase-staging` environment after confirming the selected project ref is not production.
-5. Retain the uploaded `hosted-exchange-smoke-<sha>` artifact and the GitHub run URL with the release evidence.
+1. Open **Actions → Hosted Supabase Exchange Smoke → Run workflow** from the default branch dispatcher.
+2. Enter the open PR number in `pull_request_number`.
+3. Enter the PR's exact full 40-character head SHA in `expected_head_sha`.
+4. Enter `RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE` in `confirmation`.
+5. Confirm the secret-free PR-validation job passed, then approve the protected `hosted-supabase-staging` environment after independently confirming the selected project ref is not production.
+6. Retain the uploaded `hosted-exchange-smoke-<sha>` artifact and the GitHub run URL with the release evidence.
 
 The workflow refuses a malformed or mismatched commit SHA. The Node harness independently refuses an unconfirmed run, HTTP/local/custom-domain target, URL/project-ref mismatch, staging/production ref equality, reused public/server key, duplicate user identity, or identical product pair.
 
@@ -156,7 +161,12 @@ The automated path verifies:
 
 - Supabase Auth and `getUser()` for three separate sessions.
 - eligible same-city profiles, catalogue reads, authenticated collection/wishlist writes and reciprocal matching through PostgREST/RPC.
-- proposal creation, the complete meetup/handoff/return lifecycle, completion and one canonical review.
+- proposal creation, a 30-to-60-day counterproposal, the complete meetup/handoff/return lifecycle, completion and one canonical review.
+- accepted lock ownership, disappearance from reciprocal matching, exact handoff-to-return duration, archived-conversation readability and write closure.
+- explicit owner review/re-enable, reciprocal rematching, and a second accepted case cancelled before handoff with atomic release and idempotent retry.
+- rejection of ordinary cancellation after mutual physical handoff followed by the locked early-return path.
+- stale-version rejection without state, event, notification or lock mutation.
+- one reusable client switching from User A to User C only after local sign-out and Realtime channel removal, followed by third-user isolation checks.
 - both-arrived enforcement for initial and return inspection.
 - persistent case messages plus recipient delivery and third-user suppression through Realtime notification subscriptions.
 - participant visibility plus third-user RLS denial for cases, events and messages.
@@ -173,7 +183,8 @@ The harness does not invoke Brevo, Web Push delivery, cron/reminder jobs, or any
 - If the Realtime subscription times out but notification rows exist, verify that `public.notifications` is in the staging `supabase_realtime` publication and that recipient RLS is active. Do not weaken RLS.
 - If notification rows exist without email-delivery rows, inspect the staging `marketplace_notification_email_outbox` trigger and canonical allowlist. Do not call the delivery provider from this gate.
 - If a lifecycle step fails, preserve the case and inspect `exchange_case_events`, item locks and the redacted artifact. Repair staging forward or replace the disposable staging project; never point the harness at production.
-- A failure report contains project ref, run ID and the error only. Credentials, API keys, passwords and user emails are never written to the artifact.
+- A failure report contains project ref, run ID, tested PR/SHA and a sanitized error only. Success artifacts hash UUIDs and contain no credentials, API keys, passwords, URLs, Auth responses or user emails.
+- Replace or reset the isolated staging project between release candidates when retained canonical evidence is no longer required. Never use broad cleanup queries against production-like data.
 
 ### Manual two-user product smoke
 

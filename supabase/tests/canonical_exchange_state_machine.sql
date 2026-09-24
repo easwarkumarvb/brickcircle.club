@@ -612,6 +612,21 @@ do $$ begin
 end $$;
 set local role authenticated;
 
+-- A fully active physical exchange cannot use ordinary cancellation.
+do $$ declare before_version bigint; begin
+  select state_version into before_version from public.exchange_cases where id=(select id from test_context where name='first');
+  begin
+    perform public.exchange_case_transition((select id from test_context where name='first'),before_version,'cancel','active-cancel-rejected','{}');
+    raise exception 'active cancellation unexpectedly succeeded';
+  exception when others then
+    if sqlerrm='active cancellation unexpectedly succeeded' then raise; end if;
+  end;
+  if (select state from public.exchange_cases where id=(select id from test_context where name='first'))<>'ACTIVE'
+     or (select state_version from public.exchange_cases where id=(select id from test_context where name='first'))<>before_version
+     or (select count(*) from public.exchange_case_item_locks where case_id=(select id from test_context where name='first') and lock_kind='ON_EXCHANGE')<>2
+  then raise exception 'rejected active cancellation mutated canonical state'; end if;
+end $$;
+
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'early_return','early-return-b','{}');
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'propose_return','return-meetup-b',
   jsonb_build_object('venue_name','Library entrance','venue_area','Security desk','meetup_at',now()+interval '1 day'));
@@ -682,10 +697,13 @@ delete from public.exchange_user_blocks where blocker_id='00000000-0000-4000-800
 select (public.create_exchange_case('10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000004',90,'Second case','create-c-d')->'case'->>'id')::uuid as second_case_id \gset
 insert into test_context values('second',:'second_case_id');
 select public.exchange_case_transition(:'second_case_id',(select state_version from public.exchange_cases where id=:'second_case_id'),'cancel','cancel-c-d','{"reason":"Plans changed"}');
+select public.exchange_case_transition(:'second_case_id',(select state_version from public.exchange_cases where id=:'second_case_id'),'cancel','cancel-c-d','{"reason":"Plans changed"}');
 reset role;
 do $$ begin
   if exists(select 1 from public.exchange_case_item_locks where case_id=(select id from test_context where name='second')) then raise exception 'cancelled case retained item holds'; end if;
   if (select count(*) from public.collection_items where id in ('10000000-0000-4000-8000-000000000003','10000000-0000-4000-8000-000000000004') and available_for_exchange)<>2 then raise exception 'cancellation did not restore availability preference'; end if;
+  if (select count(*) from public.notifications where exchange_case_id=(select id from test_context where name='second') and kind='exchange_cancelled')<>2 then raise exception 'cancellation did not notify both participants exactly once'; end if;
+  if (select count(*) from public.exchange_case_events where case_id=(select id from test_context where name='second') and event_type='cancel')<>1 then raise exception 'cancellation retry duplicated audit event'; end if;
 end $$;
 
 -- Legacy lifecycle procedures and direct workflow table writes are unavailable.

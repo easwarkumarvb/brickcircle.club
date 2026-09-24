@@ -828,7 +828,9 @@ begin
       kind:='exchange_activated';title:='Temporary exchange active';body:='Both handoffs are confirmed. The return period starts now.';
     else kind:='handoff_confirmation_required';title:='Handoff confirmation required';body:='The other collector confirmed handoff. Confirm only after physical custody changed.'; end if;
   elsif clean_action='cancel' then
-    if c.handoff_a_at is not null or c.handoff_b_at is not null then
+    if c.handoff_a_at is not null and c.handoff_b_at is not null then
+      raise exception 'An active physical exchange cannot be cancelled. Use early return or report an issue.';
+    elsif c.handoff_a_at is not null or c.handoff_b_at is not null then
       after_state:='HANDOFF_ISSUE';
       update public.exchange_cases set state=after_state,issue_type='handoff_uncertain',issue_note=nullif(pg_catalog.btrim(p_payload->>'reason'),''),state_version=state_version+1,updated_at=pg_catalog.now() where id=c.id returning * into c;
       update public.exchange_case_item_locks set lock_kind='MANUAL_REVIEW',updated_at=pg_catalog.now() where case_id=c.id;
@@ -891,6 +893,10 @@ begin
   insert into public.exchange_case_events(case_id,event_type,previous_state,resulting_state,actor_user_id,state_version,idempotency_key,metadata)
   values(c.id,clean_action,before_state,after_state,me,c.state_version,clean_key,coalesce(p_payload,'{}'::jsonb)) returning id into event_id;
   perform private.bc_case_notify(c,event_id,other_user,kind,title,body,me);
+  if clean_action='cancel' and after_state='CANCELLED' then
+    perform private.bc_case_notify(c,event_id,me,'exchange_cancelled','Sets released',
+      'The pre-handoff exchange was cancelled. Your saved availability preference has been restored.',null);
+  end if;
   return private.bc_case_snapshot(c.id,false);
 end;
 $$;
