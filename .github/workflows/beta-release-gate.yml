@@ -3,6 +3,33 @@ on:
   pull_request:
 
 jobs:
+  canonical-exchange-state-machine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_exchange_state_machine
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_exchange_state_machine"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_exchange_state_machine
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load isolated production-compatible prerequisites
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_base.sql
+      - name: Seed realistic legacy exchange histories
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_legacy_seed.sql
+      - name: Apply canonical state-machine migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260916052934_canonical_exchange_state_machine.sql
+      - name: Verify transitions, RLS, idempotency, custody and outboxes
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/canonical_exchange_state_machine.sql
+
   canonical-exchange-workflow:
     runs-on: ubuntu-latest
     timeout-minutes: 10

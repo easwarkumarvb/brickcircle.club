@@ -18,20 +18,22 @@ const sets=[
 function fresh(){
   return {
     profiles:Object.values(actors).map(actor=>({id:actor.id,display_name:actor.name,email:actor.email,country:'India',city:'Bengaluru',bio:'Isolated reliability fixture',avatar_url:null,rating:0,review_count:0,member_since:NOW,created_at:NOW,adult_confirmed_at:NOW,adult_confirmation_version:'2026-09-11'})),
-    collection:[],wishlist:[],requests:[],exchanges:[],notifications:[],messages:[]
+    collection:[],wishlist:[],exchanges:[],events:[],notifications:[],messages:[],directMessages:[],reviews:[]
   };
 }
 let data;
 try{data=JSON.parse(localStorage.getItem(STORE)||'null')||fresh()}catch(_){data=fresh()}
+data.directMessages||=[];data.reviews||=[];
 let actorKey=localStorage.getItem(ACTOR)||'easwar';
 let signedOut=false;
 const active=()=>actors[actorKey];
 const user=()=>({id:active().id,email:active().email,created_at:NOW,app_metadata:{provider:'email'},identities:[{provider:'email'}]});
 const persist=()=>localStorage.setItem(STORE,JSON.stringify(data));
 const state={
-  actors,sets,rpcCalls:[],get actor(){return actorKey},get data(){return data},
-  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;localStorage.setItem(ACTOR,actorKey);persist()},
+  actors,sets,rpcCalls:[],rpcArgs:[],lostResponses:new Set(),get actor(){return actorKey},get data(){return data},
+  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;state.rpcArgs.length=0;state.lostResponses.clear();localStorage.setItem(ACTOR,actorKey);persist()},
   persist,
+  loseNextResponse(name){state.lostResponses.add(name)},
   switchActor(next){if(!actors[next])throw new Error(`Unknown actor ${next}`);actorKey=next;signedOut=false;localStorage.setItem(ACTOR,next)}
 };
 window.__bcThreeUser=state;
@@ -47,10 +49,12 @@ function visibleRows(table,query){
   if(table==='public_profiles')rows=data.profiles;
   if(table==='collection_items')rows=data.collection;
   if(table==='wishlists')rows=data.wishlist;
-  if(table==='exchange_requests')rows=data.requests.filter(row=>row.requester_id===active().id||row.responder_id===active().id);
-  if(table==='exchanges')rows=data.exchanges.filter(row=>row.user_a===active().id||row.user_b===active().id);
+  if(table==='exchange_cases')rows=data.exchanges.filter(row=>row.user_a===active().id||row.user_b===active().id);
+  if(table==='exchange_case_messages')rows=data.messages.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
+  if(table==='exchange_case_events')rows=data.events.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
   if(table==='notifications')rows=data.notifications.filter(row=>row.user_id===active().id);
-  if(table==='messages')rows=data.messages.filter(row=>row.sender_id===active().id||row.recipient_id===active().id);
+  if(table==='messages')rows=data.directMessages.filter(row=>row.sender_id===active().id||row.recipient_id===active().id);
+  if(table==='reviews')rows=data.reviews;
   if(table==='lego_sets')rows=sets;
   if(table==='collection_items'&&!query.ins.some(([key])=>key==='id'))rows=rows.filter(row=>row.user_id===active().id);
   for(const [key,value] of query.filters)rows=rows.filter(row=>row[key]===value);
@@ -67,12 +71,8 @@ function chain(table){
       for(const row of rows){
         if(table==='collection_items'&&!data.collection.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number))data.collection.push({id:`collection-${data.collection.length+1}`,...row,available_for_exchange:row.available_for_exchange||false,created_at:NOW});
         if(table==='wishlists'&&!data.wishlist.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number))data.wishlist.push({id:`wishlist-${data.wishlist.length+1}`,...row,priority:row.priority||3,created_at:NOW});
-        if(table==='exchange_requests'){
-          const request={id:`request-${data.requests.length+1}`,...row,status:'pending',created_at:NOW,updated_at:NOW};data.requests.push(request);
-          const note={id:`notification-${data.notifications.length+1}`,user_id:request.responder_id,kind:'request_received',title:'New exchange proposal',body:`${active().name} proposed an exchange with you.`,actor_user_id:request.requester_id,entity_type:'exchange_request',entity_id:request.id,metadata:{exchange_request_id:request.id,route:`#exchanges/${request.id}`},read_at:null,created_at:NOW};data.notifications.push(note);
-          if(note.user_id===active().id)realtimeHandlers.forEach(handler=>handler({eventType:'INSERT',new:note,old:{}}));
-        }
-        if(table==='messages')data.messages.push({id:`message-${data.messages.length+1}`,...row,created_at:NOW});
+        if(table==='exchange_case_messages')data.messages.push({id:`message-${data.messages.length+1}`,...row,created_at:NOW});
+        if(table==='messages')data.directMessages.push({id:`direct-${data.directMessages.length+1}`,...row,exchange_id:null,created_at:NOW});
       }
       persist();return Promise.resolve({data:null,error:null});
     },
@@ -93,7 +93,7 @@ function chain(table){
   };
   return query;
 }
-function itemReserved(itemId){return data.exchanges.some(exchange=>!['completed','cancelled','released'].includes(exchange.state)&&(exchange.item_a===itemId||exchange.item_b===itemId))}
+function itemReserved(itemId,exceptId=''){return data.exchanges.some(exchange=>exchange.id!==exceptId&&!['DECLINED','WITHDRAWN','EXPIRED','CANCELLED','COMPLETED'].includes(exchange.state)&&(exchange.item_a===itemId||exchange.item_b===itemId))}
 function findMatches(){
   const mine=data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange&&!itemReserved(row.id));
   const myWishes=data.wishlist.filter(row=>row.user_id===active().id);
@@ -118,44 +118,77 @@ const db={
   from:chain,
   rpc:async(name,args)=>{
     state.rpcCalls.push(name);
-    if(name==='bc_exchange_capabilities')return releaseCapabilityMissing?{data:null,error:{code:'PGRST202',message:'Function not found in schema cache'}}:{data:{contract_version:1,release_item:true},error:null};
+    state.rpcArgs.push({name,args:{...args}});
+    if(name==='bc_exchange_capabilities')return releaseCapabilityMissing?{data:null,error:{code:'PGRST202',message:'Function not found in schema cache'}}:{data:{contract_version:2,canonical_cases:true},error:null};
     if(name==='bc_search_lego_sets'){const query=String(args?.p_query||'').toLowerCase().replace(/-1$/,'');return {data:sets.filter(set=>`${set.name} ${set.set_number.replace(/-1$/,'')} ${set.theme}`.toLowerCase().includes(query)),error:null}}
     if(name==='find_matches')return {data:findMatches(),error:null};
-    if(name==='create_exchange_request'){
+    if(name==='set_exchange_item_availability'){
+      const item=data.collection.find(row=>row.id===args.p_item_id&&row.user_id===active().id);
+      if(!item)return {data:null,error:{message:'Set not found'}};
+      if(itemReserved(item.id))return {data:null,error:{message:'Availability is controlled by the active exchange case'}};
+      item.available_for_exchange=Boolean(args.p_available);persist();return {data:{ok:true,item_id:item.id,available:item.available_for_exchange},error:null};
+    }
+    if(name==='create_exchange_case'){
+      const prior=data.events.find(row=>row.idempotency_key===args.p_idempotency_key);
+      if(prior){const priorCase=data.exchanges.find(row=>row.id===prior.case_id);return {data:{ok:true,case:priorCase,idempotent:true},error:null}}
       const offered=data.collection.find(row=>row.id===args.p_offered_item_id&&row.user_id===active().id&&row.available_for_exchange);
       const requested=data.collection.find(row=>row.id===args.p_requested_item_id&&row.user_id!==active().id&&row.available_for_exchange);
       if(!offered||!requested)return {data:null,error:{message:'This reciprocal match is no longer available'}};
       const match=findMatches().find(row=>row.offered_item===offered.id&&row.requested_item===requested.id);
       if(!match)return {data:null,error:{message:'This reciprocal match is no longer available'}};
-      const existing=data.requests.find(row=>row.requester_id===active().id&&row.responder_id===requested.user_id&&row.offered_item_id===offered.id&&row.requested_item_id===requested.id&&row.status==='pending');
-      if(existing)return {data:{ok:true,request_id:existing.id,status:'pending',idempotent:true},error:null};
-      const request={id:`request-${data.requests.length+1}`,requester_id:active().id,responder_id:requested.user_id,offered_item_id:offered.id,requested_item_id:requested.id,duration_days:args.p_duration_days,status:'pending',message:args.p_message,created_at:NOW,updated_at:NOW};data.requests.push(request);
-      const note={id:`notification-${data.notifications.length+1}`,user_id:request.responder_id,kind:'request_received',title:'New exchange proposal',body:`${active().name} proposed an exchange with you.`,actor_user_id:request.requester_id,entity_type:'exchange_request',entity_id:request.id,metadata:{exchange_request_id:request.id,route:`#exchanges/${request.id}`},read_at:null,created_at:NOW};data.notifications.push(note);persist();
+      const existing=data.exchanges.find(row=>row.proposer_id===active().id&&row.recipient_id===requested.user_id&&row.item_a===offered.id&&row.item_b===requested.id&&row.state==='PROPOSED');
+      if(existing)return {data:{ok:true,case:existing,idempotent:true},error:null};
+      const exchange={id:`case-${data.exchanges.length+1}`,user_a:active().id,user_b:requested.user_id,proposer_id:active().id,recipient_id:requested.user_id,item_a:offered.id,item_b:requested.id,duration_days:args.p_duration_days,opening_message:args.p_message,state:'PROPOSED',state_version:1,created_at:NOW,updated_at:NOW};data.exchanges.push(exchange);
+      const event={id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:'exchange_proposed',resulting_state:'PROPOSED',actor_id:active().id,idempotency_key:args.p_idempotency_key,created_at:NOW};data.events.push(event);
+      const note={id:`notification-${data.notifications.length+1}`,user_id:exchange.recipient_id,kind:'exchange_proposed',title:'New exchange proposal',body:`${active().name} proposed an exchange with you.`,actor_user_id:exchange.proposer_id,entity_type:'exchange_case_event',entity_id:event.id,exchange_case_id:exchange.id,metadata:{exchange_case_id:exchange.id,route:`#exchange/${exchange.id}`},read_at:null,created_at:NOW};data.notifications.push(note);persist();
       if(note.user_id===active().id)realtimeHandlers.forEach(handler=>handler({eventType:'INSERT',new:note,old:{}}));
-      return {data:{ok:true,request_id:request.id,status:'pending',idempotent:false},error:null};
+      if(state.lostResponses.delete(name))return {data:null,error:{message:'Network response was lost after commit',status:0}};
+      return {data:{ok:true,case:exchange,idempotent:false},error:null};
     }
-    if(name==='respond_exchange_request'){
-      const request=data.requests.find(row=>row.id===args.p_request_id&&(row.requester_id===active().id||row.responder_id===active().id));if(!request)return {data:null,error:{message:'Request not found'}};
-      if(args.p_action==='accept'&&(itemReserved(request.offered_item_id)||itemReserved(request.requested_item_id)))return {data:null,error:{message:'One of these LEGO sets is already reserved in another active exchange'}};
-      request.status=args.p_action==='accept'?'accepted':args.p_action==='decline'?'declined':'cancelled';request.updated_at=NOW;
-      let exchange=null;if(args.p_action==='accept'){
-        exchange={id:`exchange-${data.exchanges.length+1}`,request_id:request.id,user_a:request.requester_id,user_b:request.responder_id,item_a:request.offered_item_id,item_b:request.requested_item_id,duration_days:request.duration_days,state:'accepted',created_at:NOW,updated_at:NOW};data.exchanges.push(exchange);
-        data.collection.filter(row=>row.id===request.offered_item_id||row.id===request.requested_item_id).forEach(row=>{row.available_for_exchange=false});
-        data.notifications.push({id:`notification-${data.notifications.length+1}`,user_id:request.requester_id,kind:'exchange_accepted',title:'Exchange request accepted',body:'Your exchange request was accepted. Plan a safe meetup next.',actor_user_id:active().id,entity_type:'exchange',entity_id:exchange.id,metadata:{exchange_id:exchange.id,route:`#exchanges/${exchange.id}`},read_at:null,created_at:NOW});
-      }persist();return {data:exchange?{exchange_id:exchange.id}:true,error:null};
+    if(name==='exchange_case_transition'){
+      const exchange=data.exchanges.find(row=>row.id===args.p_case_id&&(row.user_a===active().id||row.user_b===active().id));
+      if(!exchange)return {data:null,error:{message:'Exchange case not found'}};
+      if(data.events.some(row=>row.case_id===exchange.id&&row.idempotency_key===args.p_idempotency_key))return {data:{ok:true,case:exchange,idempotent:true},error:null};
+      if(exchange.state_version!==args.p_expected_version)return {data:null,error:{message:'The exchange changed. Refresh and retry.'}};
+      const action=args.p_action;
+      if(action==='accept'){
+        if(active().id!==exchange.recipient_id)return {data:null,error:{message:'Only the recipient can accept'}};
+        if(itemReserved(exchange.item_a,exchange.id)||itemReserved(exchange.item_b,exchange.id))return {data:null,error:{message:'One of these LEGO sets is already reserved in another active exchange'}};
+        exchange.state='ACCEPTED';
+      }else if(action==='decline')exchange.state='DECLINED';
+      else if(action==='withdraw')exchange.state='WITHDRAWN';
+      else if(action==='cancel')exchange.state='CANCELLED';
+      else if(action==='early_return')exchange.state='EARLY_RETURN';
+      else if(action==='propose_meetup'){exchange.state='MEETUP_PLANNING';exchange.meetup_proposed_by=active().id}
+      else if(action==='accept_meetup'){exchange.state='MEETUP_CONFIRMED';exchange.meetup_accepted_by=active().id}
+      else if(action==='safety_ack'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`safety_ack_${suffix}_at`]=NOW;if(exchange.safety_ack_a_at&&exchange.safety_ack_b_at)exchange.state='INSPECTION'}
+      else if(action==='arrive'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`arrived_${suffix}_at`]=NOW}
+      else if(action==='inspect'){const suffix=active().id===exchange.user_a?'a':'b';if(!exchange.arrived_a_at||!exchange.arrived_b_at)return {data:null,error:{message:'Both collectors must arrive before inspection approval'}};exchange[`inspected_${suffix}_at`]=NOW;if(exchange.inspected_a_at&&exchange.inspected_b_at)exchange.state='HANDOFF_PENDING'}
+      else if(action==='propose_return'){exchange.state='RETURN_PLANNING';exchange.return_proposed_by=active().id}
+      else if(action==='accept_return'){exchange.state='RETURN_INSPECTION';exchange.return_accepted_by=active().id}
+      else if(action==='return_arrive'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`return_arrived_${suffix}_at`]=NOW}
+      else if(action==='return_inspect'){const suffix=active().id===exchange.user_a?'a':'b';if(!exchange.return_arrived_a_at||!exchange.return_arrived_b_at)return {data:null,error:{message:'Both collectors must arrive before return inspection'}};exchange[`return_inspected_${suffix}_at`]=NOW}
+      else return {data:null,error:{message:`Unsupported isolated transition: ${action}`}};
+      exchange.state_version+=1;exchange.updated_at=NOW;
+      data.events.push({id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:`exchange_${action}`,resulting_state:exchange.state,actor_id:active().id,idempotency_key:args.p_idempotency_key,created_at:NOW});
+      persist();if(state.lostResponses.delete(name))return {data:null,error:{message:'Network response was lost after commit',status:0}};return {data:{ok:true,case:exchange},error:null};
     }
-    if(name==='release_exchange_item'){
-      const owned=data.collection.find(row=>row.id===args.p_item_id&&row.user_id===active().id);
-      if(!owned)return {data:null,error:{message:'You can release only your own LEGO set'}};
-      const exchange=data.exchanges.find(row=>!['completed','cancelled','released'].includes(row.state)&&(row.item_a===owned.id||row.item_b===owned.id));
-      if(exchange&&['swap_active','disputed'].includes(exchange.state))return {data:{ok:false,requires_early_return:true,exchange_id:exchange.id,status:exchange.state,message:'The physical handoff is complete. Request an early return, contact the participant, or report an issue.'},error:null};
-      const request=exchange?data.requests.find(row=>row.id===exchange.request_id):data.requests.find(row=>row.status==='pending'&&(row.offered_item_id===owned.id||row.requested_item_id===owned.id));
-      if(exchange){exchange.state='released';exchange.updated_at=NOW}
-      if(request){request.status='released';request.updated_at=NOW}
-      const itemIds=exchange?[exchange.item_a,exchange.item_b]:request?[request.offered_item_id,request.requested_item_id]:[owned.id];
-      data.collection.filter(row=>itemIds.includes(row.id)).forEach(row=>{row.available_for_exchange=true});
-      if(request){const other=request.requester_id===active().id?request.responder_id:request.requester_id;data.notifications.push({id:`notification-${data.notifications.length+1}`,user_id:other,kind:'exchange_released',title:'A LEGO set was released',body:'The other collector released their set. Both sets are available for a new match.',actor_user_id:active().id,entity_type:exchange?'exchange':'exchange_request',entity_id:exchange?.id||request.id,metadata:{item_id:owned.id,route:`#exchanges/${exchange?.id||request.id}`},read_at:null,created_at:NOW})}
-      persist();return {data:{ok:true,status:request||exchange?'released':'available',idempotent:!request&&!exchange,item_id:owned.id},error:null};
+    if(name==='send_exchange_case_message'){
+      const prior=data.messages.find(row=>row.sender_id===active().id&&row.idempotency_key===args.p_idempotency_key);
+      if(prior)return {data:{ok:true,message:prior,idempotent:true},error:null};
+      const exchange=data.exchanges.find(row=>row.id===args.p_case_id&&(row.user_a===active().id||row.user_b===active().id));
+      if(!exchange)return {data:null,error:{message:'Exchange case not found'}};
+      const other=exchange.user_a===active().id?exchange.user_b:exchange.user_a;
+      const message={id:`message-${data.messages.length+1}`,case_id:exchange.id,sender_id:active().id,recipient_id:other,body:args.p_body,idempotency_key:args.p_idempotency_key,created_at:NOW};data.messages.push(message);
+      data.notifications.push({id:`notification-${data.notifications.length+1}`,user_id:other,kind:'exchange_message',title:'New exchange message',body:'The other collector sent a message.',exchange_case_id:exchange.id,exchange_case_message_id:message.id,created_at:NOW});
+      persist();if(state.lostResponses.delete(name))return {data:null,error:{message:'Network response was lost after commit',status:0}};return {data:{ok:true,message,idempotent:false},error:null};
+    }
+    if(name==='submit_exchange_case_review'){
+      const exchange=data.exchanges.find(row=>row.id===args.p_case_id&&(row.user_a===active().id||row.user_b===active().id));
+      if(!exchange||exchange.state!=='COMPLETED')return {data:null,error:{message:'Reviews are available only after completion'}};
+      if(data.reviews.some(row=>row.case_id===exchange.id&&row.reviewer_id===active().id))return {data:null,error:{message:'You already reviewed this exchange'}};
+      const other=exchange.user_a===active().id?exchange.user_b:exchange.user_a,review={id:`review-${data.reviews.length+1}`,case_id:exchange.id,reviewer_id:active().id,reviewee_id:other,rating:args.p_rating,comment:args.p_comment,created_at:NOW};data.reviews.push(review);
+      const ratings=data.reviews.filter(row=>row.reviewee_id===other),profile=data.profiles.find(row=>row.id===other);profile.review_count=ratings.length;profile.rating=ratings.reduce((sum,row)=>sum+row.rating,0)/ratings.length;persist();return {data:{ok:true,review},error:null};
     }
     if(name==='bc_founder_status')return {data:{my_is_founder:true,my_number:7},error:null};
     if(name==='bc_liquidity_status')return {data:{collection_count:visibleRows('collection_items',{filters:[],ins:[]}).length,exchangeable_count:data.collection.filter(row=>row.user_id===active().id&&row.available_for_exchange).length,wishlist_count:data.wishlist.filter(row=>row.user_id===active().id).length,referral_claims:0,liquidity_readiness:80},error:null};

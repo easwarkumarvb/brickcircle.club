@@ -10,6 +10,8 @@
     "test:e2e":"playwright test --project=chromium --grep-invert @cross-browser",
     "test:isolated":"playwright test --config=playwright.isolated.config.ts",
     "test:isolated:chromium":"playwright test --config=playwright.isolated.config.ts --project=chromium",
+    "test:hosted:guard":"node --test tests/hosted/hosted-exchange-smoke.test.mjs",
+    "smoke:hosted:exchange":"node scripts/hosted-exchange-smoke.mjs",
     "test:cross-browser":"playwright test tests/e2e/cross-browser-accessibility.spec.ts --project=chromium --project=firefox --project=webkit",
     "test:qa-all":"playwright test"
   },

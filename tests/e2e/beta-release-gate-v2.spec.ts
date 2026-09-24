@@ -103,25 +103,28 @@ test('Google sign-in contract is owned by the canonical app', async ()=>{
 test('signed-in collector can add, wishlist, mark exchangeable, match and propose through UX', async ({page})=>{
   test.setTimeout(30000);
   const errors=collectErrors(page);
+  const pixel=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9ZQmcAAAAASUVORK5CYII=','base64');
+  for(const pattern of ['https://images.brickset.com/**','https://images.weserv.nl/**','https://example.invalid/**'])await page.route(pattern,route=>route.fulfill({status:200,contentType:'image/png',body:pixel}));
   await page.setViewportSize({width:390,height:844});
   await page.setContent('<div id="bc-root"></div>');
   await page.evaluate(()=>{
+    if(!(crypto as any).randomUUID)Object.defineProperty(crypto,'randomUUID',{value:()=>`00000000-0000-4000-8000-${Date.now().toString().padStart(12,'0').slice(-12)}`});
     const user={id:'00000000-0000-4000-8000-000000000007',email:'qa@example.invalid',created_at:new Date().toISOString(),app_metadata:{provider:'google'},identities:[{provider:'google'}]};
     const profile={id:user.id,display_name:'QA Collector',email:user.email,country:'India',city:'Bengaluru',bio:'',avatar_url:null,rating:0,review_count:0,identity_verified:false,member_since:new Date().toISOString(),created_at:new Date().toISOString()};
     const sets=[
       {set_number:'42172',name:'McLaren P1',theme:'Technic',year:2024,piece_count:3893,estimated_value:450,catalog_active:true},
       {set_number:'42143',name:'Ferrari Daytona SP3',theme:'Technic',year:2022,piece_count:3778,estimated_value:450,catalog_active:true}
     ];
-    const state:any={collection:[],wishlist:[],requests:[],sets};
+    const state:any={collection:[],wishlist:[],exchanges:[],sets};
     (window as any).__qaState=state;
     (window as any).BC_LOCATIONS={India:['Bengaluru','Mumbai','Delhi']};
     const chain=(table:string)=>{
       const q:any={table,filters:[],patch:null,mode:'select',
         select(){return q},eq(k:string,v:any){q.filters.push([k,v]);return q},or(){return q},order(){return q},limit(){return q},range(){return q},in(k:string,v:any[]){q.filters.push([k,v]);return q},is(){return q},
         update(p:any){q.mode='update';q.patch=p;return q},delete(){q.mode='delete';return q},
-        insert(p:any){const rows=Array.isArray(p)?p:[p];if(table==='collection_items')for(const r of rows){if(!state.collection.some((x:any)=>x.set_number===r.set_number))state.collection.push({id:`c${state.collection.length+1}`,user_id:user.id,set_number:r.set_number,available_for_exchange:false,created_at:new Date().toISOString()})}if(table==='wishlists')for(const r of rows){if(!state.wishlist.some((x:any)=>x.set_number===r.set_number))state.wishlist.push({id:`w${state.wishlist.length+1}`,user_id:user.id,set_number:r.set_number,priority:r.priority||3,created_at:new Date().toISOString()})}if(table==='exchange_requests')for(const r of rows)state.requests.push({id:`r${state.requests.length+1}`,...r,status:'pending',created_at:new Date().toISOString()});return Promise.resolve({data:null,error:null})},
-        maybeSingle:async()=>({data:table==='profiles'?profile:null,error:null}),
-        then(resolve:any){let data:any=[];if(table==='profiles')data=[profile];else if(table==='collection_items')data=state.collection.map((x:any)=>({...x,lego_sets:sets.find((s:any)=>s.set_number===x.set_number)}));else if(table==='wishlists')data=state.wishlist.map((x:any)=>({...x,lego_sets:sets.find((s:any)=>s.set_number===x.set_number)}));else if(table==='exchange_requests')data=state.requests;else if(table==='lego_sets')data=sets;else if(table==='public_profiles')data=[{id:'00000000-0000-4000-8000-000000000099',display_name:'Match Collector',country:'India',city:'Bengaluru',rating:5,review_count:3,identity_verified:false,member_since:new Date().toISOString(),founding_member_number:9}];
+        insert(p:any){const rows=Array.isArray(p)?p:[p];if(table==='collection_items')for(const r of rows){if(!state.collection.some((x:any)=>x.set_number===r.set_number))state.collection.push({id:`c${state.collection.length+1}`,user_id:user.id,set_number:r.set_number,owner_photo_path:`${user.id}/qa-owner.jpg`,available_for_exchange:false,created_at:new Date().toISOString()})}if(table==='wishlists')for(const r of rows){if(!state.wishlist.some((x:any)=>x.set_number===r.set_number))state.wishlist.push({id:`w${state.wishlist.length+1}`,user_id:user.id,set_number:r.set_number,priority:r.priority||3,created_at:new Date().toISOString()})}return Promise.resolve({data:null,error:null})},
+        maybeSingle:async()=>({data:table==='profiles'?profile:table==='exchange_cases'?state.exchanges.find((x:any)=>q.filters.every(([k,v]:any[])=>x[k]===v))||null:null,error:null}),
+        then(resolve:any){let data:any=[];if(table==='profiles')data=[profile];else if(table==='collection_items')data=state.collection.map((x:any)=>({...x,lego_sets:sets.find((s:any)=>s.set_number===x.set_number)}));else if(table==='wishlists')data=state.wishlist.map((x:any)=>({...x,lego_sets:sets.find((s:any)=>s.set_number===x.set_number)}));else if(table==='exchange_cases')data=state.exchanges;else if(table==='lego_sets')data=sets;else if(table==='public_profiles')data=[{id:'00000000-0000-4000-8000-000000000099',display_name:'Match Collector',country:'India',city:'Bengaluru',rating:5,review_count:3,identity_verified:false,member_since:new Date().toISOString(),founding_member_number:9}];
           if(q.mode==='update'&&table==='collection_items'){for(const x of state.collection){if(q.filters.every(([k,v]:any[])=>x[k]===v))Object.assign(x,q.patch)}data=null}
           if(q.mode==='delete'&&table==='wishlists'){const removed=state.wishlist.filter((x:any)=>q.filters.every(([k,v]:any[])=>x[k]===v));state.wishlist=state.wishlist.filter((x:any)=>!q.filters.every(([k,v]:any[])=>x[k]===v));data=removed.map((x:any)=>({id:x.id}))}
           return Promise.resolve({data,error:null}).then(resolve)}
@@ -138,9 +141,11 @@ test('signed-in collector can add, wishlist, mark exchangeable, match and propos
         if(name==='bc_my_referral_code')return {data:'QA123',error:null};
         if(name==='bc_search_lego_sets'){const text=String(args?.p_query||'').toLowerCase();return {data:sets.filter((s:any)=>`${s.name} ${s.set_number} ${s.theme}`.toLowerCase().includes(text)),error:null}}
         if(name==='find_matches'){if(!state.collection.some((x:any)=>x.available_for_exchange)||!state.wishlist.length)return {data:[],error:null};const own=state.collection.find((x:any)=>x.available_for_exchange);const wish=state.wishlist[0];const os=sets.find((s:any)=>s.set_number===own.set_number)!;const ws=sets.find((s:any)=>s.set_number===wish.set_number)!;return {data:[{match_user:'00000000-0000-4000-8000-000000000099',match_score:95,offered_name:os.name,offered_set:os.set_number,offered_value:450,offered_item:own.id,requested_name:ws.name,requested_set:ws.set_number,requested_value:450,requested_item:'other-item-1'}],error:null}}
+        if(name==='set_exchange_item_availability'){const item=state.collection.find((x:any)=>x.id===args.p_item_id);if(!item)return {data:null,error:{message:'Set not found'}};item.available_for_exchange=Boolean(args.p_available);return {data:{ok:true,item_id:item.id,available:item.available_for_exchange},error:null}}
+        if(name==='create_exchange_case'){const exchange={id:'case-1',user_a:user.id,user_b:'00000000-0000-4000-8000-000000000099',proposer_id:user.id,recipient_id:'00000000-0000-4000-8000-000000000099',item_a:args.p_offered_item_id,item_b:args.p_requested_item_id,duration_days:args.p_duration_days,state:'PROPOSED',state_version:1,created_at:new Date().toISOString()};state.exchanges.push(exchange);return {data:{ok:true,case:exchange,idempotent:false},error:null}}
         return {data:null,error:null};
       },
-      storage:{from:()=>({getPublicUrl:()=>({data:{publicUrl:''}}),upload:async()=>({data:{path:'x'},error:null})})}
+      storage:{from:()=>({getPublicUrl:()=>({data:{publicUrl:''}}),upload:async()=>({data:{path:'x'},error:null}),createSignedUrl:async()=>({data:{signedUrl:'https://example.invalid/owner.jpg'},error:null}),remove:async()=>({data:null,error:null})})}
     };
     (window as any).supabase={createClient:()=>db};
     (window as any).fetch=async()=>({ok:true,json:async()=>({external:{google:true,apple:false}})} as any);
@@ -172,8 +177,9 @@ test('signed-in collector can add, wishlist, mark exchangeable, match and propos
   await page.locator('[data-propose]').click();
   await expect(page.locator('#bc-proposal')).toBeVisible();
   await page.locator('#bc-proposal button[type="submit"]').click();
-  await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.requests.length)).toBe(1);
-  await expect(page.locator('#bc-exchange-body')).toContainText(/Proposal sent/i,{timeout:3000});
+  await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.exchanges.length)).toBe(1);
+  await expect.poll(()=>page.evaluate(()=>(window as any).__qaState.exchanges[0].state)).toBe('PROPOSED');
+  await expect(page.locator('#bc-flow')).toContainText(/Proposal pending/i,{timeout:3000});
 
   await page.locator('[data-nav="sets"]').first().click();
   await page.locator('[data-settab="wishlist"]').click();
