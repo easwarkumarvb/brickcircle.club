@@ -623,9 +623,14 @@ do $$ declare before_version bigint; begin
   end;
   if (select state from public.exchange_cases where id=(select id from test_context where name='first'))<>'ACTIVE'
      or (select state_version from public.exchange_cases where id=(select id from test_context where name='first'))<>before_version
-     or (select count(*) from public.exchange_case_item_locks where case_id=(select id from test_context where name='first') and lock_kind='ON_EXCHANGE')<>2
   then raise exception 'rejected active cancellation mutated canonical state'; end if;
 end $$;
+reset role;
+do $$ begin
+  if (select count(*) from public.exchange_case_item_locks where case_id=(select id from test_context where name='first') and lock_kind='ON_EXCHANGE')<>2
+  then raise exception 'rejected active cancellation changed physical locks'; end if;
+end $$;
+set local role authenticated;
 
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'early_return','early-return-b','{}');
 select public.exchange_case_transition(:'case_id',(select state_version from public.exchange_cases where id=:'case_id'),'propose_return','return-meetup-b',
