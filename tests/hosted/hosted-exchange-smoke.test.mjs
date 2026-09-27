@@ -5,6 +5,9 @@ import {
   STAGING_CONFIRMATION,
   REALTIME_DELIVERY_TIMEOUT_MS,
   REALTIME_JOIN_TIMEOUT_MS,
+  assertAcceptanceNotificationVisibility,
+  buildFailureReport,
+  classifySmokeFailure,
   idempotencyKey,
   loadHostedSmokeConfig,
   projectRefFromUrl,
@@ -131,7 +134,94 @@ test('serializes only redacted, credential-free evidence', () => {
   assert.throws(() => serializeRedactedReport({ password: 'hidden' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: 'https:\/\/staging-project.supabase.co' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: 'sb_secret_example' }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ value: 'Bearer opaque-access-token' }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ value: 'password=not-safe' }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ value: 'eyJheader.payload.signature' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: '11111111-1111-4111-8111-111111111111' }), /Refusing/);
+});
+
+function notificationClient(rows, visibleUserId = null) {
+  return {
+    from(table) {
+      assert.equal(table, 'notifications');
+      const filters = [];
+      let head = false;
+      const query = {
+        select(_columns, options = {}) { head = options.head === true; return query; },
+        eq(column, value) { filters.push([column, value]); return query; },
+        then(resolve) {
+          const matching = rows.filter(row => filters.every(([column, value]) => row[column] === value));
+          const visible = visibleUserId ? matching.filter(row => row.user_id === visibleUserId) : matching;
+          resolve(head ? { count: visible.length, error: null } : { data: visible, error: null });
+        }
+      };
+      return query;
+    }
+  };
+}
+
+test('acceptance notification evidence respects participant RLS and global server visibility', async () => {
+  const caseId = '11111111-1111-4111-8111-111111111111';
+  const aId = '22222222-2222-4222-8222-222222222222';
+  const bId = '33333333-3333-4333-8333-333333333333';
+  const rows = [{ id: '44444444-4444-4444-8444-444444444444', exchange_case_id: caseId, kind: 'exchange_accepted', user_id: bId }];
+  await assert.doesNotReject(assertAcceptanceNotificationVisibility({
+    participantA: notificationClient(rows, aId),
+    participantB: notificationClient(rows, bId),
+    admin: notificationClient(rows),
+    caseId,
+    recipientId: bId
+  }));
+});
+
+test('correct RLS suppression is not mistaken for missing acceptance evidence', async () => {
+  const caseId = '11111111-1111-4111-8111-111111111111';
+  const aId = '22222222-2222-4222-8222-222222222222';
+  const bId = '33333333-3333-4333-8333-333333333333';
+  const rows = [{ id: '44444444-4444-4444-8444-444444444444', exchange_case_id: caseId, kind: 'exchange_accepted', user_id: bId }];
+  await assert.rejects(
+    assertAcceptanceNotificationVisibility({
+      participantA: notificationClient(rows, aId),
+      participantB: notificationClient([], bId),
+      admin: notificationClient(rows),
+      caseId,
+      recipientId: bId
+    }),
+    /Counterproposer B must see exactly one/
+  );
+});
+
+test('named assertion failure evidence retains stage, completed checks and safe classification', () => {
+  const error = new assert.AssertionError({ message: 'Accepted notification count did not match', actual: 0, expected: 1 });
+  error.safeSmokeContext = {
+    stage: 'counterproposal and acceptance idempotency',
+    checks: [{ status: 'passed', detail: 'proposal committed/lost-response retry is idempotent' }],
+    classification: classifySmokeFailure(error),
+    assertion: error.message
+  };
+  const report = buildFailureReport({
+    runId: 'hosted-smoke-safe',
+    pullRequestNumber: 102,
+    headSha: valid.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA
+  }, error, '2026-09-27T00:00:00.000Z');
+  assert.equal(report.stage, 'counterproposal and acceptance idempotency');
+  assert.equal(report.classification, 'assertion');
+  assert.equal(report.checks.length, 1);
+  assert.match(report.assertion, /Accepted notification count/);
+  assert.doesNotThrow(() => serializeRedactedReport(report));
+});
+
+test('failure classification separates assertion, Realtime, RLS, RPC and configuration failures', () => {
+  assert.equal(classifySmokeFailure(Object.assign(new Error('count mismatch'), { code: 'ERR_ASSERTION' })), 'assertion');
+  assert.equal(classifySmokeFailure(Object.assign(new Error('Realtime subscription did not become ready'), {
+    safeRealtimeDiagnostic: { connectionState: 'TIMED_OUT' }
+  })), 'realtime_join');
+  assert.equal(classifySmokeFailure(Object.assign(new Error('Timed out waiting for proposal Realtime notification'), {
+    safeRealtimeDiagnostic: { connectionState: 'DELIVERY_TIMEOUT' }
+  })), 'realtime_delivery');
+  assert.equal(classifySmokeFailure(new Error('RLS policy denied the caller')), 'rls');
+  assert.equal(classifySmokeFailure(new Error('RPC function failed')), 'rpc');
+  assert.equal(classifySmokeFailure(new Error('Missing required environment variable')), 'configuration');
 });
 
 function fakeRealtimeSession({ delayed = false, changed = false } = {}) {

@@ -85,7 +85,9 @@ export function sanitizeDiagnostic(value) {
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
     .replace(/https?:\/\/\S+/gi, '[redacted-url]')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, '[redacted-id]')
-    .replace(/\b(?:sb_(?:secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/g, '[redacted-credential]');
+    .replace(/\b(?:sb_(?:secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/g, '[redacted-credential]')
+    .replace(/\bBearer\s+[A-Za-z0-9._~-]+\b/gi, 'Bearer [redacted-credential]')
+    .replace(/\b(password|token|secret|api[_-]?key)\s*[:=]\s*[^\s"',}]+/gi, '$1=[redacted-credential]');
 }
 
 function realtimeDiagnostic(session, filterUserId) {
@@ -113,11 +115,48 @@ function recordRealtimeStatus(diagnostic, status, error, startedAt) {
 export function serializeRedactedReport(report) {
   const serialized = JSON.stringify(report, null, 2);
   const forbiddenKey = /"[^"\n]*(?:email|password|token|secret|api[_-]?key|supabase[_-]?url|auth)[^"\n]*"\s*:/i;
-  const forbiddenValue = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.|sb_(?:secret|publishable)_|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b)/i;
+  const forbiddenValue = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.|sb_(?:secret|publishable)_|\bBearer\s+[A-Za-z0-9._~-]+|\b(?:password|token|secret|api[_-]?key)\s*[:=]\s*[^\s"',}]+|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b)/i;
   if (forbiddenKey.test(serialized) || forbiddenValue.test(serialized)) {
     throw new Error('Refusing to serialize a report containing credentials, email identities, or URLs');
   }
   return `${serialized}\n`;
+}
+
+export function classifySmokeFailure(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const realtime = error?.safeRealtimeDiagnostic;
+  if (realtime) {
+    return realtime.connectionState === 'DELIVERY_TIMEOUT' || message.includes('realtime notification')
+      ? 'realtime_delivery'
+      : 'realtime_join';
+  }
+  if (error?.code === 'ERR_ASSERTION') return 'assertion';
+  if (/row.level security|\brls\b|unauthori[sz]ed|permission|policy/.test(message)) return 'rls';
+  if (/missing required|confirmation|project ref|staging target|email domain|configuration/.test(message)) return 'configuration';
+  if (/\brpc\b|function|postgrest|database|could not|failed/.test(message)) return 'rpc';
+  return 'assertion';
+}
+
+export function buildFailureReport(config, error, failedAt = new Date().toISOString()) {
+  const context = error?.safeSmokeContext || {};
+  const diagnostics = context.diagnostics || (error?.safeRealtimeDiagnostic
+    ? { realtime: [error.safeRealtimeDiagnostic] }
+    : undefined);
+  return {
+    ok: false,
+    runId: config.runId,
+    testedPullRequestNumber: config.pullRequestNumber,
+    testedHeadSha: config.headSha,
+    target: 'approved-staging',
+    failedAt,
+    stage: sanitizeDiagnostic(context.stage || 'initialization'),
+    checks: Array.isArray(context.checks)
+      ? context.checks.map(check => ({ status: 'passed', detail: sanitizeDiagnostic(check.detail) }))
+      : [],
+    classification: context.classification || classifySmokeFailure(error),
+    assertion: sanitizeDiagnostic(context.assertion || error?.message || error),
+    diagnostics
+  };
 }
 
 export function loadHostedSmokeConfig(env = process.env) {
@@ -325,6 +364,27 @@ async function countRows(client, table, filters = []) {
   return count || 0;
 }
 
+export async function assertAcceptanceNotificationVisibility({ participantA, participantB, admin, caseId, recipientId }) {
+  const filters = [['exchange_case_id', caseId], ['kind', 'exchange_accepted']];
+  assert.equal(
+    await countRows(participantB, 'notifications', filters),
+    1,
+    'Counterproposer B must see exactly one exchange_accepted notification'
+  );
+  assert.equal(
+    await countRows(participantA, 'notifications', filters),
+    0,
+    'Accepter A must see no exchange_accepted notification addressed to B under RLS'
+  );
+  const global = await admin.from('notifications')
+    .select('id,user_id')
+    .eq('exchange_case_id', caseId)
+    .eq('kind', 'exchange_accepted');
+  assert.ifError(global.error);
+  assert.equal(global.data?.length, 1, 'Server evidence must contain exactly one exchange_accepted notification');
+  assert.equal(global.data?.[0]?.user_id, recipientId, 'The single exchange_accepted notification must belong to counterproposer B');
+}
+
 async function reciprocalPairAppears(session, offeredItem, requestedItem) {
   const result = await session.client.rpc('find_matches', { p_user: session.id });
   if (result.error) throw new Error(`Could not inspect reciprocal matches for ${session.label}: ${result.error.message}`);
@@ -357,9 +417,9 @@ async function transitionCase(config, session, exchangeCase, action, payload, in
 
 async function runHostedSmoke(config) {
   const admin = serverClient(config);
-  const [a, b, c] = await Promise.all(config.users.map(credentials => signIn(config, credentials)));
-  assert.equal(new Set([a.id, b.id, c.id]).size, 3, 'Authenticated staging sessions must represent three different users');
-
+  let a;
+  let b;
+  let c;
   const observedRealtime = [];
   const unauthorizedRealtime = [];
   const realtimeDiagnostics = [];
@@ -378,9 +438,15 @@ async function runHostedSmoke(config) {
     retainedEvidencePolicy: 'Canonical staging evidence is retained; replace the isolated staging project between release candidates.',
     retainedEvidence: {}
   };
+  let currentStage = 'authentication';
+  const stage = value => { currentStage = value; };
   const passed = detail => report.checks.push({ status: 'passed', detail });
 
   try {
+    [a, b, c] = await Promise.all(config.users.map(credentials => signIn(config, credentials)));
+    assert.equal(new Set([a.id, b.id, c.id]).size, 3, 'Authenticated staging sessions must represent three different users');
+
+    stage('fixture validation');
     const [profileA, profileB] = await Promise.all([ownProfile(a), ownProfile(b)]);
     assert.equal(String(profileA.country).trim().toLowerCase(), String(profileB.country).trim().toLowerCase(), 'Staging participants must use the same country');
     assert.equal(String(profileA.city).replace(/[^a-z0-9]/gi, '').toLowerCase(), String(profileB.city).replace(/[^a-z0-9]/gi, '').toLowerCase(), 'Staging participants must use the same normalized city');
@@ -388,6 +454,7 @@ async function runHostedSmoke(config) {
     await assertCatalogSets(a, [config.setA, config.setB]);
     passed('three independent Auth sessions and eligible same-city participant profiles');
 
+    stage('reciprocal matching setup');
     const [itemA, itemB] = await Promise.all([
       insertOwnedItem(a, config.setA, config.runId),
       insertOwnedItem(b, config.setB, config.runId)
@@ -400,10 +467,11 @@ async function runHostedSmoke(config) {
       b.client.rpc('find_matches', { p_user: b.id })
     ]);
     if (matchesA.error || matchesB.error) throw new Error(`Hosted reciprocal matching failed: ${matchesA.error?.message || matchesB.error?.message}`);
-    assert.ok(matchesA.data.some(row => row.offered_item === itemA.id && row.requested_item === itemB.id));
-    assert.ok(matchesB.data.some(row => row.offered_item === itemB.id && row.requested_item === itemA.id));
+    assert.ok(matchesA.data.some(row => row.offered_item === itemA.id && row.requested_item === itemB.id), 'Participant A must see the reciprocal staging match');
+    assert.ok(matchesB.data.some(row => row.offered_item === itemB.id && row.requested_item === itemA.id), 'Participant B must see the reciprocal staging match');
     passed('PostgREST/RPC reciprocal match in both directions');
 
+    stage('Realtime subscriptions');
     const recipientSubscription = await subscribeToNotifications(b, b.id, config.runId, observedRealtime);
     realtimeChannel = recipientSubscription.channel;
     realtimeDiagnostics.push(recipientSubscription.diagnostic);
@@ -411,6 +479,7 @@ async function runHostedSmoke(config) {
     unauthorizedRealtimeChannel = unauthorizedSubscription.channel;
     realtimeDiagnostics.push(unauthorizedSubscription.diagnostic);
 
+    stage('proposal idempotency and notification');
     const proposalKey = idempotencyKey(config.runId, 'happy-proposal');
     const proposalArgs = {
       p_offered_item_id: itemA.id,
@@ -421,13 +490,13 @@ async function runHostedSmoke(config) {
     };
     const created = rpcData(await a.client.rpc('create_exchange_case', proposalArgs), 'Proposal creation');
     let currentCase = created.case;
-    assert.equal(currentCase.state, 'PROPOSED');
+    assert.equal(currentCase.state, 'PROPOSED', 'New canonical case must enter PROPOSED');
     const caseId = currentCase.id;
     const proposalRetry = rpcData(await a.client.rpc('create_exchange_case', proposalArgs), 'Proposal retry');
-    assert.equal(proposalRetry.idempotent, true);
-    assert.equal(proposalRetry.case.id, caseId);
-    assert.equal(await countRows(a.client, 'exchange_case_events', [['case_id', caseId], ['event_type', 'proposal_created']]), 1);
-    assert.equal(await countRows(b.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_proposed']]), 1);
+    assert.equal(proposalRetry.idempotent, true, 'Proposal retry must be reported as idempotent');
+    assert.equal(proposalRetry.case.id, caseId, 'Proposal retry must return the original case');
+    assert.equal(await countRows(a.client, 'exchange_case_events', [['case_id', caseId], ['event_type', 'proposal_created']]), 1, 'Proposal retry must not duplicate proposal_created events');
+    assert.equal(await countRows(b.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_proposed']]), 1, 'Proposal retry must leave exactly one recipient notification');
     passed('proposal committed/lost-response retry is idempotent');
 
     const deliveryStartedAt = Date.now();
@@ -443,6 +512,7 @@ async function runHostedSmoke(config) {
     assert.equal(unauthorizedRealtime.filter(row => row.exchange_case_id === caseId).length, 0, 'Third user must not receive another user\'s Realtime notification');
     passed('recipient-scoped Realtime notification delivery');
 
+    stage('third-user RLS isolation');
     const unauthorizedCase = await c.client.from('exchange_cases').select('id').eq('id', caseId);
     assert.ifError(unauthorizedCase.error);
     assert.deepEqual(unauthorizedCase.data, []);
@@ -474,14 +544,15 @@ async function runHostedSmoke(config) {
     assert.ok(unauthorizedMessageWrite.error, 'Third user must not write to the canonical conversation table');
     passed('third-user RLS and RPC authorization boundaries');
 
+    stage('case message idempotency');
     const messageKey = idempotencyKey(config.runId, 'happy-message');
     const messageArgs = { p_case_id: caseId, p_body: `[${config.runId}] hello from hosted staging`, p_idempotency_key: messageKey };
     const message = rpcData(await a.client.rpc('send_exchange_case_message', messageArgs), 'Case message');
     const messageRetry = rpcData(await a.client.rpc('send_exchange_case_message', messageArgs), 'Case message retry');
-    assert.equal(messageRetry.idempotent, true);
-    assert.equal(messageRetry.message.id, message.message.id);
-    assert.equal(await countRows(a.client, 'exchange_case_messages', [['case_id', caseId], ['sender_id', a.id]]), 1);
-    assert.equal(await countRows(b.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_message']]), 1);
+    assert.equal(messageRetry.idempotent, true, 'Message retry must be reported as idempotent');
+    assert.equal(messageRetry.message.id, message.message.id, 'Message retry must return the original message');
+    assert.equal(await countRows(a.client, 'exchange_case_messages', [['case_id', caseId], ['sender_id', a.id]]), 1, 'Message retry must not duplicate the canonical message');
+    assert.equal(await countRows(b.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_message']]), 1, 'Message retry must leave exactly one recipient notification');
     await waitFor(() => observedRealtime.find(row => row.exchange_case_id === caseId && row.kind === 'exchange_message'), 'message Realtime notification');
     passed('persistent case conversation and idempotent message retry');
 
@@ -499,6 +570,7 @@ async function runHostedSmoke(config) {
       return { data, args };
     }
 
+    stage('counterproposal and acceptance idempotency');
     const beforeCounterVersion = currentCase.state_version;
     const countered = await transition(b, 'counter', {
       duration_days: 60,
@@ -511,22 +583,29 @@ async function runHostedSmoke(config) {
     assert.equal(counterRetry.idempotent, true);
     assert.equal(counterRetry.case.id, caseId);
     assert.equal(counterRetry.case.state_version, currentCase.state_version);
-    assert.equal(await countRows(a.client, 'exchange_case_events', [['case_id', caseId], ['event_type', 'counter']]), 1);
+    assert.equal(await countRows(a.client, 'exchange_case_events', [['case_id', caseId], ['event_type', 'counter']]), 1, 'Counter retry must not duplicate counter events');
     const counterNotificationCount = await countRows(a.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_countered']]);
-    assert.equal(counterNotificationCount, 1);
+    assert.equal(counterNotificationCount, 1, 'Counter retry must leave exactly one notification for participant A');
     passed('counterproposal preserves the durable case and is idempotent');
 
     const accepted = await transition(a, 'accept');
     const acceptedRetry = rpcData(await a.client.rpc('exchange_case_transition', accepted.args), 'Accept retry');
     assert.equal(acceptedRetry.idempotent, true);
     assert.equal(acceptedRetry.case.id, caseId);
-    assert.equal(await countRows(a.client, 'exchange_case_events', [['case_id', caseId], ['event_type', 'accept']]), 1);
-    assert.equal(await countRows(a.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_accepted']]), 1);
-    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', caseId]]), 2);
+    assert.equal(await countRows(a.client, 'exchange_case_events', [['case_id', caseId], ['event_type', 'accept']]), 1, 'Accept retry must not duplicate accept events');
+    await assertAcceptanceNotificationVisibility({
+      participantA: a.client,
+      participantB: b.client,
+      admin,
+      caseId,
+      recipientId: b.id
+    });
+    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', caseId]]), 2, 'Accepted case must hold exactly two item locks');
     assert.equal(await reciprocalPairAppears(a, itemA.id, itemB.id), false);
     assert.equal(await reciprocalPairAppears(b, itemB.id, itemA.id), false);
     passed('transition committed/lost-response retry is idempotent');
 
+    stage('stale transition rejection');
     const staleVersion = currentCase.state_version - 1;
     const staleBefore = {
       state: currentCase.state,
@@ -546,11 +625,12 @@ async function runHostedSmoke(config) {
     currentCase = await readCase(a, caseId);
     assert.equal(currentCase.state, staleBefore.state);
     assert.equal(currentCase.state_version, staleBefore.version);
-    assert.equal(await countRows(admin, 'exchange_case_events', [['case_id', caseId]]), staleBefore.events);
-    assert.equal(await countRows(admin, 'notifications', [['exchange_case_id', caseId]]), staleBefore.notifications);
-    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', caseId]]), staleBefore.locks);
+    assert.equal(await countRows(admin, 'exchange_case_events', [['case_id', caseId]]), staleBefore.events, 'Rejected stale transition must not create an event');
+    assert.equal(await countRows(admin, 'notifications', [['exchange_case_id', caseId]]), staleBefore.notifications, 'Rejected stale transition must not create a notification');
+    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', caseId]]), staleBefore.locks, 'Rejected stale transition must not change locks');
     passed('stale transition leaves state, events, notifications and locks unchanged');
 
+    stage('outbound meetup and handoff');
     const future = new Date(Date.now() + 86_400_000).toISOString();
     await transition(a, 'propose_meetup', { venue_name: 'Staging public library', venue_area: 'QA', meetup_at: future });
     await transition(b, 'accept_meetup');
@@ -581,6 +661,7 @@ async function runHostedSmoke(config) {
     assert.ok(Math.abs(handoffDurationMs - (60 * 86_400_000)) <= 2_000, 'Return deadline must be 60 days after mutual handoff');
     passed('two-session meetup, both-arrived inspection, and handoff activation');
 
+    stage('return meetup and completion');
     const returnFuture = new Date(Date.now() + 172_800_000).toISOString();
     await transition(a, 'propose_return', { venue_name: 'Staging public library', venue_area: 'QA', meetup_at: returnFuture });
     await transition(b, 'accept_return');
@@ -602,6 +683,7 @@ async function runHostedSmoke(config) {
     assert.equal(currentCase.state, 'COMPLETED');
     passed('two-session return inspection and completion');
 
+    stage('conversation archival');
     const [conversationA, conversationB, conversationC, messagesA, messagesB, messagesC] = await Promise.all([
       a.client.from('exchange_case_conversations').select('id,archived_at').eq('case_id', caseId).single(),
       b.client.from('exchange_case_conversations').select('id,archived_at').eq('case_id', caseId).single(),
@@ -630,6 +712,7 @@ async function runHostedSmoke(config) {
     assert.ok(archivedMessage.error, 'Archived conversations must reject new messages');
     passed('completed conversation is archived, participant-readable, third-user-hidden and write-closed');
 
+    stage('completion review and owner recovery');
     const lockCount = await countRows(admin, 'exchange_case_item_locks', [['case_id', caseId]]);
     assert.equal(lockCount, 0, 'Completed case must release its item locks');
     const [finalItemA, finalItemB] = await Promise.all([
@@ -668,6 +751,7 @@ async function runHostedSmoke(config) {
     assert.equal(await reciprocalPairAppears(b, itemB.id, itemA.id), true);
     passed('owner review re-enable persists and reciprocal matching returns');
 
+    stage('pre-handoff cancellation');
     const cancellationProposalArgs = {
       p_offered_item_id: itemA.id,
       p_requested_item_id: itemB.id,
@@ -679,7 +763,7 @@ async function runHostedSmoke(config) {
     cancellationCase = (await transitionCase(config, b, cancellationCase, 'accept', {}, 'cancel-accept')).case;
     assert.equal(cancellationCase.state, 'ACCEPTED');
     const locksBeforeCancellation = await countRows(admin, 'exchange_case_item_locks', [['case_id', cancellationCase.id]]);
-    assert.equal(locksBeforeCancellation, 2);
+    assert.equal(locksBeforeCancellation, 2, 'Accepted cancellation fixture must hold two item locks');
     assert.equal(await reciprocalPairAppears(a, itemA.id, itemB.id), false);
     assert.equal(await reciprocalPairAppears(b, itemB.id, itemA.id), false);
 
@@ -690,9 +774,9 @@ async function runHostedSmoke(config) {
     const cancelledRetry = rpcData(await a.client.rpc('exchange_case_transition', cancelled.args), 'Cancellation retry');
     assert.equal(cancelledRetry.idempotent, true);
     assert.equal(cancelledRetry.case.state_version, cancellationVersion + 1);
-    assert.equal(await countRows(admin, 'exchange_case_events', [['case_id', cancellationCase.id], ['event_type', 'cancel']]), 1);
+    assert.equal(await countRows(admin, 'exchange_case_events', [['case_id', cancellationCase.id], ['event_type', 'cancel']]), 1, 'Cancellation retry must not duplicate cancel events');
     const locksAfterCancellation = await countRows(admin, 'exchange_case_item_locks', [['case_id', cancellationCase.id]]);
-    assert.equal(locksAfterCancellation, 0);
+    assert.equal(locksAfterCancellation, 0, 'Cancelled pre-handoff case must release all item locks');
     assert.equal(await readItemStatus(a, itemA.id), 'AVAILABLE');
     assert.equal(await readItemStatus(b, itemB.id), 'AVAILABLE');
     assert.equal(await reciprocalPairAppears(a, itemA.id, itemB.id), true);
@@ -707,6 +791,7 @@ async function runHostedSmoke(config) {
     assert.equal(cancellationNotifications.data.length, 2, 'Cancellation retry must not duplicate participant notifications');
     passed('pre-handoff cancellation atomically releases both sets, restores matching and retries idempotently');
 
+    stage('account switch isolation');
     switchedClient = browserClient(config);
     const switchedA = await switchedClient.auth.signInWithPassword({
       email: config.users[0].email,
@@ -759,6 +844,7 @@ async function runHostedSmoke(config) {
     }
     passed('account switch clears local session and Realtime state before third-user RLS checks');
 
+    stage('post-handoff recovery');
     recoveryCase = (await transitionCase(config, a, recoveryCase, 'accept', {}, 'recovery-accept')).case;
     recoveryCase = (await transitionCase(config, b, recoveryCase, 'propose_meetup', {
       venue_name: 'Staging public library', venue_area: 'QA', meetup_at: new Date(Date.now() + 86_400_000).toISOString()
@@ -786,12 +872,13 @@ async function runHostedSmoke(config) {
     recoveryCase = await readCase(a, recoveryCase.id);
     assert.equal(recoveryCase.state, 'ACTIVE');
     assert.equal(recoveryCase.state_version, activeVersion);
-    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', recoveryCase.id]]), activeLocks);
+    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', recoveryCase.id]]), activeLocks, 'Rejected post-handoff cancellation must preserve existing locks');
     recoveryCase = (await transitionCase(config, b, recoveryCase, 'early_return', {}, 'recovery-early-return')).case;
     assert.equal(recoveryCase.state, 'EARLY_RETURN');
-    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', recoveryCase.id]]), 2);
+    assert.equal(await countRows(admin, 'exchange_case_item_locks', [['case_id', recoveryCase.id]]), 2, 'Early return must preserve both item locks');
     passed('post-handoff exit rejects cancellation and preserves locks through early return');
 
+    stage('notification and outbox evidence');
     const evidenceCaseIds = [caseId, cancellationCase.id, recoveryCase.id];
     const notifications = await admin.from('notifications')
       .select('id,user_id,kind,exchange_case_id,dedupe_key')
@@ -844,12 +931,27 @@ async function runHostedSmoke(config) {
       }
     };
     return report;
+  } catch (error) {
+    const diagnostics = [...realtimeDiagnostics];
+    if (error?.safeRealtimeDiagnostic && !diagnostics.includes(error.safeRealtimeDiagnostic)) {
+      diagnostics.push(error.safeRealtimeDiagnostic);
+    }
+    error.safeSmokeContext = {
+      stage: currentStage,
+      checks: [...report.checks],
+      classification: classifySmokeFailure(error),
+      assertion: sanitizeDiagnostic(error instanceof Error ? error.message : String(error)),
+      diagnostics: diagnostics.length ? { realtime: diagnostics } : undefined
+    };
+    throw error;
   } finally {
-    if (realtimeChannel) await b.client.removeChannel(realtimeChannel);
-    if (unauthorizedRealtimeChannel) await c.client.removeChannel(unauthorizedRealtimeChannel);
-    if (switchedRealtimeChannel && switchedClient) await switchedClient.removeChannel(switchedRealtimeChannel);
-    if (switchedClient) await switchedClient.auth.signOut({ scope: 'local' });
-    await Promise.allSettled([a, b, c].map(session => session.client.auth.signOut({ scope: 'local' })));
+    const cleanup = [];
+    if (realtimeChannel && b) cleanup.push(b.client.removeChannel(realtimeChannel));
+    if (unauthorizedRealtimeChannel && c) cleanup.push(c.client.removeChannel(unauthorizedRealtimeChannel));
+    if (switchedRealtimeChannel && switchedClient) cleanup.push(switchedClient.removeChannel(switchedRealtimeChannel));
+    if (switchedClient) cleanup.push(switchedClient.auth.signOut({ scope: 'local' }));
+    cleanup.push(...[a, b, c].filter(Boolean).map(session => session.client.auth.signOut({ scope: 'local' })));
+    await Promise.allSettled(cleanup);
   }
 }
 
@@ -868,16 +970,7 @@ export async function main(env = process.env) {
   try {
     report = await runHostedSmoke(config);
   } catch (error) {
-    report = {
-      ok: false,
-      runId: config.runId,
-      testedPullRequestNumber: config.pullRequestNumber,
-      testedHeadSha: config.headSha,
-      target: 'approved-staging',
-      failedAt: new Date().toISOString(),
-      error: sanitizeDiagnostic(error instanceof Error ? error.message : String(error)),
-      diagnostics: error?.safeRealtimeDiagnostic ? { realtime: [error.safeRealtimeDiagnostic] } : undefined
-    };
+    report = buildFailureReport(config, error);
     const path = await writeReport(report, config.reportPath);
     console.error(`Hosted exchange smoke failed. Redacted report: ${path}`);
     throw error;
@@ -889,8 +982,8 @@ export async function main(env = process.env) {
 
 const invokedPath = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : '';
 if (invokedPath === import.meta.url) {
-  main().catch(error => {
-    console.error(error instanceof Error ? error.message : String(error));
+  main().catch(() => {
+    console.error('Hosted exchange smoke failed; inspect the redacted evidence artifact.');
     process.exitCode = 1;
   });
 }
