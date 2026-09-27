@@ -9,7 +9,9 @@ import { createClient } from '@supabase/supabase-js';
 
 export const STAGING_CONFIRMATION = 'RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE';
 const DEFAULT_REPORT = 'artifacts/hosted-exchange-smoke.json';
-const REALTIME_TIMEOUT_MS = 20_000;
+export const REALTIME_JOIN_TIMEOUT_MS = 20_000;
+export const REALTIME_DELIVERY_TIMEOUT_MS = 60_000;
+export const REALTIME_READINESS_GRACE_MS = 1_500;
 const PUBLIC_EMAIL_DOMAINS = new Set([
   'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com',
   'yahoo.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com'
@@ -78,7 +80,7 @@ export function redactIdentifier(value) {
   return `id:${createHash('sha256').update(String(value)).digest('hex').slice(0, 12)}`;
 }
 
-function sanitizeDiagnostic(value) {
+export function sanitizeDiagnostic(value) {
   return String(value || 'Hosted staging smoke failed')
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, '[redacted-email]')
     .replace(/https?:\/\/\S+/gi, '[redacted-url]')
@@ -86,10 +88,32 @@ function sanitizeDiagnostic(value) {
     .replace(/\b(?:sb_(?:secret|publishable)_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)\b/g, '[redacted-credential]');
 }
 
+function realtimeDiagnostic(session, filterUserId) {
+  return {
+    session: redactIdentifier(session.id),
+    filter: redactIdentifier(filterUserId),
+    identitySetupComplete: false,
+    bindingRegistered: false,
+    serverBindingAccepted: false,
+    connectionState: 'initializing',
+    statuses: [],
+    joinElapsedMs: null,
+    deliveryElapsedMs: null,
+    error: null
+  };
+}
+
+function recordRealtimeStatus(diagnostic, status, error, startedAt) {
+  const safeStatus = String(status || 'UNKNOWN').replace(/[^A-Z_]/gi, '').slice(0, 40) || 'UNKNOWN';
+  diagnostic.statuses.push({ status: safeStatus, elapsedMs: Date.now() - startedAt });
+  diagnostic.connectionState = safeStatus;
+  if (error) diagnostic.error = sanitizeDiagnostic(error instanceof Error ? error.message : String(error));
+}
+
 export function serializeRedactedReport(report) {
   const serialized = JSON.stringify(report, null, 2);
   const forbiddenKey = /"[^"\n]*(?:email|password|token|secret|api[_-]?key|supabase[_-]?url|auth)[^"\n]*"\s*:/i;
-  const forbiddenValue = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.|sb_(?:secret|publishable)_)/i;
+  const forbiddenValue = /(?:[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|https?:\/\/|eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.|sb_(?:secret|publishable)_|\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b)/i;
   if (forbiddenKey.test(serialized) || forbiddenValue.test(serialized)) {
     throw new Error('Refusing to serialize a report containing credentials, email identities, or URLs');
   }
@@ -177,7 +201,8 @@ async function signIn(config, credentials) {
   if (verified.error || verified.data.user?.id !== data.user.id) {
     throw new Error(`Staging user ${credentials.label} session could not be verified`);
   }
-  return { label: credentials.label, client, id: data.user.id };
+  await client.realtime.setAuth();
+  return { label: credentials.label, client, id: data.user.id, realtimeIdentityReady: true };
 }
 
 async function ownProfile(session) {
@@ -227,7 +252,7 @@ async function setAvailable(session, itemId) {
   assert.equal(result.data?.status, 'AVAILABLE');
 }
 
-async function waitFor(predicate, description, timeoutMs = REALTIME_TIMEOUT_MS) {
+export async function waitFor(predicate, description, timeoutMs = REALTIME_DELIVERY_TIMEOUT_MS) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const value = predicate();
@@ -237,7 +262,21 @@ async function waitFor(predicate, description, timeoutMs = REALTIME_TIMEOUT_MS) 
   throw new Error(`Timed out waiting for ${description}`);
 }
 
-async function subscribeToNotifications(session, filterUserId, runId, observed) {
+export async function subscribeToNotifications(session, filterUserId, runId, observed, options = {}) {
+  const joinTimeoutMs = options.joinTimeoutMs ?? REALTIME_JOIN_TIMEOUT_MS;
+  const readinessGraceMs = options.readinessGraceMs ?? REALTIME_READINESS_GRACE_MS;
+  const diagnostic = options.diagnostic || realtimeDiagnostic(session, filterUserId);
+  const verified = await session.client.auth.getUser();
+  if (verified.error || verified.data.user?.id !== session.id) {
+    throw Object.assign(new Error(`Realtime session ${session.label} changed before subscription`), { safeRealtimeDiagnostic: diagnostic });
+  }
+  await session.client.realtime.setAuth();
+  const afterSetup = await session.client.auth.getUser();
+  if (afterSetup.error || afterSetup.data.user?.id !== session.id) {
+    throw Object.assign(new Error(`Realtime session ${session.label} changed during authentication`), { safeRealtimeDiagnostic: diagnostic });
+  }
+  diagnostic.identitySetupComplete = true;
+  const startedAt = Date.now();
   const channel = session.client
     .channel(`bc-${runId}-${session.label}`)
     .on('postgres_changes', {
@@ -246,20 +285,30 @@ async function subscribeToNotifications(session, filterUserId, runId, observed) 
       table: 'notifications',
       filter: `user_id=eq.${filterUserId}`
     }, payload => observed.push(payload.new));
+  diagnostic.bindingRegistered = true;
 
   await new Promise((resolveSubscription, rejectSubscription) => {
-    const timeout = setTimeout(() => rejectSubscription(new Error('Realtime subscription did not become ready')), REALTIME_TIMEOUT_MS);
-    channel.subscribe(status => {
+    const timeout = setTimeout(() => {
+      diagnostic.connectionState = 'JOIN_TIMEOUT';
+      diagnostic.joinElapsedMs = Date.now() - startedAt;
+      rejectSubscription(Object.assign(new Error('Realtime subscription did not become ready'), { safeRealtimeDiagnostic: diagnostic }));
+    }, joinTimeoutMs);
+    channel.subscribe((status, error) => {
+      recordRealtimeStatus(diagnostic, status, error, startedAt);
       if (status === 'SUBSCRIBED') {
         clearTimeout(timeout);
+        diagnostic.serverBindingAccepted = true;
+        diagnostic.joinElapsedMs = Date.now() - startedAt;
         resolveSubscription();
-      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
         clearTimeout(timeout);
-        rejectSubscription(new Error(`Realtime subscription failed with ${status}`));
+        rejectSubscription(Object.assign(new Error(`Realtime subscription failed with ${status}`), { safeRealtimeDiagnostic: diagnostic }));
       }
     });
   });
-  return channel;
+  if (readinessGraceMs > 0) await new Promise(resolveWait => setTimeout(resolveWait, readinessGraceMs));
+  diagnostic.connectionState = 'READY';
+  return { channel, diagnostic };
 }
 
 function rpcData(result, description) {
@@ -313,6 +362,7 @@ async function runHostedSmoke(config) {
 
   const observedRealtime = [];
   const unauthorizedRealtime = [];
+  const realtimeDiagnostics = [];
   let realtimeChannel;
   let unauthorizedRealtimeChannel;
   let switchedClient;
@@ -322,7 +372,7 @@ async function runHostedSmoke(config) {
     runId: config.runId,
     testedPullRequestNumber: config.pullRequestNumber,
     testedHeadSha: config.headSha,
-    projectRef: config.expectedProjectRef,
+    target: 'approved-staging',
     startedAt: new Date().toISOString(),
     checks: [],
     retainedEvidencePolicy: 'Canonical staging evidence is retained; replace the isolated staging project between release candidates.',
@@ -354,8 +404,12 @@ async function runHostedSmoke(config) {
     assert.ok(matchesB.data.some(row => row.offered_item === itemB.id && row.requested_item === itemA.id));
     passed('PostgREST/RPC reciprocal match in both directions');
 
-    realtimeChannel = await subscribeToNotifications(b, b.id, config.runId, observedRealtime);
-    unauthorizedRealtimeChannel = await subscribeToNotifications(c, b.id, `${config.runId}-unauthorized`, unauthorizedRealtime);
+    const recipientSubscription = await subscribeToNotifications(b, b.id, config.runId, observedRealtime);
+    realtimeChannel = recipientSubscription.channel;
+    realtimeDiagnostics.push(recipientSubscription.diagnostic);
+    const unauthorizedSubscription = await subscribeToNotifications(c, b.id, `${config.runId}-unauthorized`, unauthorizedRealtime);
+    unauthorizedRealtimeChannel = unauthorizedSubscription.channel;
+    realtimeDiagnostics.push(unauthorizedSubscription.diagnostic);
 
     const proposalKey = idempotencyKey(config.runId, 'happy-proposal');
     const proposalArgs = {
@@ -376,7 +430,15 @@ async function runHostedSmoke(config) {
     assert.equal(await countRows(b.client, 'notifications', [['exchange_case_id', caseId], ['kind', 'exchange_proposed']]), 1);
     passed('proposal committed/lost-response retry is idempotent');
 
-    await waitFor(() => observedRealtime.find(row => row.exchange_case_id === caseId && row.kind === 'exchange_proposed'), 'proposal Realtime notification');
+    const deliveryStartedAt = Date.now();
+    try {
+      await waitFor(() => observedRealtime.find(row => row.exchange_case_id === caseId && row.kind === 'exchange_proposed'), 'proposal Realtime notification', REALTIME_DELIVERY_TIMEOUT_MS);
+      recipientSubscription.diagnostic.deliveryElapsedMs = Date.now() - deliveryStartedAt;
+    } catch (error) {
+      recipientSubscription.diagnostic.deliveryElapsedMs = Date.now() - deliveryStartedAt;
+      recipientSubscription.diagnostic.connectionState = 'DELIVERY_TIMEOUT';
+      throw Object.assign(error, { safeRealtimeDiagnostic: recipientSubscription.diagnostic });
+    }
     await new Promise(resolveWait => setTimeout(resolveWait, 500));
     assert.equal(unauthorizedRealtime.filter(row => row.exchange_case_id === caseId).length, 0, 'Third user must not receive another user\'s Realtime notification');
     passed('recipient-scoped Realtime notification delivery');
@@ -656,7 +718,9 @@ async function runHostedSmoke(config) {
     assert.ifError(switchedANotifications.error);
     const staleRealtime = [];
     const switchedSession = { label: 'switch-A', client: switchedClient, id: switchedAId };
-    switchedRealtimeChannel = await subscribeToNotifications(switchedSession, switchedAId, `${config.runId}-switch`, staleRealtime);
+    const switchedSubscription = await subscribeToNotifications(switchedSession, switchedAId, `${config.runId}-switch`, staleRealtime);
+    switchedRealtimeChannel = switchedSubscription.channel;
+    realtimeDiagnostics.push(switchedSubscription.diagnostic);
     await switchedClient.removeChannel(switchedRealtimeChannel);
     switchedRealtimeChannel = undefined;
     assert.equal(switchedClient.getChannels().length, 0);
@@ -775,7 +839,8 @@ async function runHostedSmoke(config) {
       realtime: {
         recipientKinds: [...new Set(observedRealtime.filter(row => row.exchange_case_id === caseId).map(row => row.kind))].sort(),
         unauthorizedDeliveryCount: unauthorizedRealtime.filter(row => evidenceCaseIds.includes(row.exchange_case_id)).length,
-        stalePostSwitchDeliveryCount: staleRealtime.length
+        stalePostSwitchDeliveryCount: staleRealtime.length,
+        diagnostics: realtimeDiagnostics
       }
     };
     return report;
@@ -797,7 +862,7 @@ async function writeReport(report, reportPath) {
 
 export async function main(env = process.env) {
   const config = loadHostedSmokeConfig(env);
-  console.log(`Starting guarded hosted smoke against approved staging project ${config.expectedProjectRef}`);
+  console.log('Starting guarded hosted smoke against the approved isolated staging project.');
   console.log('This harness does not apply migrations, invoke production, delete users, or delete canonical audit evidence.');
   let report;
   try {
@@ -808,9 +873,10 @@ export async function main(env = process.env) {
       runId: config.runId,
       testedPullRequestNumber: config.pullRequestNumber,
       testedHeadSha: config.headSha,
-      projectRef: config.expectedProjectRef,
+      target: 'approved-staging',
       failedAt: new Date().toISOString(),
-      error: sanitizeDiagnostic(error instanceof Error ? error.message : String(error))
+      error: sanitizeDiagnostic(error instanceof Error ? error.message : String(error)),
+      diagnostics: error?.safeRealtimeDiagnostic ? { realtime: [error.safeRealtimeDiagnostic] } : undefined
     };
     const path = await writeReport(report, config.reportPath);
     console.error(`Hosted exchange smoke failed. Redacted report: ${path}`);

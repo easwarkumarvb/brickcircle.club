@@ -115,6 +115,8 @@ Confirm that every reconciliation row is finalized, every owner-held item has no
 
 The harness deliberately retains its completed canonical case, events, messages, notifications and two synthetic collection items as staging audit evidence. It never deletes an Auth user, existing collection item, legacy record, canonical audit row or notification. Reset or replace the isolated staging project between release candidates when retained evidence should be discarded.
 
+Realtime setup is ordered and fail-closed: password sign-in, verified `getUser()`, `realtime.setAuth()`, a second identity check, filtered handler registration, `SUBSCRIBED`, and a 1.5-second readiness grace all complete before the proposal RPC runs. Channel join has a separate 20-second limit; required event delivery has a bounded 60-second limit to accommodate first-use replication startup on an isolated free project. A committed notification row never substitutes for the required Realtime event.
+
 #### GitHub environment setup
 
 The manual dispatcher must first exist on the repository default branch. Review and merge the dedicated prerequisite dispatcher PR before attempting to run the PR #102 gate. The dispatcher validates the requested open, same-repository PR, exact `codex/canonical-exchange-state-machine` branch and immutable head SHA in a secret-free job. Only a successful validation allows the protected environment job to start. The workflow remains manual-only and never runs for `push`, `pull_request`, `pull_request_target` or a schedule.
@@ -181,9 +183,11 @@ The harness does not invoke Brevo, Web Push delivery, cron/reminder jobs, or any
 - Treat any partial run as retained staging evidence. Do not delete its case, users, events, locks or notifications to make a retry pass.
 - Correct missing profile/catalogue prerequisites or environment configuration, then start a new run. New intended actions receive a new run ID; retries inside one action retain the same idempotency key.
 - If the Realtime subscription times out but notification rows exist, verify that `public.notifications` is in the staging `supabase_realtime` publication and that recipient RLS is active. Do not weaken RLS.
+- Inspect the retained Realtime log window for tenant/replication cold start, join errors, JWT authorization failures and Postgres Changes registration errors. The failed run `36149955518` initialized its tenant and replication slot during the smoke and recorded no JWT, authorization, RLS or disabled-configuration error; treat this as cold-start/readiness evidence with a possible missing-authentication race, not proof of an RLS defect.
+- A failed run's users and canonical evidence remain immutable. Provision a fresh trio of confirmed, non-admin `example.test` staging accounts with complete Bengaluru/India adult profiles, verify each with the publishable key, and rotate only the six protected user credential secrets before a separately authorized rerun.
 - If notification rows exist without email-delivery rows, inspect the staging `marketplace_notification_email_outbox` trigger and canonical allowlist. Do not call the delivery provider from this gate.
 - If a lifecycle step fails, preserve the case and inspect `exchange_case_events`, item locks and the redacted artifact. Repair staging forward or replace the disposable staging project; never point the harness at production.
-- A failure report contains project ref, run ID, tested PR/SHA and a sanitized error only. Success artifacts hash UUIDs and contain no credentials, API keys, passwords, URLs, Auth responses or user emails.
+- Failure and success artifacts hash UUIDs and contain no project references, credentials, API keys, passwords, URLs, Auth responses or user emails. Realtime diagnostics retain only sanitized statuses, elapsed timings, connection state and hashed session/filter identifiers.
 - Replace or reset the isolated staging project between release candidates when retained canonical evidence is no longer required. Never use broad cleanup queries against production-like data.
 
 ### Manual two-user product smoke

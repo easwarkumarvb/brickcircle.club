@@ -71,6 +71,7 @@ const S={
 let pendingAuthChange=null;
 let notificationChannel=null;
 let notificationPollTimer=null;
+let notificationRealtimeGeneration=0;
 let refreshGeneration=0;
 let a11ySequence=0;
 
@@ -324,6 +325,7 @@ async function openNotification(notification){
   shell();await renderRoute();
 }
 function stopNotificationRealtime(){
+  notificationRealtimeGeneration++;
   clearInterval(notificationPollTimer);notificationPollTimer=null;
   if(!notificationChannel)return;
   try{db.removeChannel?.(notificationChannel)}catch(_){try{notificationChannel.unsubscribe?.()}catch(__){}}
@@ -346,15 +348,24 @@ async function reconcileNotifications(){
   S.notifications=result.data||[];updateNotificationBadge();
   showNextUnreadNotificationNotice();
 }
-function startNotificationRealtime(){
+async function startNotificationRealtime(){
   stopNotificationRealtime();
   if(!S.user?.id)return;
-  const userId=S.user.id;
+  const userId=S.user.id,generation=notificationRealtimeGeneration;
+  const stillCurrent=()=>notificationRealtimeGeneration===generation&&S.user?.id===userId;
+  const verified=await db.auth.getUser();
+  if(verified.error||verified.data?.user?.id!==userId||!stillCurrent())return;
   notificationPollTimer=setInterval(()=>reconcileNotifications().catch(()=>{}),30000);
-  if(typeof db.channel!=='function')return;
-  notificationChannel=db.channel(`notifications:${userId}`)
+  if(typeof db.channel!=='function'||typeof db.realtime?.setAuth!=='function')return;
+  try{await db.realtime.setAuth()}catch(_){return}
+  if(!stillCurrent())return;
+  const afterAuth=await db.auth.getUser();
+  if(afterAuth.error||afterAuth.data?.user?.id!==userId||!stillCurrent())return;
+  const channel=db.channel(`notifications:${userId}`)
     .on('postgres_changes',{event:'*',schema:'public',table:'notifications',filter:`user_id=eq.${userId}`},applyNotificationChange)
-    .subscribe(status=>{if(status==='SUBSCRIBED')reconcileNotifications().catch(()=>{})});
+    .subscribe(status=>{if(!stillCurrent()){try{db.removeChannel?.(channel)}catch(_){};return}if(status==='SUBSCRIBED')reconcileNotifications().catch(()=>{})});
+  if(!stillCurrent()){try{db.removeChannel?.(channel)}catch(_){};return}
+  notificationChannel=channel;
 }
 function proposalNoticeSeen(notification){try{return sessionStorage.getItem(`bc_proposal_notice_seen:${S.user.id}:${notification.id}`)==='1'}catch(_){return false}}
 function markProposalNoticeSeen(notification){try{sessionStorage.setItem(`bc_proposal_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}}
@@ -826,7 +837,7 @@ function setupPWA(){
 }
 
 async function boot(){
-  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await refreshCore();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
+  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await refreshCore();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();await startNotificationRealtime().catch(()=>{});const onboardingShown=await onboardingIfNeeded();if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
 }
 function handleAuthChange(event,session){
   if(!S.booted){pendingAuthChange=[event,session];return}
@@ -834,7 +845,7 @@ function handleAuthChange(event,session){
   const prev=S.user?.id;
   if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();clearNotificationPresentation();clearProtectedState()}
   S.user=session?.user||null;
-  setTimeout(async()=>{if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery()}else if((event==='SIGNED_IN'||event==='TOKEN_REFRESHED')&&S.user){if(event==='SIGNED_IN')await claimReferralAndProvider();await refreshCore();shell();await renderRoute();startNotificationRealtime();const onboardingShown=await onboardingIfNeeded();if(event==='SIGNED_IN'&&!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();if(event==='SIGNED_IN'&&!prev)toast('Welcome to BrickCircle.')}else if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();shell();await renderRoute()}},0)
+  setTimeout(async()=>{if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery()}else if((event==='SIGNED_IN'||event==='TOKEN_REFRESHED')&&S.user){if(event==='SIGNED_IN')await claimReferralAndProvider();await refreshCore();shell();await renderRoute();await startNotificationRealtime().catch(()=>{});const onboardingShown=await onboardingIfNeeded();if(event==='SIGNED_IN'&&!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();if(event==='SIGNED_IN'&&!prev)toast('Welcome to BrickCircle.')}else if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();shell();await renderRoute()}},0)
 }
 db.auth.onAuthStateChange(handleAuthChange);
 window.addEventListener('hashchange',()=>{if(S.booted)renderRoute()});

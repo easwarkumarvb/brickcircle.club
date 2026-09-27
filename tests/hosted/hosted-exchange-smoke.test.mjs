@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
   STAGING_CONFIRMATION,
+  REALTIME_DELIVERY_TIMEOUT_MS,
+  REALTIME_JOIN_TIMEOUT_MS,
   idempotencyKey,
   loadHostedSmokeConfig,
   projectRefFromUrl,
   redactIdentifier,
   serializeRedactedReport,
+  subscribeToNotifications,
   validateDispatcherSelection,
-  validateStagingEmails
+  validateStagingEmails,
+  waitFor
 } from '../../scripts/hosted-exchange-smoke.mjs';
 
 const valid = {
@@ -120,11 +124,83 @@ test('generates deterministic per-intent idempotency keys', () => {
 
 test('serializes only redacted, credential-free evidence', () => {
   const redacted = redactIdentifier('11111111-1111-4111-8111-111111111111');
-  const serialized = serializeRedactedReport({ ok: true, case: redacted, projectRef: 'staging-project' });
+  const serialized = serializeRedactedReport({ ok: true, case: redacted, target: 'approved-staging' });
   assert.match(serialized, /id:[0-9a-f]{12}/);
   assert.doesNotMatch(serialized, /11111111-1111-4111-8111-111111111111/);
   assert.throws(() => serializeRedactedReport({ email: 'a@example.test' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ password: 'hidden' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: 'https:\/\/staging-project.supabase.co' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: 'sb_secret_example' }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ value: '11111111-1111-4111-8111-111111111111' }), /Refusing/);
+});
+
+function fakeRealtimeSession({ delayed = false, changed = false } = {}) {
+  const id = '11111111-1111-4111-8111-111111111111';
+  const order = [];
+  let release;
+  const client = {
+    auth: {
+      getUser: async () => {
+        order.push('getUser');
+        return changed && order.filter(step => step === 'getUser').length > 1
+          ? { data: { user: { id: '22222222-2222-4222-8222-222222222222' } }, error: null }
+          : { data: { user: { id } }, error: null };
+      }
+    },
+    realtime: {
+      setAuth: async () => {
+        order.push('setAuth:start');
+        if (delayed) await new Promise(resolve => { release = resolve; });
+        order.push('setAuth:complete');
+      }
+    },
+    channel: () => {
+      order.push('channel:create');
+      return {
+        on(_type, filter) { order.push(`binding:${filter.filter}`); return this; },
+        subscribe(callback) { order.push('channel:subscribe'); queueMicrotask(() => callback('SUBSCRIBED')); return this; }
+      };
+    }
+  };
+  return { session: { label: 'B', id, client }, id, order, release: () => release?.() };
+}
+
+test('authenticates Realtime before exact filtered channel creation', async () => {
+  const fixture = fakeRealtimeSession();
+  const result = await subscribeToNotifications(fixture.session, fixture.id, 'run', [], { readinessGraceMs: 0, joinTimeoutMs: 50 });
+  assert.deepEqual(fixture.order, [
+    'getUser', 'setAuth:start', 'setAuth:complete', 'getUser', 'channel:create',
+    `binding:user_id=eq.${fixture.id}`, 'channel:subscribe'
+  ]);
+  assert.equal(result.diagnostic.identitySetupComplete, true);
+  assert.equal(result.diagnostic.serverBindingAccepted, true);
+  assert.match(result.diagnostic.session, /^id:[0-9a-f]{12}$/);
+  assert.doesNotMatch(JSON.stringify(result.diagnostic), new RegExp(fixture.id));
+});
+
+test('a delayed Realtime identity setup cannot race channel creation', async () => {
+  const fixture = fakeRealtimeSession({ delayed: true });
+  const pending = subscribeToNotifications(fixture.session, fixture.id, 'run', [], { readinessGraceMs: 0, joinTimeoutMs: 50 });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(fixture.order, ['getUser', 'setAuth:start']);
+  fixture.release();
+  await pending;
+  assert.ok(fixture.order.indexOf('setAuth:complete') < fixture.order.indexOf('channel:create'));
+});
+
+test('changed sessions abort before channel creation', async () => {
+  const fixture = fakeRealtimeSession({ changed: true });
+  await assert.rejects(
+    subscribeToNotifications(fixture.session, fixture.id, 'run', [], { readinessGraceMs: 0, joinTimeoutMs: 50 }),
+    /changed during authentication/
+  );
+  assert.equal(fixture.order.includes('channel:create'), false);
+});
+
+test('durable database evidence does not substitute for the required Realtime event', async () => {
+  const durableNotificationRows = 1;
+  assert.equal(durableNotificationRows, 1);
+  await assert.rejects(waitFor(() => undefined, 'proposal Realtime notification', 5), /Timed out/);
+  assert.equal(REALTIME_JOIN_TIMEOUT_MS, 20_000);
+  assert.equal(REALTIME_DELIVERY_TIMEOUT_MS, 60_000);
 });

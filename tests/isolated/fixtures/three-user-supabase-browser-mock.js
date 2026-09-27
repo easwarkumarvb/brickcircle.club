@@ -115,6 +115,7 @@ const db={
     onAuthStateChange:listener=>{authListeners.push(listener);return {data:{subscription:{unsubscribe(){const index=authListeners.indexOf(listener);if(index>=0)authListeners.splice(index,1)}}}}},
     signOut:async()=>{signedOut=true;emitAuth('SIGNED_OUT',null);return {error:null}},signInWithPassword:async()=>{signedOut=false;emitAuth('SIGNED_IN',{user:user()});return {error:null}},signUp:async()=>({data:{session:null},error:null}),resetPasswordForEmail:async()=>({error:null}),updateUser:async()=>({data:{user:user()},error:null}),signInWithOAuth:async()=>({data:{url:location.href},error:null})
   },
+  realtime:{setAuth:async()=>{}},
   from:chain,
   rpc:async(name,args)=>{
     state.rpcCalls.push(name);
