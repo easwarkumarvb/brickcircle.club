@@ -215,9 +215,9 @@ test('countRows fails closed on PostgREST errors', async () => {
 test('countRows failures remain sanitized in diagnostic evidence', async () => {
   const rawId = '11111111-1111-4111-8111-111111111111';
   const rawUrl = 'https://staging-project.supabase.co/rest/v1/exchange_case_item_locks';
-  const rawToken = 'token=do-not-emit';
+  const rawToken = 'eyJheader.payload.signature';
   const client = countingClient({}, {
-    exchange_case_item_locks: { message: `request to ${rawUrl} for ${rawId} failed; ${rawToken}` }
+    exchange_case_item_locks: { message: `request to ${rawUrl} for ${rawId} failed; credential ${rawToken}` }
   });
   let failure;
   try {
@@ -237,7 +237,7 @@ test('countRows failures remain sanitized in diagnostic evidence', async () => {
   const serialized = serializeRedactedReport(failure);
   assert.doesNotMatch(serialized, new RegExp(rawId));
   assert.doesNotMatch(serialized, /staging-project\.supabase\.co/);
-  assert.doesNotMatch(serialized, /do-not-emit/);
+  assert.doesNotMatch(serialized, /eyJheader\.payload\.signature/);
   assert.match(serialized, /\[redacted-url\]/);
   assert.match(serialized, /\[redacted-credential\]/);
 });
