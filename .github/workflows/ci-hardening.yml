@@ -16,6 +16,8 @@ jobs:
       - run: npm run release:check
       - run: npm run typecheck
       - run: npm run syntax-check
+      - name: Hosted smoke harness regression suite
+        run: npm run test:hosted:guard
       - name: Non-destructive release and workflow regression suite
         run: npm run test:static
       - name: Install Chromium for regression suite
