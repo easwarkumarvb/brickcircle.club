@@ -9,6 +9,11 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Git diff check
+        if: github.event_name == 'pull_request'
+        run: git diff --check "${{ github.event.pull_request.base.sha }}...HEAD"
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
