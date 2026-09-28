@@ -356,8 +356,8 @@ function rpcData(result, description) {
   return result.data;
 }
 
-async function countRows(client, table, filters = []) {
-  let query = client.from(table).select('id', { count: 'exact', head: true });
+export async function countRows(client, table, filters = []) {
+  let query = client.from(table).select('*', { count: 'exact', head: true });
   for (const [column, value] of filters) query = query.eq(column, value);
   const { count, error } = await query;
   if (error) throw new Error(`Could not count ${table}: ${error.message}`);

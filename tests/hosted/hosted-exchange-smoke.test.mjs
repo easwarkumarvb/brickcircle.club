@@ -8,6 +8,7 @@ import {
   assertAcceptanceNotificationVisibility,
   buildFailureReport,
   classifySmokeFailure,
+  countRows,
   idempotencyKey,
   loadHostedSmokeConfig,
   projectRefFromUrl,
@@ -138,6 +139,107 @@ test('serializes only redacted, credential-free evidence', () => {
   assert.throws(() => serializeRedactedReport({ value: 'password=not-safe' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: 'eyJheader.payload.signature' }), /Refusing/);
   assert.throws(() => serializeRedactedReport({ value: '11111111-1111-4111-8111-111111111111' }), /Refusing/);
+});
+
+function countingClient(rowsByTable, errorsByTable = {}) {
+  const selections = [];
+  return {
+    selections,
+    from(table) {
+      const filters = [];
+      const query = {
+        select(columns, options = {}) {
+          selections.push({ table, columns, options });
+          return query;
+        },
+        eq(column, value) {
+          filters.push([column, value]);
+          return query;
+        },
+        then(resolve) {
+          const error = errorsByTable[table] || null;
+          const rows = rowsByTable[table] || [];
+          const matching = rows.filter(row => filters.every(([column, value]) => row[column] === value));
+          resolve({ count: error ? null : matching.length, error });
+        }
+      };
+      return query;
+    }
+  };
+}
+
+test('countRows uses an exact head-only schema-independent count for conventional id tables', async () => {
+  const client = countingClient({
+    notifications: [
+      { id: 'row-1', exchange_case_id: 'case-a', kind: 'exchange_proposed' },
+      { id: 'row-2', exchange_case_id: 'case-b', kind: 'exchange_proposed' }
+    ]
+  });
+  assert.equal(await countRows(client, 'notifications', [['exchange_case_id', 'case-a']]), 1);
+  assert.deepEqual(client.selections, [{
+    table: 'notifications',
+    columns: '*',
+    options: { count: 'exact', head: true }
+  }]);
+});
+
+test('countRows supports item-lock rows without an id and preserves canonical case/item filters', async () => {
+  const client = countingClient({
+    exchange_case_item_locks: [
+      { item_id: 'item-a', case_id: 'case-a', lock_kind: 'ACTIVE' },
+      { item_id: 'item-b', case_id: 'case-a', lock_kind: 'ACTIVE' },
+      { item_id: 'item-c', case_id: 'case-b', lock_kind: 'ACTIVE' }
+    ]
+  });
+  assert.equal(await countRows(client, 'exchange_case_item_locks', [
+    ['case_id', 'case-a'],
+    ['item_id', 'item-b']
+  ]), 1);
+  assert.deepEqual(client.selections, [{
+    table: 'exchange_case_item_locks',
+    columns: '*',
+    options: { count: 'exact', head: true }
+  }]);
+});
+
+test('countRows fails closed on PostgREST errors', async () => {
+  const client = countingClient({}, {
+    exchange_case_item_locks: { message: 'permission denied by PostgREST' }
+  });
+  await assert.rejects(
+    countRows(client, 'exchange_case_item_locks', [['case_id', 'case-a']]),
+    /Could not count exchange_case_item_locks: permission denied by PostgREST/
+  );
+});
+
+test('countRows failures remain sanitized in diagnostic evidence', async () => {
+  const rawId = '11111111-1111-4111-8111-111111111111';
+  const rawUrl = 'https://staging-project.supabase.co/rest/v1/exchange_case_item_locks';
+  const rawToken = 'token=do-not-emit';
+  const client = countingClient({}, {
+    exchange_case_item_locks: { message: `request to ${rawUrl} for ${rawId} failed; ${rawToken}` }
+  });
+  let failure;
+  try {
+    await countRows(client, 'exchange_case_item_locks', [['case_id', rawId]]);
+  } catch (error) {
+    error.safeSmokeContext = {
+      stage: 'counterproposal and acceptance idempotency',
+      checks: [{ status: 'passed', detail: 'acceptance committed before authoritative lock verification' }]
+    };
+    failure = buildFailureReport({
+      runId: 'hosted-smoke-safe',
+      pullRequestNumber: 102,
+      headSha: valid.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA
+    }, error, '2026-09-28T00:00:00.000Z');
+  }
+  assert.ok(failure);
+  const serialized = serializeRedactedReport(failure);
+  assert.doesNotMatch(serialized, new RegExp(rawId));
+  assert.doesNotMatch(serialized, /staging-project\.supabase\.co/);
+  assert.doesNotMatch(serialized, /do-not-emit/);
+  assert.match(serialized, /\[redacted-url\]/);
+  assert.match(serialized, /\[redacted-credential\]/);
 });
 
 function notificationClient(rows, visibleUserId = null) {
