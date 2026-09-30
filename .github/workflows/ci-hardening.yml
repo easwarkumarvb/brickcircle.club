@@ -21,6 +21,8 @@ jobs:
       - run: npm run release:check
       - run: npm run typecheck
       - run: npm run syntax-check
+      - name: Beta security contract suite
+        run: npm run test:security-contracts
       - name: Hosted smoke harness regression suite
         run: npm run test:hosted:guard
       - name: Non-destructive release and workflow regression suite
