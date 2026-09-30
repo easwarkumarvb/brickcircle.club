@@ -141,6 +141,36 @@ test('serializes only redacted, credential-free evidence', () => {
   assert.throws(() => serializeRedactedReport({ value: '11111111-1111-4111-8111-111111111111' }), /Refusing/);
 });
 
+test('a successful report with notificationCount and outboxCount evidence serializes', () => {
+  const report = {
+    ok: true,
+    runId: 'hosted-smoke-safe',
+    testedPullRequestNumber: 102,
+    testedHeadSha: valid.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA,
+    target: 'approved-staging',
+    startedAt: '2026-09-30T00:00:00.000Z',
+    completedAt: '2026-09-30T00:01:00.000Z',
+    checks: [{ status: 'passed', detail: 'durable notification records and server-only email delivery outbox' }],
+    retainedEvidencePolicy: 'Canonical staging evidence is retained; replace the isolated staging project between release candidates.',
+    retainedEvidence: {
+      happyPathCaseId: redactIdentifier('11111111-1111-4111-8111-111111111111'),
+      notificationCount: 12,
+      outboxCount: 12,
+      realtime: { recipientKinds: ['exchange_proposed'], crossUserDeliveryCount: 0, stalePostSwitchDeliveryCount: 0, diagnostics: [] }
+    }
+  };
+  const serialized = serializeRedactedReport(report);
+  assert.match(serialized, /"notificationCount": 12/);
+  assert.match(serialized, /"outboxCount": 12/);
+  assert.match(serialized, /"crossUserDeliveryCount": 0/);
+  assert.doesNotMatch(serialized, /emailOutboxCount/);
+  assert.doesNotMatch(serialized, /unauthorizedDeliveryCount/);
+  assert.throws(() => serializeRedactedReport({ ...report, retainedEvidence: { ...report.retainedEvidence, emailOutboxCount: 12 } }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ ...report, retainedEvidence: { ...report.retainedEvidence, unauthorizedDeliveryCount: 0 } }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ email: 'a@example.test' }), /Refusing/);
+  assert.throws(() => serializeRedactedReport({ password: 'hidden' }), /Refusing/);
+});
+
 function countingClient(rowsByTable, errorsByTable = {}) {
   const selections = [];
   return {

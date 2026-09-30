@@ -922,10 +922,10 @@ async function runHostedSmoke(config) {
       rematching: { afterCompletionReview: true, afterCancellation: true },
       accountSwitchIsolation: { localSessionCleared: true, channelsRemoved: true, thirdUserRowsVisible: 0 },
       notificationCount: notifications.data.length,
-      emailOutboxCount: deliveries.data.length,
+      outboxCount: deliveries.data.length,
       realtime: {
         recipientKinds: [...new Set(observedRealtime.filter(row => row.exchange_case_id === caseId).map(row => row.kind))].sort(),
-        unauthorizedDeliveryCount: unauthorizedRealtime.filter(row => evidenceCaseIds.includes(row.exchange_case_id)).length,
+        crossUserDeliveryCount: unauthorizedRealtime.filter(row => evidenceCaseIds.includes(row.exchange_case_id)).length,
         stalePostSwitchDeliveryCount: staleRealtime.length,
         diagnostics: realtimeDiagnostics
       }
