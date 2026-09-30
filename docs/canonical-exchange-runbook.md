@@ -239,3 +239,20 @@ Use two ordinary adult accounts in the same city. Each account needs an owned se
 - PostgreSQL CI proves server behavior but not a real hosted Supabase gateway, Realtime or Edge Function delivery. Run the guarded hosted workflow and retain its artifact before approval; real provider delivery remains a separate staging check.
 - Browser automation uses deterministic fixtures; the final two-person physical handoff/return smoke test remains a human gate.
 - Old lifecycle tables remain for audit and compatibility. Their write privileges are revoked, but removal is intentionally deferred to a separately reviewed migration.
+
+
+## Public beta release gate
+
+After canonical frontend parity, retire the final legacy mutation RPCs with `20260930110000_retire_legacy_exchange_mutation_rpcs.sql`. Administrator dashboard authorization must use `public.is_exchange_admin()`, backed by `private.exchange_admins`; browser code, hard-coded user IDs, email comparison, and editable Auth metadata are not authorization sources.
+
+Before tagging beta:
+
+1. Require green CI, deployment, and canonical hosted-staging evidence.
+2. Apply both post-canonical hardening migrations in order.
+3. Verify `public`, `anon`, `authenticated`, and `service_role` cannot execute `advance_exchange(uuid,text,text)` or `submit_exchange_review(uuid,integer,text)`.
+4. Verify only authenticated callers can invoke `is_exchange_admin()`, that an allowlisted administrator returns `true`, and an ordinary member returns `false`.
+5. Deploy the updated `admin-dashboard` Edge Function before relying on the browser dashboard.
+6. Verify the deployed dashboard returns 200 for an allowlisted administrator and 403 for a normal member, while invalid sessions return 401.
+7. Re-run Supabase security advisors and confirm no new critical finding blocks release.
+
+With no prior repository tag/release convention, the first public beta tag is `v0.1.0-beta.1`.
