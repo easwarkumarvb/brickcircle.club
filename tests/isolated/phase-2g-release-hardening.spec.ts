@@ -31,19 +31,19 @@ test('PASSWORD_RECOVERY validates, retries and preserves the signed-in session',
 
 test('disputed exchange keeps participant chat while progression stays paused',async({page})=>{
   await page.goto('/v2.html?isolated=disputed#exchange/ex1');
-  await expect(page.locator('#bc-flow')).toContainText('Exchange paused');
+  await expect(page.locator('#bc-flow')).toContainText('Issue reported');
   const chat=page.locator('#bc-chat-form');
   await expect(chat).toBeVisible();
   await expect(page.locator('[data-schedule],[data-flow-action],[data-cancel-exchange]')).toHaveCount(0);
   await chat.locator('[name="message"]').fill('I have documented the issue.');
   await chat.evaluate((element:HTMLFormElement)=>element.requestSubmit());
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.messages.length)).toBe(1);
-  expect(await page.evaluate(()=>window.__bcIsolated.messages[0])).toMatchObject({exchange_id:'ex1',body:'I have documented the issue.'});
+  expect(await page.evaluate(()=>window.__bcIsolated.messages[0])).toMatchObject({case_id:'ex1',body:'I have documented the issue.'});
 });
 
 test('completed exchange remains terminal and hides participant messaging',async({page})=>{
   await page.goto('/v2.html?isolated=completed#exchange/ex1');
-  await expect(page.locator('#bc-flow')).toContainText('Exchange complete');
+  await expect(page.locator('#bc-flow')).toContainText('Completed');
   await expect(page.locator('#bc-chat-form')).toHaveCount(0);
   await expect(page.locator('[data-schedule],[data-flow-action],[data-cancel-exchange]')).toHaveCount(0);
 });
@@ -61,10 +61,10 @@ test('failed slices stay visible while successful slices refresh, then true sign
   await page.goto('/v2.html?isolated=partial#home');
   await page.evaluate(async()=>{
     const state=window.__bcIsolated;
-    state.exchanges.push({id:'ex1',request_id:'r1',user_a:'00000000-0000-4000-8000-000000000007',user_b:'00000000-0000-4000-8000-000000000099',item_a:'c1',item_b:'other-item-1',duration_days:60,state:'accepted',created_at:'2026-09-03T12:00:00.000Z'});
+    state.exchanges.push({id:'ex1',user_a:'00000000-0000-4000-8000-000000000007',user_b:'00000000-0000-4000-8000-000000000099',proposer_id:'00000000-0000-4000-8000-000000000007',recipient_id:'00000000-0000-4000-8000-000000000099',item_a:'c1',item_b:'other-item-1',duration_days:60,state:'ACCEPTED',state_version:2,created_at:'2026-09-03T12:00:00.000Z'});
     await window.bcV3Refresh();
     state.collection.push({id:'c3',user_id:'00000000-0000-4000-8000-000000000007',set_number:'42115-1',available_for_exchange:false,created_at:'2026-09-03T12:00:00.000Z'});
-    state.wishlist=[];state.exchanges=[];state.failTables=['wishlists','exchanges'];
+    state.wishlist=[];state.exchanges=[];state.failTables=['wishlists','exchange_cases'];
     await window.bcV3Refresh();
   });
   await expect(page.locator('.bc-guided-progress')).toContainText('3/3 owned sets added');

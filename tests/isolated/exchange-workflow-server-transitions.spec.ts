@@ -3,55 +3,48 @@ import {test,expect} from './fixtures';
 
 test('proposal creation is a server-owned, idempotent reciprocal transition',()=>{
   const source=fs.readFileSync('app-v3.js','utf8');
-  const migration=fs.readFileSync('supabase/migrations/20260913090000_exchange_workflow_server_transitions.sql','utf8');
-  expect(source).toContain("db.rpc('create_exchange_request'");
+  const migration=fs.readFileSync('supabase/migrations/20260916052934_canonical_exchange_state_machine.sql','utf8');
+  expect(source).toContain("canonicalRpc('create_exchange_case'");
   expect(source).not.toContain("db.from('exchange_requests').insert");
-  expect(migration).toContain('create or replace function public.create_exchange_request');
-  expect(migration).toContain("p_duration_days not in (30, 60, 90)");
-  expect(migration).toContain("r.status = 'pending'");
-  expect(migration).toContain("revoke insert, update, delete on table public.exchange_requests from authenticated");
+  expect(migration).toContain('create or replace function public.create_exchange_case');
+  expect(migration).toContain('exchange_case_item_locks');
+  expect(migration).toContain('p_idempotency_key text');
+  expect(migration).toContain('state_version bigint');
   expect(migration).toContain("public.canonical_lego_product_identity");
 });
 
-test('exchange messages derive the recipient and create durable in-app notification only',()=>{
-  const migration=fs.readFileSync('supabase/migrations/20260913090000_exchange_workflow_server_transitions.sql','utf8');
+test('case messages derive the recipient and produce a durable deduplicated notification',()=>{
+  const migration=fs.readFileSync('supabase/migrations/20260916052934_canonical_exchange_state_machine.sql','utf8');
   const source=fs.readFileSync('app-v3.js','utf8');
-  expect(migration).toContain('create or replace function public.bc_prepare_exchange_message');
-  expect(migration).toContain("new.recipient_id := case when me = exchange_row.user_a");
-  expect(migration).toContain("'message_received'");
-  expect(migration).not.toContain("'message_received'\n  ]::text[]");
-  expect(source).toContain("notification?.kind==='message_received'");
-  expect(source).toContain("notification?.metadata?.exchange_id");
+  expect(migration).toContain('create or replace function public.send_exchange_case_message');
+  expect(migration).toContain('other_user:=private.bc_case_other_user(c,me)');
+  expect(migration).toContain("'exchange_message'");
+  expect(migration).toContain("'case-message:'");
+  expect(source).toContain("canonicalRpc('send_exchange_case_message'");
+  expect(source).toContain("notification?.exchange_case_id");
 });
 
 test('owner release is server-owned, preserves history and protects post-handoff sets',()=>{
-  const migration=fs.readFileSync('supabase/migrations/20260914131342_canonical_exchange_workflow.sql','utf8');
+  const migration=fs.readFileSync('supabase/migrations/20260916052934_canonical_exchange_state_machine.sql','utf8');
   const source=fs.readFileSync('app-v3.js','utf8');
-  expect(migration).toContain('create or replace function public.release_exchange_item');
-  expect(migration).toContain('owned.user_id <> me');
-  expect(migration).toContain("exchange_row.state in ('swap_active','disputed')");
-  expect(migration).toContain("'requires_early_return', true");
-  expect(migration).toContain("set state = 'released'");
-  expect(migration).toContain("set status = 'released'");
-  expect(migration).toContain('on conflict (dedupe_key)');
-  expect(migration).toContain('on conflict (user_id,kind,entity_type,entity_id)');
-  expect(migration).toContain('revoke insert,update,delete on table public.exchange_requests from authenticated');
-  expect(migration).toContain('revoke insert,update,delete on table public.exchanges from authenticated');
-  expect(source).toContain("db.rpc('release_exchange_item'");
-  expect(source).toContain('Release this set from this exchange');
+  expect(migration).toContain("clean_action='cancel'");
+  expect(migration).toContain("after_state:='HANDOFF_ISSUE'");
+  expect(migration).toContain('private.bc_restore_case_preferences(c)');
+  expect(migration).toContain("lock_kind='MANUAL_REVIEW'");
+  expect(migration).toContain('revoke insert,update,delete on public.exchange_requests,public.exchanges');
+  expect(source).toContain("canonicalRpc('exchange_case_transition'");
+  expect(source).toContain('Open safe release options');
   expect(source).not.toMatch(/from\('messages'\)\.insert\(\{exchange_id:e\.id,sender_id:S\.user\.id,recipient_id:/);
 });
 
-test('release controls use a read-only deployment capability contract',()=>{
-  const migration=fs.readFileSync('supabase/migrations/20260915020630_release_workflow_capability.sql','utf8');
+test('availability and lifecycle controls use explicit least-privilege RPCs',()=>{
+  const migration=fs.readFileSync('supabase/migrations/20260916052934_canonical_exchange_state_machine.sql','utf8');
   const source=fs.readFileSync('app-v3.js','utf8');
-  expect(migration).toContain('create or replace function public.bc_exchange_capabilities()');
-  expect(migration).toContain("to_regprocedure('public.release_exchange_item(uuid,text)')");
-  expect(migration).toContain("has_function_privilege");
-  expect(migration).toContain("revoke all on function public.bc_exchange_capabilities() from public, anon");
-  expect(migration).toContain("grant execute on function public.bc_exchange_capabilities() to authenticated");
-  expect(migration).toContain("notify pgrst, 'reload schema'");
-  expect(source).toContain("db.rpc('bc_exchange_capabilities')");
-  expect(source).toContain('if(!S.exchangeCapabilities.releaseItem)');
-  expect(source).toContain('Your reservation has not changed.');
+  expect(migration).toContain('create or replace function public.set_exchange_item_availability');
+  expect(migration).toContain('create or replace function public.exchange_case_transition');
+  expect(migration).toContain("security definer set search_path=''");
+  expect(migration).toContain('grant execute on function public.collection_item_exchange_status');
+  expect(migration).toContain("notify pgrst,'reload schema'");
+  expect(source).toContain("db.rpc('set_exchange_item_availability'");
+  expect(source).not.toContain("db.rpc('bc_exchange_capabilities'");
 });

@@ -2,11 +2,12 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 
 const read=(path:string)=>fs.readFileSync(path,'utf8');
+const release=JSON.parse(read('release-assets.json')).release;
 
 test('V3 owns one cancellable product-name catalogue pipeline',()=>{
   const html=read('v2.html');
   const js=read('app-v3.js');
-  expect(html).toContain('/app-v3.js?v=20260902-phase1b');
+  expect(html).toContain(`/app-v3.js?v=${release}`);
   expect(html).not.toContain('/catalog-search-v32.js');
   expect(js).toContain("db.rpc('bc_search_lego_sets'");
   expect(js).toContain("const isExactSetNumber=/^\\d{3,7}(?:-\\d+)?$/.test(cleanQuery)");
@@ -25,7 +26,6 @@ test('V3 owns one cancellable product-name catalogue pipeline',()=>{
 test('catalogue images normalize suffixed LEGO set numbers and prioritize the first viewport',()=>{
   const html=read('v2.html');
   const js=read('app-v3.js');
-  const imageGuard=read('set-image-fix-v34.js');
   const sw=read('catalogue-cache-sw.js');
 
   expect(js).toContain("/-\\d+$/.test(String(set||''))");
@@ -36,10 +36,9 @@ test('catalogue images normalize suffixed LEGO set numbers and prioritize the fi
   expect(js).not.toContain('encodeURIComponent(set)}-1.jpg');
 
   expect(html).toContain('rel="preconnect" href="https://images.brickset.com"');
-  expect(html).toContain('/set-image-fix-v34.js?v=20260902-phase1b');
-  expect(html.indexOf('/set-image-fix-v34.js')).toBeLessThan(html.indexOf('/app-v3.js'));
-  expect(imageGuard).toContain("img[data-set-image]");
-  expect(imageGuard).toContain("fetchPriority='high'");
+  expect(html).not.toContain('/set-image-fix-v34.js');
+  expect(js).toContain("img[data-set-image]");
+  expect(js).toContain('fetchpriority="high"');
 
   expect(sw).toContain("const IMAGE_CACHE='brickcircle-set-images-v1'");
   expect(sw).toContain("url.hostname==='images.brickset.com'");

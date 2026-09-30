@@ -3,7 +3,7 @@ import {test,expect} from './fixtures';
 
 test('canonical meetup form has an explicit submit button',async()=>{
   const source=fs.readFileSync('app-v3.js','utf8');
-  expect(source).toContain('<button type="submit" class="bc-btn primary">Share meetup</button>');
+  expect(source).toContain('<button class="bc-btn primary">Share proposal</button>');
 });
 
 test('superseded meetup submit hotfix is not shipped in the release shell',async()=>{

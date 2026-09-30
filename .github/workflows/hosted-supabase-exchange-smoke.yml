@@ -102,12 +102,6 @@ jobs:
       BC_PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.BC_PRODUCTION_SUPABASE_PROJECT_REF }}
       BC_STAGING_ALLOWED_EMAIL_DOMAIN: ${{ vars.BC_STAGING_ALLOWED_EMAIL_DOMAIN }}
       BC_STAGING_APPROVED_SINK_DOMAIN: ${{ vars.BC_STAGING_APPROVED_SINK_DOMAIN }}
-      BC_STAGING_USER_A_EMAIL: ${{ secrets.BC_STAGING_USER_A_EMAIL }}
-      BC_STAGING_USER_A_PASSWORD: ${{ secrets.BC_STAGING_USER_A_PASSWORD }}
-      BC_STAGING_USER_B_EMAIL: ${{ secrets.BC_STAGING_USER_B_EMAIL }}
-      BC_STAGING_USER_B_PASSWORD: ${{ secrets.BC_STAGING_USER_B_PASSWORD }}
-      BC_STAGING_USER_C_EMAIL: ${{ secrets.BC_STAGING_USER_C_EMAIL }}
-      BC_STAGING_USER_C_PASSWORD: ${{ secrets.BC_STAGING_USER_C_PASSWORD }}
       BC_STAGING_SET_A: ${{ vars.BC_STAGING_SET_A }}
       BC_STAGING_SET_B: ${{ vars.BC_STAGING_SET_B }}
       BC_HOSTED_SMOKE_REPORT: artifacts/hosted-exchange-smoke.json
@@ -129,6 +123,8 @@ jobs:
       - run: npm ci
       - name: Verify staging safety guards
         run: npm run test:hosted:guard
+      - name: Provision fresh hosted smoke users
+        run: node scripts/bootstrap-hosted-smoke-users.mjs
       - name: Run hosted canonical exchange smoke
         run: npm run smoke:hosted:exchange
       - name: Upload redacted staging evidence
