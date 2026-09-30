@@ -1,26 +1,27 @@
 {
-  "name":"brickcircle-v3",
-  "private":true,
-  "scripts":{
-    "typecheck":"tsc --noEmit",
-    "release:sync":"node scripts/sync-release-assets.mjs",
-    "release:check":"node scripts/sync-release-assets.mjs --check",
-    "test:static":"playwright test --project=chromium --grep @static",
-    "syntax-check":"for f in app-v3.js exchangeable-persistence-v1.js locations-v3.js a11y-v1.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js web-push-config.js web-push-v1.js; do node --check \"$f\"; done",
-    "test:e2e":"playwright test --project=chromium --grep-invert @cross-browser",
-    "test:isolated":"playwright test --config=playwright.isolated.config.ts",
-    "test:isolated:chromium":"playwright test --config=playwright.isolated.config.ts --project=chromium",
-    "test:hosted:guard":"node --test tests/hosted/hosted-exchange-smoke.test.mjs tests/hosted/bootstrap-hosted-smoke-users.test.mjs",
-    "smoke:hosted:exchange":"node scripts/hosted-exchange-smoke.mjs",
-    "test:cross-browser":"playwright test tests/e2e/cross-browser-accessibility.spec.ts --project=chromium --project=firefox --project=webkit",
-    "test:qa-all":"playwright test"
+  "name": "brickcircle-v3",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "release:sync": "node scripts/sync-release-assets.mjs",
+    "release:check": "node scripts/sync-release-assets.mjs --check",
+    "test:static": "playwright test --project=chromium --grep @static",
+    "syntax-check": "for f in app-v3.js exchangeable-persistence-v1.js locations-v3.js a11y-v1.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js web-push-config.js web-push-v1.js; do node --check \"$f\"; done",
+    "test:e2e": "playwright test --project=chromium --grep-invert @cross-browser",
+    "test:isolated": "playwright test --config=playwright.isolated.config.ts",
+    "test:isolated:chromium": "playwright test --config=playwright.isolated.config.ts --project=chromium",
+    "test:hosted:guard": "node --test tests/hosted/hosted-exchange-smoke.test.mjs tests/hosted/bootstrap-hosted-smoke-users.test.mjs",
+    "smoke:hosted:exchange": "node scripts/hosted-exchange-smoke.mjs",
+    "test:cross-browser": "playwright test tests/e2e/cross-browser-accessibility.spec.ts --project=chromium --project=firefox --project=webkit",
+    "test:qa-all": "playwright test",
+    "test:security-contracts": "node tests/static/legacy-exchange-rpc-lockdown.test.js && node tests/static/admin-dashboard-authorization.test.js"
   },
-  "dependencies":{
-    "@supabase/supabase-js":"2.57.4"
+  "dependencies": {
+    "@supabase/supabase-js": "2.57.4"
   },
-  "devDependencies":{
-    "@axe-core/playwright":"4.13.0",
-    "@playwright/test":"1.62.1",
-    "typescript":"5.9.2"
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.62.1",
+    "typescript": "5.9.2"
   }
 }
