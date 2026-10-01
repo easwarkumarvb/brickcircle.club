@@ -63,6 +63,24 @@ test('inbox opens canonical case conversations by case_id and direct messages se
   await context.close();
 });
 
+test('share meetup proposal submits the canonical transition and persists its details',async({browser})=>{
+  const expectedAt=new Date('2099-10-02T15:34').toISOString();
+  const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACCEPTED')));
+  await page.getByRole('button',{name:'Plan public meetup'}).click();
+  const form=page.locator('#bc-case-meetup');
+  await form.locator('[name="venue"]').fill('Udupi Garden');
+  await form.locator('[name="area"]').fill('Sanjaynagar');
+  await form.locator('[name="when"]').fill('2099-10-02T15:34');
+  await form.getByRole('button',{name:'Share proposal'}).click();
+  await expect(form).toHaveCount(0);
+  await expect(page.getByText('Waiting for the other collector to accept the meetup.')).toBeVisible();
+  const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],calls:window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition')}));
+  expect(result.calls).toHaveLength(1);
+  expect(result.calls[0].args).toMatchObject({p_action:'propose_meetup',p_payload:{venue_name:'Udupi Garden',venue_area:'Sanjaynagar',meetup_at:expectedAt}});
+  expect(result.exchange).toMatchObject({state:'MEETUP_PLANNING',meetup_proposed_by:actors.easwar.id,meetup_venue_name:'Udupi Garden',meetup_venue_area:'Sanjaynagar',meetup_at:expectedAt});
+  await context.close();
+});
+
 test('proposal, transition and message reuse their idempotency key after a committed response is lost',async({browser})=>{
   test.setTimeout(60000);
   const proposalDb=seed(exchange('CANCELLED'),{
