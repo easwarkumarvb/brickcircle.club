@@ -78,7 +78,7 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await expect(page.locator('[data-remove-collection-item]')).toBeDisabled();
   await page.getByRole('button',{name:'Close dialog'}).click();
   page.once('dialog',dialog=>dialog.accept());
-  await page.getByRole('button',{name:'End proposal'}).click();
+  await page.getByRole('button',{name:'Cancel proposal & free set'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.exchanges[0].state)).toBe('WITHDRAWN');
   await page.locator('[data-edit-set]').click();
   page.once('dialog',dialog=>dialog.accept());

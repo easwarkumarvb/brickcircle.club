@@ -256,3 +256,6 @@ Before tagging beta:
 7. Re-run Supabase security advisors and confirm no new critical finding blocks release.
 
 With no prior repository tag/release convention, the first public beta tag is `v0.1.0-beta.1`.
+
+- Owner-review recovery: when an item has `exchange_review_required=true` but no non-terminal canonical case/lock, the owner may explicitly confirm the set is back and inspected, then make it available again through `set_exchange_item_availability(..., true)`. History remains preserved.
+- Legacy compatibility: `20260930160000_retire_legacy_exchangeability_trigger.sql` retires the old `bc_guard_collection_exchangeability` trigger so audit-only rows in `public.exchanges` cannot override canonical item locks.
