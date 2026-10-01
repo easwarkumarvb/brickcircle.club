@@ -160,12 +160,18 @@ const db={
       else if(action==='withdraw')exchange.state='WITHDRAWN';
       else if(action==='cancel')exchange.state='CANCELLED';
       else if(action==='early_return')exchange.state='EARLY_RETURN';
-      else if(action==='propose_meetup'){exchange.state='MEETUP_PLANNING';exchange.meetup_proposed_by=active().id}
+      else if(action==='propose_meetup'){
+        exchange.state='MEETUP_PLANNING';exchange.meetup_proposed_by=active().id;
+        exchange.meetup_venue_name=args.p_payload?.venue_name;exchange.meetup_venue_area=args.p_payload?.venue_area;exchange.meetup_at=args.p_payload?.meetup_at;
+      }
       else if(action==='accept_meetup'){exchange.state='MEETUP_CONFIRMED';exchange.meetup_accepted_by=active().id}
       else if(action==='safety_ack'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`safety_ack_${suffix}_at`]=NOW;if(exchange.safety_ack_a_at&&exchange.safety_ack_b_at)exchange.state='INSPECTION'}
       else if(action==='arrive'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`arrived_${suffix}_at`]=NOW}
       else if(action==='inspect'){const suffix=active().id===exchange.user_a?'a':'b';if(!exchange.arrived_a_at||!exchange.arrived_b_at)return {data:null,error:{message:'Both collectors must arrive before inspection approval'}};exchange[`inspected_${suffix}_at`]=NOW;if(exchange.inspected_a_at&&exchange.inspected_b_at)exchange.state='HANDOFF_PENDING'}
-      else if(action==='propose_return'){exchange.state='RETURN_PLANNING';exchange.return_proposed_by=active().id}
+      else if(action==='propose_return'){
+        exchange.state='RETURN_PLANNING';exchange.return_proposed_by=active().id;
+        exchange.return_venue_name=args.p_payload?.venue_name;exchange.return_venue_area=args.p_payload?.venue_area;exchange.return_meetup_at=args.p_payload?.meetup_at;
+      }
       else if(action==='accept_return'){exchange.state='RETURN_INSPECTION';exchange.return_accepted_by=active().id}
       else if(action==='return_arrive'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`return_arrived_${suffix}_at`]=NOW}
       else if(action==='return_inspect'){const suffix=active().id===exchange.user_a?'a':'b';if(!exchange.return_arrived_a_at||!exchange.return_arrived_b_at)return {data:null,error:{message:'Both collectors must arrive before return inspection'}};exchange[`return_inspected_${suffix}_at`]=NOW}
