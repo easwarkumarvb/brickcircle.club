@@ -27,8 +27,12 @@ jobs:
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_legacy_seed.sql
       - name: Apply canonical state-machine migration
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260916052934_canonical_exchange_state_machine.sql
+      - name: Apply owner-review recovery migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260930160000_retire_legacy_exchangeability_trigger.sql
       - name: Verify transitions, RLS, idempotency, custody and outboxes
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/canonical_exchange_state_machine.sql
+      - name: Verify owner-review recovery with legacy disputed row and canonical lock
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/owner_review_recovery.sql
 
   canonical-exchange-workflow:
     runs-on: ubuntu-latest
