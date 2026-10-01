@@ -15,7 +15,8 @@
     "test:cross-browser": "playwright test tests/e2e/cross-browser-accessibility.spec.ts --project=chromium --project=firefox --project=webkit",
     "test:qa-all": "playwright test",
     "test:security-contracts": "node tests/static/legacy-exchange-rpc-lockdown.test.js && node tests/static/admin-dashboard-authorization.test.js",
-    "test:owner-review-recovery": "node tests/static/owner-review-recovery.test.js"
+    "test:owner-review-recovery": "node tests/static/owner-review-recovery.test.js",
+    "test:collector-avatar": "node tests/static/collector-avatar-pipeline.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.57.4"

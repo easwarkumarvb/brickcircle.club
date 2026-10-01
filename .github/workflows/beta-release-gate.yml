@@ -34,6 +34,31 @@ jobs:
       - name: Verify owner-review recovery with legacy disputed row and canonical lock
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/owner_review_recovery.sql
 
+  collector-avatar-pipeline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: brickcircle
+          POSTGRES_DB: brickcircle_collector_avatar
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d brickcircle_collector_avatar"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_collector_avatar
+    steps:
+      - uses: actions/checkout@v4
+      - name: Load pre-fix Auth/profile avatar schema
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/collector_avatar_base.sql
+      - name: Apply canonical collector-avatar migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261001154500_canonical_collector_avatar_pipeline.sql
+      - name: Verify provider sync, projection and upload precedence
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/collector_avatar_pipeline.sql
+
   canonical-exchange-workflow:
     runs-on: ubuntu-latest
     timeout-minutes: 10

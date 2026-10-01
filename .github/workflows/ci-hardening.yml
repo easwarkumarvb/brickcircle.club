@@ -25,6 +25,8 @@ jobs:
         run: npm run test:security-contracts
       - name: Owner review recovery contract
         run: npm run test:owner-review-recovery
+      - name: Collector avatar pipeline contract
+        run: npm run test:collector-avatar
       - name: Hosted smoke harness regression suite
         run: npm run test:hosted:guard
       - name: Non-destructive release and workflow regression suite
