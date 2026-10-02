@@ -15,41 +15,19 @@ insert into auth.users(id,email) values
   ('80000000-0000-4000-8000-000000000083','outsider@example.test')
 on conflict(id) do nothing;
 
--- auth.users on_auth_user_created already created these profile rows.
--- adult_confirmed_at is server-stamped only, so touch only the mutable fields here
--- and attest each collector through confirm_adult_status() below.
-insert into public.profiles(id,display_name,email,country,city)
+-- Collector e-mail lives in auth.users; public.profiles in the canonical base has
+-- no email column. Adult attestation is covered by the dedicated
+-- adult-confirmation gate, and confirm_adult_status() is not part of this isolated
+-- gate's migration sequence, so this fixture seeds adult_confirmed_at directly.
+insert into public.profiles(id,display_name,country,city,adult_confirmed_at)
 values
-  ('80000000-0000-4000-8000-000000000081','Peer A','peer-a@example.test','India','Bengaluru'),
-  ('80000000-0000-4000-8000-000000000082','Peer B','peer-b@example.test','India','Bengaluru'),
-  ('80000000-0000-4000-8000-000000000083','Outsider','outsider@example.test','India','Bengaluru')
+  ('80000000-0000-4000-8000-000000000081','Peer A','India','Bengaluru','2026-09-11T00:00:00Z'),
+  ('80000000-0000-4000-8000-000000000082','Peer B','India','Bengaluru','2026-09-11T00:00:00Z'),
+  ('80000000-0000-4000-8000-000000000083','Outsider','India','Bengaluru','2026-09-11T00:00:00Z')
 on conflict(id) do update set
-  display_name=excluded.display_name,email=excluded.email,
-  country=excluded.country,city=excluded.city;
-
-set local role authenticated;
-set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000081';
-select public.confirm_adult_status(
-  'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.',
-  '2026-09-11'
-);
-reset role;
-
-set local role authenticated;
-set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000082';
-select public.confirm_adult_status(
-  'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.',
-  '2026-09-11'
-);
-reset role;
-
-set local role authenticated;
-set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000083';
-select public.confirm_adult_status(
-  'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.',
-  '2026-09-11'
-);
-reset role;
+  display_name=excluded.display_name,
+  country=excluded.country,city=excluded.city,
+  adult_confirmed_at=excluded.adult_confirmed_at;
 
 insert into public.lego_sets(set_number,name,theme) values
   ('PT1001-1','Peer Trust Set A1','Test'),
