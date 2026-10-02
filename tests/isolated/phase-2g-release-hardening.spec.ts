@@ -29,9 +29,9 @@ test('PASSWORD_RECOVERY validates, retries and preserves the signed-in session',
   expect(calls[1].attributes).toEqual({password:'password123'});
 });
 
-test('disputed exchange keeps participant chat while progression stays paused',async({page})=>{
+test('legacy disputed exchange keeps participant chat while progression stays paused',async({page})=>{
   await page.goto('/v2.html?isolated=disputed#exchange/ex1');
-  await expect(page.locator('#bc-flow')).toContainText('Issue reported');
+  await expect(page.locator('#bc-flow')).toContainText('Legacy issue');
   const chat=page.locator('#bc-chat-form');
   await expect(chat).toBeVisible();
   await expect(page.locator('[data-schedule],[data-flow-action],[data-cancel-exchange]')).toHaveCount(0);

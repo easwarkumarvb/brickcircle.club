@@ -2,6 +2,55 @@
 
 Base: `3f838046fc87ed80396013b59ef9778502573b39` (`main`, 2026-09-16 audit)
 
+## 2026-10-01 peer-trust hardening (normative)
+
+The peer-trust hardening migration and runtime supersede the normal-path dispute/admin-resolution behavior described in the historical audit below. The governing product rule is:
+
+**Before physical handoff, software enforces mutual agreement. After physical handoff, BrickCircle records evidence, peer resolution, objective metrics and verified reviews. Support is exceptional and out-of-band; it does not decide fault or choose a winner.**
+
+```mermaid
+stateDiagram-v2
+    [*] --> PROPOSED
+    PROPOSED --> PROPOSED: counter / new agreement version
+    PROPOSED --> ACCEPTED: both accept current terms
+    PROPOSED --> CANCELLED: decline / withdraw / cancel
+    ACCEPTED --> MEETUP_PLANNING
+    MEETUP_PLANNING --> MEETUP_CONFIRMED
+    MEETUP_CONFIRMED --> INSPECTION
+    INSPECTION --> HANDOFF_PENDING
+    HANDOFF_PENDING --> ACTIVE: BOTH confirm physical handoff
+    ACTIVE --> RETURN_PLANNING
+    ACTIVE --> EARLY_RETURN
+    EARLY_RETURN --> RETURN_PLANNING
+    RETURN_PLANNING --> RETURN_INSPECTION
+    RETURN_INSPECTION --> COMPLETED
+
+    ACCEPTED --> CANCELLED: either participant before mutual handoff
+    MEETUP_PLANNING --> CANCELLED: either participant before mutual handoff
+    MEETUP_CONFIRMED --> CANCELLED: either participant before mutual handoff
+    INSPECTION --> CANCELLED: either participant before mutual handoff
+    HANDOFF_PENDING --> CANCELLED: either participant until BOTH handoffs
+
+    state "Peer-managed issues\n(sidecar; no lifecycle mutation)" as ISSUES
+    state "Verified double-blind reviews\n(sidecar)" as REVIEWS
+    state "Support request\n(out-of-band; no adjudication)" as SUPPORT
+
+    ACTIVE --> ISSUES
+    RETURN_PLANNING --> ISSUES
+    RETURN_INSPECTION --> ISSUES
+    COMPLETED --> ISSUES
+    COMPLETED --> REVIEWS
+    PROPOSED --> SUPPORT
+    ACTIVE --> SUPPORT
+    COMPLETED --> SUPPORT
+```
+
+Accepted terms are immutable/versioned agreement snapshots. A term change creates a new version and requires both participants to accept that version; an accepted version is never silently mutated. `ACTIVE` is reached only after both independent physical handoff confirmations.
+
+Issues are sidecar records with participant responses and `open` / `resolved` / `unresolved` status. Reporting or resolving an issue does not transfer custody and does not move the exchange into an administrator-controlled lifecycle state. Reviews are verified, one-per-participant, structured and double-blind until both submit or the reveal deadline opens. Return-overdue metrics are server-derived from the accepted return terms.
+
+`DISPUTED` and `HANDOFF_ISSUE` remain readable only for legacy compatibility/quarantine. They are not valid destinations for new normal participant actions. Service-role legacy quarantine reconciliation is a technical data/custody repair mechanism for ambiguous migrated records, not user dispute arbitration.
+
 Safety status: this work is repository-only. No production database, storage, user, email, push, migration, or deployment action is authorized or performed.
 
 ## Executive finding
@@ -98,15 +147,16 @@ Release assets are synchronized through `release-assets.json`, `v2.html`, and `c
 | `MEETUP_CONFIRMED` | acknowledge safety | `MEETUP_CONFIRMED` or `INSPECTION` | each participant |
 | `INSPECTION` | arrive / approve inspection | `INSPECTION` or `HANDOFF_PENDING` | each participant |
 | `HANDOFF_PENDING` | confirm handoff | `HANDOFF_PENDING` or `ACTIVE` | each participant |
-| pre-handoff | cancel | `CANCELLED` | either participant, only before either handoff |
-| after one handoff | cancel / issue | `HANDOFF_ISSUE` | either participant |
+| any pre-mutual-handoff state | cancel | `CANCELLED` | either participant until both handoffs are confirmed |
 | `ACTIVE` | request early return | `EARLY_RETURN` | either participant |
 | `ACTIVE` / `EARLY_RETURN` | propose return | `RETURN_PLANNING` | either participant |
 | `RETURN_PLANNING` | accept return | `RETURN_INSPECTION` | non-proposer |
 | `RETURN_INSPECTION` | arrive / inspect / confirm return | `RETURN_INSPECTION` or `COMPLETED` | each participant |
-| non-terminal custody state | report issue | `DISPUTED` | either participant |
+| post-handoff case | report/respond/resolve issue | lifecycle unchanged; issue sidecar updated | either participant |
+| any participant case | request support | lifecycle unchanged; support sidecar recorded | either participant |
+| `COMPLETED` after verified handoff | submit review | lifecycle unchanged; double-blind review sidecar | each participant once |
 
-Completion clears locks but sets both items to `NEEDS_OWNER_REVIEW`; owners must explicitly re-enable them. Cancellation restores the captured owner availability preference. After either handoff confirmation, locks remain until mutual return or authorized resolution.
+Completion clears locks but sets both items to `NEEDS_OWNER_REVIEW`; owners must explicitly re-enable them. Pre-mutual-handoff cancellation restores the captured owner availability preference. Once both handoffs are confirmed, custody follows the return workflow; issues remain sidecar records and never invoke a normal admin-resolution transition.
 
 ## RLS and Data API contract
 

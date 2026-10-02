@@ -8,6 +8,7 @@ const actors={
   dhyan:{id:'00000000-0000-4000-8000-000000000103',email:'dhyan@example.invalid',name:'Dhyan'}
 };
 const now='2026-09-09T12:00:00.000Z';
+const dayMs=24*60*60*1000;
 
 function seed(exchange:any,extras:any={}){
   return {
@@ -15,7 +16,8 @@ function seed(exchange:any,extras:any={}){
     collection:[
       {id:'item-a',user_id:actors.easwar.id,set_number:'42172-1',condition:'Excellent',completeness:100,owner_photo_path:'a.jpg',available_for_exchange:false,created_at:now},
       {id:'item-b',user_id:actors.ramya.id,set_number:'42143-1',condition:'Excellent',completeness:100,owner_photo_path:'b.jpg',available_for_exchange:false,created_at:now}
-    ],wishlist:[],exchanges:[exchange],events:[],notifications:[],messages:[],directMessages:[],reviews:[],...extras
+    ],wishlist:[],exchanges:[exchange],events:[],notifications:[],messages:[],directMessages:[],reviews:[],
+    issues:[],issueResponses:[],supportRequests:[],peerReviews:[],...extras
   };
 }
 
@@ -23,7 +25,7 @@ function exchange(state:string,patch:any={}){
   return {id:'case-review-fix',user_a:actors.easwar.id,user_b:actors.ramya.id,proposer_id:actors.easwar.id,recipient_id:actors.ramya.id,item_a:'item-a',item_b:'item-b',duration_days:60,state,state_version:5,created_at:now,updated_at:now,...patch};
 }
 
-async function openActor(context:BrowserContext,actor:'easwar'|'ramya',database:any,route='exchange/case-review-fix'){
+async function openActor(context:BrowserContext,actor:keyof typeof actors,database:any,route='exchange/case-review-fix'){
   await context.addInitScript(({actor,database})=>{localStorage.setItem('bc_three_user_actor',actor);localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1')},{actor,database});
   const page=await context.newPage();
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',route=>route.fulfill({contentType:'application/javascript',body:mock}));
@@ -32,19 +34,136 @@ async function openActor(context:BrowserContext,actor:'easwar'|'ramya',database:
   return page;
 }
 
-test('completed canonical case exposes one-review-per-participant path and updates rating',async({browser})=>{
-  const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('COMPLETED',{completed_at:now})));
-  await expect(page.getByRole('button',{name:'Leave review'})).toBeVisible();
+async function submitStructuredReview(page:any,ratings={overall:'4',reliability:'5',accuracy:'4',communication:'5',condition:'4',again:'yes'},comment='Safe meetup and accurate set.'){
   await page.getByRole('button',{name:'Leave review'}).click();
-  await page.locator('#bc-review-form select').selectOption('4');
-  await page.locator('#bc-review-form textarea').fill('Safe meetup and accurate set.');
-  await page.getByRole('button',{name:'Submit review'}).click();
-  await expect(page.getByText(/You reviewed Ramya with 4\/5 stars/)).toBeVisible();
-  const result=await page.evaluate(()=>({reviews:window.__bcThreeUser.data.reviews,profiles:window.__bcThreeUser.data.profiles,calls:window.__bcThreeUser.rpcCalls}));
-  expect(result.reviews).toHaveLength(1);
-  expect(result.profiles.find((row:any)=>row.id===actors.ramya.id)).toMatchObject({rating:4,review_count:1});
-  expect(result.calls).toContain('submit_exchange_case_review');
-  expect(result.calls).not.toContain('submit_exchange_review');
+  const form=page.locator('#bc-peer-review-form');
+  await form.locator('select[name="overall_rating"]').selectOption(ratings.overall);
+  await form.locator('select[name="return_reliability"]').selectOption(ratings.reliability);
+  await form.locator('select[name="set_accuracy"]').selectOption(ratings.accuracy);
+  await form.locator('select[name="communication"]').selectOption(ratings.communication);
+  await form.locator('select[name="condition_accuracy"]').selectOption(ratings.condition);
+  await form.locator('select[name="would_exchange_again"]').selectOption(ratings.again);
+  await form.locator('textarea[name="comment"]').fill(comment);
+  await form.getByRole('button',{name:'Submit review'}).click();
+}
+
+test('completed canonical case uses structured double-blind peer reviews and prevents duplicates',async({browser})=>{
+  const completed=seed(exchange('COMPLETED',{completed_at:now,handoff_at:now,handoff_a_at:now,handoff_b_at:now}));
+  const easwarContext=await browser.newContext(),easwar=await openActor(easwarContext,'easwar',completed);
+  await expect(easwar.getByRole('button',{name:'Leave review'})).toBeVisible();
+  await submitStructuredReview(easwar);
+  await expect.poll(()=>easwar.evaluate(()=>window.__bcThreeUser.data.peerReviews.length)).toBe(1);
+  await expect(easwar.locator('.bc-notice.good').filter({hasText:/You reviewed Ramya/i})).toBeVisible();
+  const first=await easwar.evaluate(()=>({data:JSON.parse(JSON.stringify(window.__bcThreeUser.data)),calls:window.__bcThreeUser.rpcCalls}));
+  expect(first.data.peerReviews).toHaveLength(1);
+  expect(first.data.peerReviews[0]).toMatchObject({reviewer_id:actors.easwar.id,reviewee_id:actors.ramya.id,overall_rating:4,return_reliability:5,set_accuracy:4,communication:5,condition_accuracy:4,would_exchange_again:true});
+  expect(first.calls).toContain('submit_peer_exchange_review');
+  expect(first.calls).not.toContain('submit_exchange_case_review');
+  expect(first.calls).not.toContain('submit_exchange_review');
+  await easwarContext.close();
+
+  const ramyaContext=await browser.newContext(),ramya=await openActor(ramyaContext,'ramya',first.data);
+  await expect(ramya.getByText(/Peer trust:.*1 completed exchange/i)).toBeVisible();
+  await expect(ramya.getByRole('button',{name:'Leave review'})).toBeVisible();
+  await submitStructuredReview(ramya,{overall:'5',reliability:'5',accuracy:'5',communication:'5',condition:'5',again:'yes'},'Would exchange again.');
+  await expect(ramya.getByText('Safe meetup and accurate set.')).toBeVisible();
+
+  const duplicate=await ramya.evaluate(async()=>{
+    return window.supabase.createClient().rpc('submit_peer_exchange_review',{
+      p_case_id:'case-review-fix',p_overall_rating:5,p_return_reliability:5,p_set_accuracy:5,p_communication:5,p_condition_accuracy:5,
+      p_would_exchange_again:true,p_comment:'Duplicate attempt',p_idempotency_key:'different-review-attempt'
+    });
+  });
+  expect(duplicate.error?.message).toMatch(/already submitted/i);
+  const final=await ramya.evaluate(()=>window.__bcThreeUser.data.peerReviews);
+  expect(final).toHaveLength(2);
+  await ramyaContext.close();
+});
+
+test('pre-handoff cancellation remains available after one-sided handoff and releases both sets',async({browser})=>{
+  const snapshot=seed(exchange('HANDOFF_PENDING',{handoff_a_at:now,handoff_b_at:null,owner_preference_a:true,owner_preference_b:true}));
+  const context=await browser.newContext(),page=await openActor(context,'easwar',snapshot);
+  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
+  page.on('dialog',async dialog=>{if(dialog.type()==='prompt')await dialog.accept('Changed plans before mutual handoff');else await dialog.accept()});
+  await page.getByRole('button',{name:'Cancel before handoff'}).click();
+  await expect(page.getByText('Cancelled',{exact:true}).first()).toBeVisible();
+  const result=await page.evaluate(()=>({data:window.__bcThreeUser.data,calls:window.__bcThreeUser.rpcCalls}));
+  expect(result.data.exchanges[0].state).toBe('CANCELLED');
+  expect(result.data.exchanges[0].state).not.toBe('HANDOFF_ISSUE');
+  expect(result.data.collection.every((row:any)=>row.available_for_exchange)).toBe(true);
+  expect(result.calls).toContain('cancel_exchange_case_before_mutual_handoff');
+  await context.close();
+});
+
+test('post-handoff issues and support are sidecars and outsiders cannot mutate them',async({browser})=>{
+  const snapshot=seed(exchange('ACTIVE',{handoff_at:now,handoff_a_at:now,handoff_b_at:now,return_due_at:'2026-10-30T12:00:00.000Z'}));
+  const context=await browser.newContext(),page=await openActor(context,'easwar',snapshot);
+  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toHaveCount(0);
+  await page.getByRole('button',{name:'Report an issue'}).click();
+  const issueForm=page.locator('#bc-case-issue');
+  await issueForm.locator('select[name="category"]').selectOption('missing_pieces');
+  await issueForm.locator('textarea[name="description"]').fill('Two major pieces are missing from the set.');
+  await issueForm.getByRole('button',{name:'Report issue'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues.length)).toBe(1);
+  await expect(page.getByText('Two major pieces are missing from the set.')).toBeVisible();
+
+  await page.getByRole('button',{name:'Need BrickCircle support?'}).click();
+  const supportForm=page.locator('#bc-case-support');
+  await supportForm.locator('select[name="category"]').selectOption('technical');
+  await supportForm.locator('textarea[name="note"]').fill('The exchange screen is not updating correctly.');
+  await supportForm.getByRole('button',{name:'Send to support'}).click();
+
+  const result=await page.evaluate(()=>({data:JSON.parse(JSON.stringify(window.__bcThreeUser.data)),calls:window.__bcThreeUser.rpcCalls}));
+  expect(result.data.exchanges[0]).toMatchObject({state:'ACTIVE',state_version:5});
+  expect(result.data.issues).toHaveLength(1);
+  expect(result.data.issues[0]).toMatchObject({category:'missing_pieces',status:'open'});
+  expect(result.data.supportRequests).toHaveLength(1);
+  expect(result.data.supportRequests[0]).toMatchObject({category:'technical',case_state_at_request:'ACTIVE',case_state_version_at_request:5});
+  expect(result.calls).toContain('report_exchange_case_issue');
+  expect(result.calls).toContain('request_exchange_case_support');
+  await context.close();
+
+  const outsiderContext=await browser.newContext(),outsider=await openActor(outsiderContext,'dhyan',result.data,'home');
+  const outsiderAttempt=await outsider.evaluate(async()=>{
+    return window.supabase.createClient().rpc('report_exchange_case_issue',{
+      p_case_id:'case-review-fix',p_category:'communication_problem',p_description:'Outsider attempt',p_evidence:[],p_idempotency_key:'outsider-issue'
+    });
+  });
+  expect(outsiderAttempt.error?.message).toMatch(/not found/i);
+  expect(await outsider.evaluate(()=>window.__bcThreeUser.data.issues.length)).toBe(1);
+  await outsiderContext.close();
+});
+
+test('mutual handoff is required before ACTIVE',async({browser})=>{
+  const snapshot=seed(exchange('HANDOFF_PENDING',{handoff_a_at:null,handoff_b_at:null}));
+  const easwarContext=await browser.newContext(),easwar=await openActor(easwarContext,'easwar',snapshot);
+  easwar.on('dialog',dialog=>dialog.accept());
+  await easwar.getByRole('button',{name:'Confirm physical handoff'}).click();
+  const afterFirst=await easwar.evaluate(()=>JSON.parse(JSON.stringify(window.__bcThreeUser.data)));
+  expect(afterFirst.exchanges[0].state).toBe('HANDOFF_PENDING');
+  expect(afterFirst.exchanges[0].handoff_a_at).toBeTruthy();
+  expect(afterFirst.exchanges[0].handoff_at).toBeFalsy();
+  await easwarContext.close();
+
+  const ramyaContext=await browser.newContext(),ramya=await openActor(ramyaContext,'ramya',afterFirst);
+  ramya.on('dialog',dialog=>dialog.accept());
+  await ramya.getByRole('button',{name:'Confirm physical handoff'}).click();
+  const afterSecond=await ramya.evaluate(()=>window.__bcThreeUser.data.exchanges[0]);
+  expect(afterSecond.state).toBe('ACTIVE');
+  expect(afterSecond.handoff_a_at).toBeTruthy();
+  expect(afterSecond.handoff_b_at).toBeTruthy();
+  expect(afterSecond.handoff_at).toBeTruthy();
+  await ramyaContext.close();
+});
+
+test('overdue copy uses server RPC derived days',async({browser})=>{
+  // The server counts any started day past return_due_at as a full overdue day,
+  // so seed a half-day margin to keep the derived count deterministic.
+  const due=new Date(Date.now()-3.5*dayMs).toISOString();
+  const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACTIVE',{handoff_at:now,handoff_a_at:now,handoff_b_at:now,return_due_at:due})));
+  await expect(page.getByText(/Return overdue by 4 days/i)).toBeVisible();
+  const calls=await page.evaluate(()=>window.__bcThreeUser.rpcCalls);
+  expect(calls).toContain('exchange_case_overdue_days');
   await context.close();
 });
 
@@ -123,4 +242,9 @@ test('two independently signed-in browsers wait for mutual arrival before initia
   }
 });
 
-declare global {interface Window {__bcThreeUser:any}}
+declare global {
+  interface Window {
+    __bcThreeUser:any;
+    supabase:any;
+  }
+}

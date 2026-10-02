@@ -1,6 +1,8 @@
 # Exchange workflow beta audit
 
-Status: implementation is blocked on this contract being reviewed. No production database, user, storage, email, push, or deployment action is authorized by this document.
+Status: historical design audit. The 2026-10-01 peer-trust hardening now supersedes the dispute/admin-resolution portions of this document. No production database, user, storage, email, push, or deployment action is authorized by this document.
+
+> **Current canonical rule:** before mutual physical handoff, either participant can cancel and release the reservation safely. After mutual handoff, issues are peer-managed sidecar records and do not change custody or lifecycle state. Support is out-of-band and does not decide fault. `DISPUTED` / `HANDOFF_ISSUE` are legacy compatibility/quarantine states only. Verified reviews are double-blind sidecars after a completed post-handoff exchange.
 
 ## Current findings
 
@@ -17,12 +19,14 @@ The baseline contains two notification concepts (`notifications` and `member_not
 | Exchange | accepted | meetup proposed | either participant |
 | Exchange | meetup planned | handoff confirmed | either participant |
 | Exchange | handoff pending | active | both participants confirm |
-| Exchange | active | return planned / early-return requested / disputed | either participant |
+| Exchange | active | return planned / early-return requested | either participant |
 | Exchange | return pending | completed | both participants confirm |
-| Exchange | any pre-handoff state | released | either set owner |
-| Exchange | active | disputed | either participant |
+| Exchange | any pre-mutual-handoff state | cancelled/released | either participant |
+| Issue sidecar | post-handoff | open / participant response / resolved / unresolved | either participant |
+| Support sidecar | any participant case | request recorded; lifecycle unchanged | either participant |
+| Review sidecar | completed after verified handoff | double-blind verified review | each participant once |
 
-`released` is terminal and distinct from `completed`. A pre-handoff release cancels the request/exchange and releases both reservations. An active exchange cannot be silently released: it becomes an early-return request or dispute while reservations remain intact.
+`released` is terminal and distinct from `completed`. A pre-handoff release cancels the request/exchange and releases both reservations. After mutual handoff, an exchange cannot be silently released: participants use the return workflow, while any problem is recorded in the peer issue sidecar without changing lifecycle custody.
 
 ## Actor contract
 
@@ -34,7 +38,9 @@ The baseline contains two notification concepts (`notifications` and `member_not
 | Propose/confirm meetup | exchange participant; valid current state | meetup + event | other party, `#exchanges/{id}` | unchanged |
 | Confirm handoff | exchange participant; meetup state | exchange + event | other party | remains reserved; active only after both |
 | Message | derive recipient from exchange participants | message + event | other party, `#exchanges/{id}` | unchanged |
-| Return / early return / dispute | exchange participant and active state | return/dispute + event | other party, `#exchanges/{id}` | release only on completed return |
+| Return / early return | exchange participant and active state | return lifecycle + event | other party, `#exchanges/{id}` | release only on completed return |
+| Report/respond to issue | verified participant after handoff | issue sidecar + evidence/event | other party, case deep link | lifecycle/custody unchanged |
+| Request support | case participant | support sidecar with state snapshot | support workflow | lifecycle/custody unchanged |
 
 All actions require `auth.uid()`, row locking/constraints where concurrent reservation is possible, idempotency keys/events, and server-derived recipient IDs. Email and web push are best-effort outbox consumers and must never block the transaction or in-app notification.
 
@@ -59,7 +65,7 @@ All actions require `auth.uid()`, row locking/constraints where concurrent reser
 
 ## Notification event matrix
 
-Required durable inbox events: match discovered; proposal sent/received; accepted/declined/cancelled/released; message received; meetup required/proposed/confirmed; handoff required/confirmed; active/return reminder/return confirmed; early-return/dispute; completed/review requested. Every lifecycle notification carries an exact authenticated deep link. Duplicate retries must resolve to one event per actor/action/entity.
+Required durable inbox events: match discovered; proposal sent/received; accepted/declined/cancelled/released; message received; meetup required/proposed/confirmed; handoff required/confirmed; active/return reminder/return confirmed; early-return; peer issue reported/responded; completed/review requested. Every lifecycle notification carries an exact authenticated deep link. Duplicate retries must resolve to one event per actor/action/entity.
 
 ## Release/unreserve behavior
 
@@ -67,7 +73,7 @@ Required durable inbox events: match discovered; proposal sent/received; accepte
 |---|---|---|
 | Pending proposal | Release this set | request cancelled/released, both pending reservations removed, counterparty notified |
 | Accepted before handoff | Release this set | exchange released, both items available, counterparty notified |
-| Active after handoff | Request early return / contact participant / report issue | no silent unreserve; active reservation remains until safe return or dispute resolution |
+| Active after mutual handoff | Request early return / contact participant / report peer issue | no silent unreserve; active reservation remains until safe return; issue/support sidecars do not change custody |
 
 ## Implementation and test plan
 

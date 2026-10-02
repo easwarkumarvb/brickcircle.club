@@ -79,7 +79,7 @@ function visibleRows(table,query){
   if(table==='exchange_case_events')rows=data.events.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
   if(table==='exchange_case_issues')rows=data.issues.filter(row=>isParticipant(findCase(row.case_id)));
   if(table==='exchange_case_issue_responses')rows=data.issueResponses.filter(row=>{const issue=issueById(row.issue_id);return Boolean(issue)&&isParticipant(findCase(issue.case_id))});
-  if(table==='exchange_case_support_requests')rows=data.supportRequests.filter(row=>isParticipant(findCase(row.case_id)));
+  if(table==='exchange_case_support_requests')rows=data.supportRequests.filter(row=>row.requested_by===active().id);
   if(table==='notifications')rows=data.notifications.filter(row=>row.user_id===active().id);
   if(table==='messages')rows=data.directMessages.filter(row=>row.sender_id===active().id||row.recipient_id===active().id);
   if(table==='reviews')rows=data.reviews;
@@ -311,7 +311,7 @@ const db={
         else return {data:null,error:{message:'Only participants can update this issue'}};
         if(issue.ack_reporter_at&&issue.ack_subject_at){issue.status='resolved';issue.resolved_at=NOW;issue.unresolved_at=null}
       }else if(action==='unresolved'){
-        issue.status='unresolved';issue.unresolved_at=NOW;
+        issue.status='unresolved';issue.unresolved_at=NOW;issue.unresolved_by=active().id;
       }else return {data:null,error:{message:`Unsupported issue status action: ${action}`}};
       issue.updated_at=NOW;persist();
       return {data:{ok:true,issue},error:null};
@@ -339,7 +339,7 @@ const db={
       if(!Number.isFinite(due))return {data:0,error:null};
       let asOf=Date.parse(args.p_as_of===undefined||args.p_as_of===null||args.p_as_of===''?NOW:args.p_as_of);
       if(!Number.isFinite(asOf))asOf=Date.parse(NOW);
-      return {data:Math.max(0,Math.floor((asOf-due)/DAY_MS)),error:null};
+      return {data:Math.max(0,Math.ceil((asOf-due)/DAY_MS)),error:null};
     }
     if(name==='submit_peer_exchange_review'){
       const exchange=findParticipantCase(args.p_case_id);
@@ -370,7 +370,7 @@ const db={
       if(reviews.length>=2)return {data:reviews.map(row=>({...row})),error:null};
       if(reviews.length===0)return {data:[],error:null};
       const reveals=reviews.map(row=>Date.parse(row.reveal_after)).filter(value=>Number.isFinite(value)).sort((a,b)=>a-b);
-      if(reveals.length===0||reveals[0]>Date.parse(NOW))return {data:[],error:null};
+      if(reveals.length===0||reveals[0]>Date.parse(NOW))return {data:reviews.filter(row=>row.reviewer_id===active().id).map(row=>({...row})),error:null};
       return {data:reviews.map(row=>({...row})),error:null};
     }
     if(name==='exchange_peer_reputation_summary'){
@@ -385,15 +385,16 @@ const db={
         return Number.isFinite(due)&&Number.isFinite(completedAt)&&completedAt<=due;
       });
       const caseIds=new Set(cases.map(row=>row.id));
-      const unresolved=data.issues.filter(issue=>caseIds.has(issue.case_id)&&issue.status!=='resolved');
+      const unresolved=data.issues.filter(issue=>issue.subject_user_id===userId&&issue.status==='unresolved'&&(issue.unresolved_by===userId||data.issueResponses.some(response=>response.issue_id===issue.id&&response.responder_id===userId)));
       const now=Date.parse(NOW);
-      const revealed=data.peerReviews.filter(row=>row.reviewee_id===userId&&Number.isFinite(Date.parse(row.reveal_after))&&Date.parse(row.reveal_after)<=now);
+      const revealed=data.peerReviews.filter(row=>row.reviewee_id===userId&&(Number.isFinite(Date.parse(row.reveal_after))&&Date.parse(row.reveal_after)<=now||data.peerReviews.some(counterpart=>counterpart.case_id===row.case_id&&counterpart.reviewer_id!==row.reviewer_id)));
       const again=revealed.filter(row=>row.would_exchange_again===true);
       const counterparties=new Set();
       for(const row of cases){const other=row.user_a===userId?row.user_b:row.user_a;if(other&&other!==userId)counterparties.add(other)}
       return {data:{
         user_id:userId,
         completed_exchanges:completed.length,
+        return_tracked_exchanges:tracked.length,
         tracked_returns:tracked.length,
         on_time_returns:onTime.length,
         on_time_return_percentage:tracked.length?Math.round((onTime.length/tracked.length)*100):null,

@@ -399,6 +399,22 @@ begin
 end $$;
 reset role;
 
+-- Support notes are requester-private even from the exchange counterparty.
+set local role authenticated;
+set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000081';
+select pg_temp.assert_true(
+  (select count(*)=1 from public.exchange_case_support_requests where idempotency_key='pt-support-1'),
+  'support requester cannot read their own support request'
+);
+reset role;
+set local role authenticated;
+set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000082';
+select pg_temp.assert_true(
+  (select count(*)=0 from public.exchange_case_support_requests where idempotency_key='pt-support-1'),
+  'counterparty can read an out-of-band support note'
+);
+reset role;
+
 -- Overdue days derive objectively from return_due_at and the supplied clock.
 set local role authenticated;
 set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000081';
@@ -442,8 +458,18 @@ select public.submit_peer_exchange_review(
   'Accurate set; return coordination took longer than expected.','pt-review-a'
 );
 select pg_temp.assert_true(
+  (select count(*)=1
+     from public.get_peer_exchange_reviews('83000000-0000-4000-8000-000000000002')
+     where reviewer_id='80000000-0000-4000-8000-000000000081'),
+  'review author cannot see their own hidden review'
+);
+reset role;
+
+set local role authenticated;
+set local "request.jwt.claim.sub"='80000000-0000-4000-8000-000000000082';
+select pg_temp.assert_true(
   (select count(*)=0 from public.get_peer_exchange_reviews('83000000-0000-4000-8000-000000000002')),
-  'first review leaked before the double-blind reveal condition'
+  'counterparty review leaked before they submitted or the reveal window opened'
 );
 reset role;
 
@@ -567,12 +593,17 @@ select pg_temp.assert_true(
 reset role;
 
 select pg_temp.assert_true(
-  not has_function_privilege('authenticated','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE'),
+  not has_function_privilege('authenticated','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE')
+  and not has_function_privilege('anon','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE'),
   'authenticated/admin browser role can still arbitrate a disputed exchange'
 );
 select pg_temp.assert_true(
   has_function_privilege('service_role','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE'),
-  'legacy platform-integrity repair path was accidentally removed from service role'
+  'technical repair path was revoked without a forward-only replacement'
+);
+select pg_temp.assert_true(
+  has_function_privilege('service_role','public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text)','EXECUTE'),
+  'dedicated legacy technical reconciliation path was accidentally removed'
 );
 select pg_temp.assert_true(
   has_function_privilege('authenticated','public.cancel_exchange_case_before_mutual_handoff(uuid,bigint,text,text)','EXECUTE')

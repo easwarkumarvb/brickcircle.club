@@ -2,6 +2,16 @@
 
 This runbook is for an isolated staging project only. It does not authorize a production migration or deployment.
 
+## Peer-trust operating model
+
+For new canonical exchanges, admin is not part of the normal lifecycle. Before mutual physical handoff, either participant can cancel and the server releases the case locks and restores the captured owner availability preferences. Once both handoffs are confirmed, custody is governed by the return workflow.
+
+Post-handoff problems use peer-managed issue records. Issues, participant responses, support requests and reviews are sidecars: they do **not** change custody or move the case into an admin-resolution state. A support request is exceptional and out-of-band; support can assist with platform, safety, account and technical matters but does not decide fault or choose a winner. The contact address is `support@brickcircle.club`.
+
+Verified reviews become available only for completed post-handoff cases. They are structured and double-blind: counterpart review content is revealed only after both submit or after the reveal window. Reputation summaries combine revealed reviews with objective platform metrics such as completed exchanges, tracked/on-time returns, unresolved issue count and unique counterparties.
+
+`DISPUTED` and `HANDOFF_ISSUE` are retained only for legacy compatibility/quarantine. The service-role procedure below exists solely to reconcile ambiguous migrated custody/lock data and must not be used as ordinary user dispute arbitration.
+
 ## Preconditions
 
 - Apply the migration to a disposable PostgreSQL 17/Supabase environment reconstructed from the approved baseline.
@@ -10,7 +20,7 @@ This runbook is for an isolated staging project only. It does not authorize a pr
 - Review every migration_review_required case before enabling writes.
 - Keep the previous web release available for frontend rollback; database rollback is forward repair only.
 
-## Administrator legacy-quarantine reconciliation
+## Legacy technical custody reconciliation (service role only; not dispute arbitration)
 
 This procedure runs only from the approved server-side administration service with the `service_role` credential. The service must authenticate the human administrator, pass that administrator's UUID as `p_administrator_id`, and confirm that UUID already exists in `private.exchange_admins`. Never expose the service credential or either reconciliation RPC to a browser. Ordinary participants intentionally have no `EXECUTE` privilege and no access to the lock or reconciliation tables.
 
@@ -201,7 +211,7 @@ Use two ordinary adult accounts in the same city. Each account needs an owned se
 5. User A accepts. Confirm both sets show Reserved and neither appears in matching.
 6. Propose and accept a future public meetup. Confirm the other participant cannot silently overwrite an accepted meetup.
 7. Both users acknowledge the safety checklist, mark arrival, and approve inspection. Confirm handoff remains unavailable until both inspections exist.
-8. User A confirms handoff. Attempt cancellation and confirm the case becomes a handoff issue and both items remain locked; use a separate clean case for the happy path.
+8. User A confirms handoff. Before User B confirms, cancel the exchange and confirm the case becomes `CANCELLED` (not `HANDOFF_ISSUE`), both case locks are released, and each captured owner availability preference is restored. Use a separate clean case for the happy path.
 9. On the clean case, both users confirm handoff. Confirm ACTIVE begins only after the second confirmation and return_due_at is exactly the chosen duration after handoff_at.
 10. Send and retry one case message. Confirm one durable message and one recipient notification.
 11. Request early return, propose and accept a public return meetup, then have both users arrive, inspect and confirm physical return.
@@ -210,7 +220,7 @@ Use two ordinary adult accounts in the same city. Each account needs an owned se
 14. Repeat a proposal and cancel before handoff. Confirm each owner preference is restored.
 15. Block one collector. Confirm the pair disappears from matching and proposal creation is rejected in either direction.
 16. As a third ordinary account, verify cases, events, messages and notifications are unreadable and no lifecycle table is directly writable.
-17. Report an issue. Confirm the case stays locked, messages remain readable, and only a user recorded in private.exchange_admins can execute the resolution RPC.
+17. After mutual handoff, report an issue. Confirm the lifecycle state and custody do not change, the peer issue and responses remain participant-scoped, and either participant can acknowledge resolution or leave it unresolved. Submit a support request and confirm it records the case/state without changing lifecycle. Verify no normal participant or admin dispute-adjudication control is exposed.
 
 ## Failure and recovery checks
 
