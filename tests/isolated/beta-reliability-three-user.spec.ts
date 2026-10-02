@@ -171,7 +171,7 @@ test('an owner cancels an accepted pre-handoff case and both preferences remain 
   await page.getByRole('button',{name:'Accept proposal'}).click();
   await switchActor(page,'easwar');
   await page.locator('[data-nav="sets"]').first().click();
-  const release=page.getByRole('button',{name:'Open safe release options'});
+  const release=page.getByRole('button',{name:'Cancel before handoff'});
   await expect(release).toBeVisible();
   page.once('dialog',dialog=>dialog.accept());
   await release.click();
@@ -219,7 +219,7 @@ test('retired release capability is ignored while canonical set controls remain 
   });
   await page.reload();
   await page.locator('[data-nav="sets"]').first().click();
-  await expect(page.getByRole('button',{name:'Open safe release options'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
   await page.locator('[data-exchangeable="ordinary-item"]').check();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.id==='ordinary-item')?.available_for_exchange)).toBe(true);
   const calls=await page.evaluate(()=>window.__bcThreeUser.rpcCalls);

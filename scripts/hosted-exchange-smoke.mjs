@@ -259,20 +259,18 @@ async function assertCatalogSets(session, setNumbers) {
   for (const setNumber of setNumbers) assert.ok(found.has(setNumber), `Staging catalogue is missing ${setNumber}`);
 }
 
-async function insertOwnedItem(session, setNumber, runId) {
-  const id = randomUUID();
+export async function insertOwnedItem(session, setNumber, runId) {
   const { data, error } = await session.client.from('collection_items').insert({
-    id,
     user_id: session.id,
     set_number: setNumber,
     condition: 'Excellent',
     completeness: 100,
     original_box: false,
     notes: `[${runId}] hosted Supabase release-gate fixture`,
-    owner_photo_path: `hosted-smoke/${runId}/${session.label.toLowerCase()}.jpg`,
-    available_for_exchange: false
+    owner_photo_path: `hosted-smoke/${runId}/${session.label.toLowerCase()}.jpg`
   }).select('*').single();
   if (error) throw new Error(`Could not create staging item ${session.label}: ${error.message}`);
+  assert.ok(data?.id, `Staging item ${session.label} must return a database-generated id`);
   return data;
 }
 

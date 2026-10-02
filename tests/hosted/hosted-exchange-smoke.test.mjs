@@ -10,6 +10,7 @@ import {
   classifySmokeFailure,
   countRows,
   idempotencyKey,
+  insertOwnedItem,
   loadHostedSmokeConfig,
   projectRefFromUrl,
   redactIdentifier,
@@ -124,6 +125,66 @@ test('generates deterministic per-intent idempotency keys', () => {
   assert.equal(idempotencyKey('run-1', 'counter'), idempotencyKey('run-1', 'counter'));
   assert.notEqual(idempotencyKey('run-1', 'counter'), idempotencyKey('run-1', 'accept'));
   assert.notEqual(idempotencyKey('run-1', 'counter'), idempotencyKey('run-2', 'counter'));
+});
+
+test('insertOwnedItem never writes the protected id or available_for_exchange columns and returns the database-generated id', async () => {
+  const sent = [];
+  const generatedId = '22222222-2222-4222-8222-222222222222';
+  const session = {
+    label: 'A',
+    id: '11111111-1111-4111-8111-111111111111',
+    client: {
+      from(table) {
+        assert.equal(table, 'collection_items');
+        return {
+          insert(payload) {
+            sent.push(payload);
+            return {
+              select() {
+                return {
+                  single: async () => ({ data: { ...payload, id: generatedId }, error: null })
+                };
+              }
+            };
+          }
+        };
+      }
+    }
+  };
+
+  const inserted = await insertOwnedItem(session, '10725-1', 'run-1');
+
+  assert.equal(sent.length, 1);
+  assert.equal('id' in sent[0], false, 'harness must not send an explicit id');
+  assert.equal('available_for_exchange' in sent[0], false, 'harness must not send available_for_exchange');
+  assert.deepEqual(
+    Object.keys(sent[0]).sort(),
+    ['completeness', 'condition', 'notes', 'original_box', 'owner_photo_path', 'set_number', 'user_id'],
+    'only descriptively granted columns may be inserted directly'
+  );
+  assert.equal(inserted.id, generatedId, 'the database-generated id must be captured');
+});
+
+test('insertOwnedItem fails closed when the insert is rejected or no id is returned', async () => {
+  const rejecting = {
+    label: 'B',
+    id: '11111111-1111-4111-8111-111111111111',
+    client: {
+      from: () => ({
+        insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: 'permission denied for table collection_items' } }) }) })
+      })
+    }
+  };
+  await assert.rejects(() => insertOwnedItem(rejecting, '10725-1', 'run-1'), /Could not create staging item B: permission denied for table collection_items/);
+
+  const idless = {
+    label: 'C',
+    id: '11111111-1111-4111-8111-111111111111',
+    client: {
+      from: () => ({ insert: payload => ({ select: () => ({ single: async () => ({ data: { ...payload }, error: null }) }) }) })
+    }
+  };
+  await assert.rejects(() => insertOwnedItem(idless, '10725-1', 'run-1'), /must return a database-generated id/);
 });
 
 test('serializes only redacted, credential-free evidence', () => {
