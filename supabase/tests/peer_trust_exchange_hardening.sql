@@ -594,12 +594,9 @@ reset role;
 
 select pg_temp.assert_true(
   not has_function_privilege('authenticated','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE')
-  and not has_function_privilege('anon','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE'),
-  'authenticated/admin browser role can still arbitrate a disputed exchange'
-);
-select pg_temp.assert_true(
-  has_function_privilege('service_role','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE'),
-  'technical repair path was revoked without a forward-only replacement'
+  and not has_function_privilege('anon','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE')
+  and not has_function_privilege('service_role','public.resolve_exchange_case(uuid,bigint,text,text,text)','EXECUTE'),
+  'a runtime role can still force generic admin arbitration of a disputed exchange'
 );
 select pg_temp.assert_true(
   has_function_privilege('service_role','public.reconcile_exchange_quarantine_case(uuid,uuid,bigint,text,text,jsonb,text)','EXECUTE'),

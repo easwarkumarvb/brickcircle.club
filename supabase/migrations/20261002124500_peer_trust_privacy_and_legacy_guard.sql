@@ -133,18 +133,20 @@ begin
 end;
 $$;
 
--- The generic admin resolution function is not a browser-facing product path.
--- `public`/`anon`/`authenticated` are re-asserted here as a defensive
--- idempotent guard. The `service_role` grant is deliberately preserved: it is
--- the only rollback-free technical repair path for already-migrated custody,
--- and revoking it here would remove capability that production repair tooling
--- may depend on. Ordinary dispute adjudication is not offered through it;
--- ambiguous migrated custody is reconciled only through
--- reconcile_exchange_quarantine_case().
+-- The generic admin resolution function is intentionally disabled for ALL
+-- runtime roles, `service_role` included: this product has no normal admin
+-- arbitration, so no caller may force a DISPUTED/HANDOFF_ISSUE case to
+-- COMPLETED/CANCELLED and emit `admin_resolved`. `public`/`anon`/`authenticated`
+-- and `service_role` are all revoked here as a defensive idempotent guard.
+-- The function itself is intentionally not dropped, because historical schema
+-- and migration objects may still reference it; only its executability by
+-- normal runtime roles is removed. Technical legacy migration repair is
+-- performed solely through reconcile_exchange_quarantine_case(), which stays
+-- service-role-only and restricted to quarantined/migration-review cases.
 do $$
 begin
   if pg_catalog.to_regprocedure('public.resolve_exchange_case(uuid,bigint,text,text,text)') is not null then
-    execute 'revoke execute on function public.resolve_exchange_case(uuid,bigint,text,text,text) from public,anon,authenticated';
+    execute 'revoke execute on function public.resolve_exchange_case(uuid,bigint,text,text,text) from public,anon,authenticated,service_role';
   end if;
 end;
 $$;
