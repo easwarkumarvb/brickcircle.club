@@ -621,7 +621,7 @@ begin
   else
     effective_at:=coalesce(p_as_of,pg_catalog.now());
   end if;
-  seconds_late:=pg_catalog.extract(epoch from (effective_at-c.return_due_at));
+  seconds_late:=extract(epoch from (effective_at-c.return_due_at));
   if seconds_late<=0 then return 0; end if;
   return pg_catalog.ceil(seconds_late/86400.0)::integer;
 end;
