@@ -373,7 +373,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .bc-mobile-nav button span{font-size:18px!important}
   .bc-mobile-nav button.active{
     background:#fff0f1!important;
-    color:var(--bc-brand-red)!important;
+    color:var(--bc-brand-red-dark)!important;
   }
 
   .bc-overlay{align-items:flex-end!important;padding:0!important}
