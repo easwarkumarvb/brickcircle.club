@@ -53,3 +53,21 @@ test('mobile exchange detail surfaces the next valid action before secondary con
   await expect(next.getByRole('button',{name:'Accept proposal'})).toBeVisible();
   await noHorizontalOverflow(page);
 });
+
+
+test('proposal dialog keeps keyboard focus inside and returns it on Escape',async({page})=>{
+  await page.goto('/v2.html?isolated=matched#home');
+  await page.getByRole('button',{name:'View my match'}).first().click();
+  const opener=page.getByRole('button',{name:'View & propose'}).first();
+  await opener.click();
+  const modal=page.getByRole('dialog');
+  const close=modal.getByRole('button',{name:'Close dialog'});
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(modal.getByRole('button',{name:'Send proposal'})).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(modal).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});

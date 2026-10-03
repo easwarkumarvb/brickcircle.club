@@ -1,4 +1,5 @@
 import {test,expect} from './fixtures';
+import AxeBuilder from '@axe-core/playwright';
 
 test('mobile Find Sets is search-first, category-led and opens collector set detail',async({page})=>{
   await page.setViewportSize({width:390,height:844});
@@ -30,11 +31,23 @@ test('My LEGO separates owned, wanted and available inventory on mobile',async({
   await expect(page.getByRole('button',{name:/Wanted ·/})).toBeVisible();
   const available=page.getByRole('button',{name:/Available ·/});
   await expect(available).toBeVisible();
+  await expect(available).toHaveAttribute('aria-pressed','false');
 
   await available.click();
   await expect(available).toHaveClass(/active/);
+  await expect(available).toHaveAttribute('aria-pressed','true');
+  await expect(available).toBeFocused();
   await expect(page.locator('#bc-sets-body')).toContainText('Available to Exchange');
   await expect(page.getByRole('button',{name:/View exchange history/})).toBeVisible();
 
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+});
+
+
+test('My LEGO inventory controls have no serious accessibility violations',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.goto('/v2.html?isolated=ready-one#sets');
+  await expect(page.getByRole('group',{name:'My LEGO inventory'})).toBeVisible();
+  const {violations}=await new AxeBuilder({page}).include('#bc-main').withTags(['wcag2a','wcag2aa','wcag21a','wcag21aa']).analyze();
+  expect(violations.filter(v=>v.impact==='serious'||v.impact==='critical')).toEqual([]);
 });

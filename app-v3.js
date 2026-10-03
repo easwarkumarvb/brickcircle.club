@@ -120,9 +120,19 @@ function fail(error,fallback='Something went wrong. Please try again.'){
   console.error(error);toast(error?.message||fallback);
 }
 function modal(html,wide=false){
-  closeOverlay();const o=document.createElement('div');o.className='bc-overlay';o.id='bc-overlay';o.innerHTML=`<section class="bc-modal ${wide?'wide':''}" role="dialog" aria-modal="true">${html}</section>`;document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)closeOverlay()});applyA11y(o);announceRender(o);return o;
+  closeOverlay();const opener=document.activeElement,o=document.createElement('div');o.className='bc-overlay';o.id='bc-overlay';o.innerHTML=`<section class="bc-modal ${wide?'wide':''}" role="dialog" aria-modal="true">${html}</section>`;o.bcReturnFocus=opener;document.body.appendChild(o);
+  const controls=()=>$$('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',o).filter(el=>el.getClientRects().length);
+  o.addEventListener('click',e=>{if(e.target===o)closeOverlay()});
+  o.addEventListener('keydown',event=>{
+    if(event.key==='Escape'){event.preventDefault();closeOverlay();return}
+    if(event.key!=='Tab')return;
+    const items=controls(),first=items[0],last=items[items.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}
+  });
+  applyA11y(o);controls()[0]?.focus();announceRender(o);return o;
 }
-function closeOverlay(){document.getElementById('bc-overlay')?.remove()}
+function closeOverlay(){const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.remove();if(opener?.isConnected)opener.focus()}
 function drawer(html){
   document.getElementById('bc-drawer-overlay')?.remove();const o=document.createElement('div');o.className='bc-drawer-overlay';o.id='bc-drawer-overlay';o.innerHTML=`<aside class="bc-drawer">${html}</aside>`;document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)o.remove()});applyA11y(o);announceRender(o);return o;
 }
@@ -682,7 +692,7 @@ async function renderSets(token,legacy='sets'){
   if(!S.user){showAuth();return navigate('home')}if(legacy==='wishlist')S.setTab='wishlist';if(legacy==='collection')S.setTab='collection';
   const progress=guidedProgress(),owned=S.collection.length,wanted=S.wishlist.length,available=S.collection.filter(x=>x.available_for_exchange).length;
   if(!['collection','wishlist','available'].includes(S.setTab))S.setTab='collection';
-  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">YOUR COLLECTION</span><h1>My LEGO</h1><p>Everything you own, want and have ready for exchange.</p></div><div class="bc-head-actions"><button class="bc-btn primary" data-action="browse">＋ Find sets</button></div></div><div class="bc-setup-summary" aria-label="Match setup counts"><span><b>${owned}</b> owned</span><span><b>${wanted}</b> wanted</span><span><b>${available}</b> available</span><strong>${esc(progress.status)}</strong></div><div class="bc-tabs" role="tablist"><button class="bc-tab ${S.setTab==='collection'?'active':''}" data-settab="collection">Owned · ${owned}</button><button class="bc-tab ${S.setTab==='wishlist'?'active':''}" data-settab="wishlist">Wanted · ${wanted}</button><button class="bc-tab ${S.setTab==='available'?'active':''}" data-settab="available">Available · ${available}</button></div><div id="bc-sets-body"></div><div class="bc-my-lego-footer"><button class="bc-btn ghost" data-action="exchanges">View exchange history →</button></div>`);$$('[data-settab]').forEach(b=>b.onclick=()=>{S.setTab=b.dataset.settab;renderSets(S.renderToken)});renderSetsBody();
+  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">YOUR COLLECTION</span><h1>My LEGO</h1><p>Everything you own, want and have ready for exchange.</p></div><div class="bc-head-actions"><button class="bc-btn primary" data-action="browse">＋ Find sets</button></div></div><div class="bc-setup-summary" aria-label="Match setup counts"><span><b>${owned}</b> owned</span><span><b>${wanted}</b> wanted</span><span><b>${available}</b> available</span><strong>${esc(progress.status)}</strong></div><div class="bc-tabs" role="group" aria-label="My LEGO inventory"><button class="bc-tab ${S.setTab==='collection'?'active':''}" data-settab="collection" aria-pressed="${S.setTab==='collection'}" aria-controls="bc-sets-body">Owned · ${owned}</button><button class="bc-tab ${S.setTab==='wishlist'?'active':''}" data-settab="wishlist" aria-pressed="${S.setTab==='wishlist'}" aria-controls="bc-sets-body">Wanted · ${wanted}</button><button class="bc-tab ${S.setTab==='available'?'active':''}" data-settab="available" aria-pressed="${S.setTab==='available'}" aria-controls="bc-sets-body">Available · ${available}</button></div><div id="bc-sets-body"></div><div class="bc-my-lego-footer"><button class="bc-btn ghost" data-action="exchanges">View exchange history →</button></div>`);$$('[data-settab]').forEach(b=>b.onclick=()=>{const tab=b.dataset.settab;S.setTab=tab;renderSets(S.renderToken);$(`[data-settab="${tab}"]`,app())?.focus()});renderSetsBody();
 }
 function renderSetsBody(){
   const host=$('#bc-sets-body');if(!host)return;
