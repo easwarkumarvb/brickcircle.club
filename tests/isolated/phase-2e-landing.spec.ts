@@ -19,7 +19,7 @@ test('desktop landing tells the complete exchange story with minimal copy',async
 
 test('hero and final conversion actions reuse the existing auth flow',async({page})=>{
   await page.goto('/v2.html?isolated=signed-out#home');
-  await page.getByRole('button',{name:'Join BrickCircle'}).click();
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
   await expect(page.locator('#bc-overlay')).toBeVisible();
   await page.locator('#bc-overlay [data-close]').click();
   await page.getByRole('button',{name:'Join BrickCircle beta'}).click();
