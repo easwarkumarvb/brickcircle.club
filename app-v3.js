@@ -528,7 +528,7 @@ function homeNextAction(progress,active,pending,matches){
   return {kicker:'YOUR NEXT BEST MOVE',title:progress.action.label,copy:progress.guidance,label:progress.action.label,go:progress.action.go,tone:'red'};
 }
 function homeOnboarding(progress){
-  if(!progress.setupRemaining)return '';
+  if(!progress.setupRemaining||S.matches.length||activeExchanges().length||pendingRequests().length)return '';
   const owned=S.collection.length,wanted=S.wishlist.length,available=S.collection.filter(x=>x.available_for_exchange).length;
   return `<section class="bc-onboarding-card" aria-labelledby="home-onboarding-title"><div class="bc-onboarding-copy"><span>2-MINUTE SETUP</span><h2 id="home-onboarding-title">Get match-ready in three moves</h2><p>Start small. One useful collection signal is better than a long setup form.</p></div><div class="bc-onboarding-steps"><article class="${owned?'done':''}"><b>${owned?'✓':'1'}</b><span>Add what you own</span></article><article class="${wanted?'done':''}"><b>${wanted?'✓':'2'}</b><span>Save what you want</span></article><article class="${available?'done':''}"><b>${available?'✓':'3'}</b><span>Make one set available</span></article></div><button class="bc-btn primary" data-guided-action="${progress.action.go}">${esc(progress.action.label)}</button></section>`;
 }
