@@ -592,7 +592,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   line-height:1;
   font-weight:900;
   letter-spacing:.12em;
-  color:var(--bc-brand-red);
+  color:var(--bc-brand-red-dark);
 }
 .bc-discovery-chips{
   display:flex;
