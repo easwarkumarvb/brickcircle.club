@@ -256,6 +256,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   border:0!important;
   border-radius:11px!important;
   padding:9px 13px!important;
+  color:#4f504d!important;
 }
 .bc-tab.active{
   background:#fff!important;
