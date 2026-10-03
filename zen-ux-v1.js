@@ -57,14 +57,6 @@ function simplifyHeadings(){
     setText(main.querySelector('.bc-page-head h1'),'My LEGO');
     setText(main.querySelector('.bc-page-head p'),'Your collection and the sets you want next.');
   }
-  if(route()==='matches'){
-    setText(main.querySelector('.bc-page-head h1'),'Matches');
-    setText(main.querySelector('.bc-page-head p'),'Only mutual matches appear here.');
-  }
-  if(route()==='exchanges'){
-    setText(main.querySelector('.bc-page-head h1'),'Exchanges');
-    setText(main.querySelector('.bc-page-head p'),'One place for proposals, active exchanges and returns.');
-  }
 }
 
 function removeRedundantLandingSections(){
