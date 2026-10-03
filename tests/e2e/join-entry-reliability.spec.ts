@@ -31,6 +31,6 @@ test('PWA cache includes the canonical app and current image assets',()=>{
   expect(sw).not.toContain('/v3-auth-onboarding-hotfix.js');
   expect(sw).not.toContain('/set-image-fix-v34.js');
   expect(sw).toContain(`/app-v3.js?v=${release}`);
-  expect(sw).toContain(`/catalogue-discovery-v1.js?v=${release}`);
+  expect(sw).not.toContain(`/catalogue-discovery-v1.js?v=${release}`);
   expect(sw).not.toContain("/catalog-search-v32.js");
 });

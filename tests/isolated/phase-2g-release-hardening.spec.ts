@@ -79,28 +79,17 @@ test('failed slices stay visible while successful slices refresh, then true sign
 });
 
 
-test('iconic discovery shows 50 image-led sets without eager-loading the full gallery',async({page})=>{
+test('canonical browse owns iconic discovery without a duplicate gallery',async({page})=>{
   await page.goto('/v2.html?isolated=ready-zero#browse');
-  const discovery=page.locator('[data-bc-iconic-discovery]');
-  await expect(discovery).toBeVisible();
-  await expect(discovery.locator('[data-bc-iconic-set]')).toHaveCount(50);
-  await expect(discovery.locator('[data-bc-iconic-image]')).toHaveCount(50);
-  await expect(discovery.locator('[data-bc-iconic-image][loading="eager"]')).toHaveCount(6);
-  await expect(discovery.locator('[data-bc-iconic-image][loading="lazy"]')).toHaveCount(44);
-  await expect(discovery.locator('[data-bc-iconic-image][fetchpriority="high"]')).toHaveCount(3);
 
-  const malformedSources=await discovery.locator('[data-bc-iconic-image]').evaluateAll(images=>images
-    .map(image=>image.getAttribute('src')||image.getAttribute('data-src')||'')
-    .filter(source=>source.includes('-1-1.jpg')));
-  expect(malformedSources).toEqual([]);
-
-  await discovery.getByRole('button',{name:'Space & flight'}).click();
-  await expect(discovery.locator('[data-bc-iconic-group="space"]:not([hidden])')).toHaveCount(7);
-  await expect(discovery.locator('[data-bc-iconic-group]:not([hidden])')).toHaveCount(7);
-
-  await discovery.getByRole('button',{name:'All 50'}).click();
-  await discovery.locator('[data-bc-iconic-set="42143"]').click();
-  await expect(page.locator('#bc-q')).toHaveValue('42143');
+  await expect(page.getByRole('heading',{name:'100 iconic LEGO sets'})).toBeVisible();
+  await expect(page.locator('[data-bc-iconic-discovery]')).toHaveCount(0);
+  await expect(page.locator('.bc-pager')).toHaveCount(0);
+  await expect(page.locator('#bc-theme')).toHaveCount(0);
+  await expect(page.locator('#bc-year')).toHaveCount(0);
+  await expect(page.locator('#bc-set-grid .bc-set-card')).toHaveCount(3);
+  await expect(page.locator('#bc-set-grid .bc-set-card').first()).toContainText('Ferrari Daytona SP3');
+  await expect(page.locator('#bc-cat-page-size')).toHaveText('100 curated sets · one page');
 });
 
 

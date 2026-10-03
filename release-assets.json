@@ -1,5 +1,5 @@
 {
-  "release": "20261001-collector-avatar-pipeline-r1",
+  "release": "20261003-iconic-100-catalogue-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -14,7 +14,6 @@
     "/locations-v3.js",
     "/web-push-config.js",
     "/app-v3.js",
-    "/catalogue-discovery-v1.js",
     "/zen-ux-v1.js",
     "/assets/brickcircle-logo.png"
   ]

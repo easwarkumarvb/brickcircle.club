@@ -61,7 +61,7 @@ The replacement in this branch introduces one versioned `exchange_cases` record 
 
 ## Runtime inventory
 
-The production shell is `v2.html`. It loads one Supabase client and core owner (`app-v3.js`), plus `catalogue-discovery-v1.js` and `zen-ux-v1.js`. Numerous older root-level scripts remain in the repository (`auth-v3-hotfix.js`, `exchangeable-persistence-v1.js`, `meetup-submit-hotfix.js`, `session-persistence-v1.js`, older `v2*` runtimes), but they are not loaded by `v2.html` at this base.
+The production shell is `v2.html`. It loads one Supabase client and core owner (`app-v3.js`) plus the presentation-only `zen-ux-v1.js`. Catalogue discovery is now owned directly by `app-v3.js`; the legacy `catalogue-discovery-v1.js` is no longer loaded. Numerous older root-level scripts remain in the repository (`auth-v3-hotfix.js`, `exchangeable-persistence-v1.js`, `meetup-submit-hotfix.js`, `session-persistence-v1.js`, older `v2*` runtimes), but they are not loaded by `v2.html` at this base.
 
 Release assets are synchronized through `release-assets.json`, `v2.html`, and `catalogue-cache-sw.js`. PWA registration remains disabled by the current beta runtime and must stay disabled.
 
