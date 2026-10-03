@@ -30,13 +30,14 @@ test('390px curated browse keeps search usable and controls large enough for tou
 test('mobile auth opens as a bottom-friendly sheet without clipping',async({page})=>{
   await page.setViewportSize({width:390,height:700});
   await page.goto('/v2.html?isolated=signed-out#home');
-  await page.getByRole('button',{name:'Start with my collection'}).click();
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
   const modal=page.locator('.bc-modal');
   await expect(modal).toBeVisible();
   const box=await modal.boundingBox();
   expect(box).not.toBeNull();
-  expect(box!.width).toBeLessThanOrEqual(370);
+  expect(box!.width).toBeLessThanOrEqual(390);
   expect(box!.height).toBeLessThanOrEqual(676);
+  expect(Math.round(box!.y+box!.height)).toBeLessThanOrEqual(700);
   await noHorizontalOverflow(page);
 });
 

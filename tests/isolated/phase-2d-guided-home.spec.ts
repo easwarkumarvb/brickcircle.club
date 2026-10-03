@@ -2,18 +2,18 @@ import {test,expect} from './fixtures';
 
 test('signed-out homepage explains Own Want Match Exchange with the requested entry points',async({page})=>{
   await page.goto('/v2.html?isolated=signed-out#home');
-  await expect(page.getByRole('heading',{name:'Experience more LEGO without buying every set.'})).toBeVisible();
-  await expect(page.locator('.bc-hero')).toContainText('Add what you own. Pick what you want.');
-  await expect(page.getByRole('button',{name:'Start with my collection'})).toBeVisible();
-  await expect(page.getByRole('button',{name:'See how it works'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Buy Less. Build More.'})).toBeVisible();
+  await expect(page.locator('.bc-hero')).toContainText('Exchange iconic LEGO sets locally with trusted collectors.');
+  await expect(page.getByRole('button',{name:'Explore iconic sets'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'How it works'})).toBeVisible();
   await expect(page.locator('#how-it-works')).toContainText('Ferrari Daytona SP3');
   await expect(page.locator('.bc-landing-workflow')).toContainText('Add your LEGO sets');
   await expect(page.locator('.bc-landing-workflow')).toContainText('Pick your next experience');
   await expect(page.locator('.bc-example-match')).toContainText('Reciprocal Match');
   await expect(page.locator('.bc-trust')).toContainText('No shipping required');
   await page.waitForTimeout(400);
-  await expect(page.getByRole('button',{name:'Start with my collection'})).toBeVisible();
-  await page.getByRole('button',{name:'Start with my collection'}).click();
+  await expect(page.getByRole('button',{name:'Join BrickCircle',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
   await expect(page.locator('#bc-overlay')).toBeVisible();
 });
 

@@ -3,7 +3,7 @@ import {test,expect} from './fixtures';
 test('desktop landing tells the complete exchange story with minimal copy',async({page})=>{
   await page.setViewportSize({width:1280,height:800});
   await page.goto('/v2.html?isolated=signed-out#home');
-  await expect(page.getByRole('heading',{name:'Experience more LEGO without buying every set.'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Buy Less. Build More.'})).toBeVisible();
   await expect(page.locator('.bc-story-flow article')).toHaveCount(4);
   await expect(page.locator('.bc-story-flow')).toContainText('YOU OWN');
   await expect(page.locator('.bc-story-flow')).toContainText('YOU WANT');
@@ -14,22 +14,22 @@ test('desktop landing tells the complete exchange story with minimal copy',async
   await expect(page.locator('.bc-trust-grid span')).toHaveCount(6);
   await expect(page.locator('.bc-landing-hero img[loading="eager"]')).toHaveCount(2);
   await expect(page.locator('img[data-set-image][loading="lazy"]')).toHaveCount(4);
-  await expect(page.getByRole('button',{name:'Add your first set'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Join BrickCircle beta'})).toBeVisible();
 });
 
 test('hero and final conversion actions reuse the existing auth flow',async({page})=>{
   await page.goto('/v2.html?isolated=signed-out#home');
-  await page.getByRole('button',{name:'Start with my collection'}).click();
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
   await expect(page.locator('#bc-overlay')).toBeVisible();
   await page.locator('#bc-overlay [data-close]').click();
-  await page.getByRole('button',{name:'Add your first set'}).click();
+  await page.getByRole('button',{name:'Join BrickCircle beta'}).click();
   await expect(page.locator('#bc-email-signin')).toBeVisible();
 });
 
-test('See how it works moves the visual story into view',async({page})=>{
+test('How it works moves the visual story into view',async({page})=>{
   await page.setViewportSize({width:1280,height:600});
   await page.goto('/v2.html?isolated=signed-out#home');
-  await page.getByRole('button',{name:'See how it works'}).click();
+  await page.getByRole('button',{name:'How it works'}).click();
   await expect.poll(()=>page.locator('#how-it-works').evaluate(element=>Math.round(element.getBoundingClientRect().top))).toBeLessThan(200);
 });
 
@@ -46,7 +46,7 @@ test('390px landing stacks cleanly with no overflow and unchanged bottom navigat
   await page.setViewportSize({width:390,height:844});
   await page.goto('/v2.html?isolated=signed-out#home');
   await expect(page.locator('.bc-landing-hero')).toBeVisible();
-  await expect(page.getByRole('button',{name:'Start with my collection'})).toBeVisible();
+  await expect(page.getByRole('button',{name:'Explore iconic sets'})).toBeVisible();
   await expect(page.locator('.bc-story-flow article')).toHaveCount(4);
   await expect(page.locator('.bc-landing-workflow article')).toHaveCount(4);
   await expect(page.locator('.bc-mobile-nav')).toBeVisible();
