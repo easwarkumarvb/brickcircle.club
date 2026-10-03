@@ -84,8 +84,9 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     await page.evaluate(()=>{(window as any).bcApplyA11y?.()});
 
     await expect(input).toHaveAttribute('aria-label',/Search.*LEGO/i);
-    await expect(page.locator('#bc-theme')).toHaveAttribute('aria-label',/theme/i);
-    await expect(page.locator('#bc-year')).toHaveAttribute('aria-label',/year/i);
+    await expect(page.locator('#bc-theme')).toHaveCount(0);
+    await expect(page.locator('#bc-year')).toHaveCount(0);
+    await expect(page.locator('#bc-cat-page-size')).toHaveText(/100 curated sets.*one page/i);
 
     await input.fill('McLaren');
     await expect(page.locator('#bc-cat-status')).toContainText(/McLaren/i,{timeout:10000});
