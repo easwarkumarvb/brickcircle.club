@@ -30,7 +30,7 @@ test('390px curated browse keeps search usable and controls large enough for tou
 test('mobile auth opens as a bottom-friendly sheet without clipping',async({page})=>{
   await page.setViewportSize({width:390,height:700});
   await page.goto('/v2.html?isolated=signed-out#home');
-  await page.getByRole('button',{name:'Join BrickCircle'}).click();
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
   const modal=page.locator('.bc-modal');
   await expect(modal).toBeVisible();
   const box=await modal.boundingBox();
