@@ -80,13 +80,16 @@ test('completed canonical case uses structured double-blind peer reviews and pre
   await ramyaContext.close();
 });
 
-test('pre-handoff cancellation remains available after one-sided handoff and releases both sets',async({browser})=>{
+for(const width of [390,1280]){
+test(`pre-handoff cancellation at ${width}px remains available after one-sided handoff and releases both sets`,async({browser})=>{
   const snapshot=seed(exchange('HANDOFF_PENDING',{handoff_a_at:now,handoff_b_at:null,owner_preference_a:true,owner_preference_b:true}));
-  const context=await browser.newContext(),page=await openActor(context,'easwar',snapshot);
+  const context=await browser.newContext({viewport:{width,height:844}}),page=await openActor(context,'easwar',snapshot);
+  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toHaveCount(1);
   await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
   page.on('dialog',async dialog=>{if(dialog.type()==='prompt')await dialog.accept('Changed plans before mutual handoff');else await dialog.accept()});
   await page.getByRole('button',{name:'Cancel before handoff'}).click();
   await expect(page.getByText('Cancelled',{exact:true}).first()).toBeVisible();
+  await expect(page.locator('.bc-mobile-next')).toHaveCount(0);
   const result=await page.evaluate(()=>({data:window.__bcThreeUser.data,calls:window.__bcThreeUser.rpcCalls}));
   expect(result.data.exchanges[0].state).toBe('CANCELLED');
   expect(result.data.exchanges[0].state).not.toBe('HANDOFF_ISSUE');
@@ -94,6 +97,7 @@ test('pre-handoff cancellation remains available after one-sided handoff and rel
   expect(result.calls).toContain('cancel_exchange_case_before_mutual_handoff');
   await context.close();
 });
+}
 
 test('post-handoff issues and support are sidecars and outsiders cannot mutate them',async({browser})=>{
   const snapshot=seed(exchange('ACTIVE',{handoff_at:now,handoff_a_at:now,handoff_b_at:now,return_due_at:'2026-10-30T12:00:00.000Z'}));
