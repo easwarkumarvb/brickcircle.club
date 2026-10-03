@@ -29,6 +29,8 @@ test('mobile proposals are grouped under a needs-action exchange tab',async({pag
   await page.goto('/v2.html?isolated=proposal#exchanges');
 
   await expect(page.getByRole('heading',{name:'Exchanges',exact:true})).toBeVisible();
+  const notification=page.locator('#bc-overlay[data-bc-notification-presentation="proposal"]');
+  if(await notification.count())await notification.getByRole('button',{name:'Not now'}).click();
   const needsAction=page.getByRole('button',{name:/Needs action · 1/});
   await expect(needsAction).toBeVisible();
   await needsAction.click();
