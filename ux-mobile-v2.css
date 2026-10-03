@@ -582,3 +582,177 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .bc-guided-progress .bc-check{min-height:78px!important;padding:10px!important}
   .bc-workflow,.bc-reassurance,.bc-dashboard-grid{display:none!important}
 }
+
+
+/* --- Phase 3: Matches + Exchanges --- */
+.bc-match{
+  position:relative;
+  padding:18px!important;
+  border-left:0!important;
+}
+.bc-match-top{align-items:flex-start!important}
+.bc-match-person b{font-size:1rem}
+.bc-match-sides{
+  gap:10px!important;
+  margin:14px 0!important;
+}
+.bc-match-side{
+  background:#faf9f5!important;
+  border-color:var(--bc-line)!important;
+}
+.bc-match-side label{
+  color:#6b6a65!important;
+  font-size:10px!important;
+}
+.bc-match-why{
+  padding:13px 14px;
+  border-radius:14px;
+  background:#f1f8f4;
+  border:1px solid #d7eadf;
+}
+.bc-match-why>span{
+  display:block;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.1em;
+  color:var(--bc-brand-green);
+}
+.bc-match-why b{
+  display:block;
+  margin-top:4px;
+  font-size:13px;
+  line-height:1.35;
+}
+.bc-match-why small{
+  display:block;
+  margin-top:4px;
+  color:#5f665f;
+}
+.bc-match-actions{
+  margin-top:12px!important;
+}
+.bc-match-actions .bc-btn.primary{
+  min-width:150px;
+}
+
+.bc-ex-next{
+  margin-top:12px;
+  padding:11px 12px;
+  border-radius:12px;
+  background:#f7f5ef;
+  border:1px solid var(--bc-line);
+  display:flex;
+  gap:8px;
+  align-items:baseline;
+}
+.bc-ex-next b{
+  flex:0 0 auto;
+  font-size:10px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--bc-brand-blue);
+}
+.bc-ex-next span{
+  font-size:12px;
+  color:#4e5056;
+  line-height:1.4;
+}
+.bc-next-step-card{
+  border-left:5px solid var(--bc-brand-red)!important;
+  background:linear-gradient(180deg,#fff,#fffaf7)!important;
+}
+.bc-next-step-card>.bc-small{
+  font-weight:900!important;
+  letter-spacing:.1em;
+  color:var(--bc-brand-red)!important;
+}
+.bc-next-step-card>.bc-btn.primary{
+  width:100%;
+}
+.bc-next-step-card>.bc-btn:not(.primary){
+  margin-left:0!important;
+}
+
+@media (max-width:820px){
+  .bc-match-list,.bc-exchange-list{gap:10px!important}
+  .bc-match{padding:14px!important}
+  .bc-match-top{
+    flex-direction:column!important;
+    gap:9px!important;
+  }
+  .bc-match-top>.bc-pill{align-self:flex-start!important}
+  .bc-match-sides{
+    grid-template-columns:1fr!important;
+    gap:8px!important;
+  }
+  .bc-match-arrow{
+    transform:rotate(90deg);
+    font-size:20px!important;
+    min-height:18px;
+  }
+  .bc-match-actions{
+    display:grid!important;
+    grid-template-columns:1fr 1fr!important;
+  }
+  .bc-match-actions .bc-btn{width:100%!important;padding-inline:8px!important}
+
+  .bc-ex-card{padding:14px!important}
+  .bc-ex-top{
+    flex-direction:column!important;
+    gap:10px!important;
+  }
+  .bc-ex-top>.bc-btn{width:100%!important}
+  .bc-ex-progress{margin:12px 0 8px!important}
+  .bc-ex-next{
+    align-items:flex-start!important;
+    flex-direction:column!important;
+    gap:3px!important;
+  }
+
+  .bc-exchange-hero{
+    padding:18px!important;
+    border-radius:18px!important;
+  }
+  .bc-exchange-hero h1{
+    font-size:1.55rem!important;
+    line-height:1.12!important;
+  }
+  .bc-exchange-hero p{font-size:13px!important}
+
+  .bc-timeline{
+    grid-template-columns:1fr!important;
+    gap:0!important;
+    margin-top:14px!important;
+  }
+  .bc-timeline div{
+    display:flex!important;
+    align-items:center!important;
+    gap:9px!important;
+    min-height:34px!important;
+    font-size:12px!important;
+    color:#d6d8de!important;
+  }
+  .bc-timeline i{
+    width:11px!important;
+    height:11px!important;
+    flex:0 0 11px!important;
+    margin:0!important;
+    border-radius:50%!important;
+  }
+  .bc-timeline .done,
+  .bc-timeline .current{color:#fff!important}
+
+  .bc-exchange-layout{
+    display:flex!important;
+    flex-direction:column!important;
+    gap:10px!important;
+  }
+  .bc-exchange-layout>aside{order:-1!important}
+  .bc-flow-card{padding:16px!important}
+  .bc-next-step-card{margin-top:0!important}
+  .bc-next-step-card .bc-btn{
+    width:100%!important;
+    margin-left:0!important;
+  }
+  .bc-chat{max-height:260px!important}
+}
