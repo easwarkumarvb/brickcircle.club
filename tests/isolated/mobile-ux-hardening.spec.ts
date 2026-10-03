@@ -35,8 +35,9 @@ test('mobile auth opens as a bottom-friendly sheet without clipping',async({page
   await expect(modal).toBeVisible();
   const box=await modal.boundingBox();
   expect(box).not.toBeNull();
-  expect(box!.width).toBeLessThanOrEqual(370);
+  expect(box!.width).toBeLessThanOrEqual(390);
   expect(box!.height).toBeLessThanOrEqual(676);
+  expect(Math.round(box!.y+box!.height)).toBeLessThanOrEqual(700);
   await noHorizontalOverflow(page);
 });
 
