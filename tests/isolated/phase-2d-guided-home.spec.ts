@@ -12,8 +12,8 @@ test('signed-out homepage explains Own Want Match Exchange with the requested en
   await expect(page.locator('.bc-example-match')).toContainText('Reciprocal Match');
   await expect(page.locator('.bc-trust')).toContainText('No shipping required');
   await page.waitForTimeout(400);
-  await expect(page.getByRole('button',{name:'Join / Sign in'})).toBeVisible();
-  await page.getByRole('button',{name:'Join / Sign in'}).click();
+  await expect(page.getByRole('button',{name:'Join BrickCircle'})).toBeVisible();
+  await page.getByRole('button',{name:'Join BrickCircle'}).click();
   await expect(page.locator('#bc-overlay')).toBeVisible();
 });
 
