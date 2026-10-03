@@ -227,6 +227,9 @@ test('proposal, transition and message reuse their idempotency key after a commi
   const arrive=workflow.getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toBeEnabled();await arrive.click();await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('send_exchange_case_message'));
   const input=workflow.locator('#bc-chat-form input');await input.fill('Same message once');const messageButton=workflow.locator('#bc-chat-form button');await messageButton.click();await expect(messageButton).toBeEnabled();await messageButton.click();
+  // Click completion does not await the asynchronous submit handler in WebKit.
+  await expect.poll(()=>workflow.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='send_exchange_case_message').length)).toBe(2);
+  await expect(workflow.locator('#bc-chat').getByText('Same message once',{exact:false})).toBeVisible();
   const workflowResult=await workflow.evaluate(()=>({data:window.__bcThreeUser.data,args:window.__bcThreeUser.rpcArgs}));
   expect(workflowResult.data.events).toHaveLength(1);expect(workflowResult.data.messages).toHaveLength(1);expect(workflowResult.data.notifications.filter((row:any)=>row.kind==='exchange_message')).toHaveLength(1);
   for(const name of ['exchange_case_transition','send_exchange_case_message']){const calls=workflowResult.args.filter((row:any)=>row.name===name);expect(calls).toHaveLength(2);expect(calls[0].args.p_idempotency_key).toBe(calls[1].args.p_idempotency_key)}

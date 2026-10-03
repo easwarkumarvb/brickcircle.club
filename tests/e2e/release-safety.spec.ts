@@ -6,6 +6,7 @@ const manifest=JSON.parse(read('release-assets.json')) as {release:string,shell:
 
 test('@static release source keeps the deployed HTML and service worker together',()=>{
   const html=read('v2.html');
+  expect(read('index.html')).toBe(html);
   const sw=read('catalogue-cache-sw.js');
   expect(sw).toContain(`const RELEASE='${manifest.release}'`);
   expect(sw).toContain('const SHELL_CACHE=`brickcircle-shell-${RELEASE}`');

@@ -4,12 +4,11 @@ import fs from 'node:fs';
 const read=(path:string)=>fs.readFileSync(path,'utf8');
 const migration='supabase/migrations/20260912022500_city_agnostic_local_matching.sql';
 
-test('@static landing and cities pages describe featured cities as examples, not a whitelist',()=>{
+test('@static public entrypoint uses the canonical app and featured cities remain examples',()=>{
   const index=read('index.html');
   const cities=read('cities.html');
-  expect(index).toContain('Some of the Featured Cities');
-  expect(index).toContain('every city and country available in our registration selector');
-  expect(index).toContain('same city and country');
+  expect(index).toBe(read('v2.html'));
+  expect(index).toContain('/app-v3.js?v=');
   expect(cities).toContain('Some of the Featured Cities');
   expect(cities).toContain('These are examples only');
   expect(cities).toContain('does not need a separate BrickCircle launch');

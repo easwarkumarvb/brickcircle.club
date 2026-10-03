@@ -29,6 +29,7 @@ function updateServiceWorker(source){
 
 const files=[
   ['v2.html',updateHtml],
+  ['index.html',()=>updateHtml(fs.readFileSync('v2.html','utf8'))],
   ['catalogue-cache-sw.js',updateServiceWorker]
 ];
 let stale=false;
