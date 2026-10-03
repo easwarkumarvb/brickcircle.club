@@ -1,5 +1,5 @@
 {
-  "release": "20261003-iconic-100-catalogue-r1",
+  "release": "20261003-mobile-first-ux-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -8,6 +8,7 @@
     "/app-v3.css",
     "/mobile-ux-v1.css",
     "/zen-ux-v1.css",
+    "/ux-mobile-v2.css",
     "/analytics.js",
     "/product-analytics.js",
     "/observability-v26.js",
