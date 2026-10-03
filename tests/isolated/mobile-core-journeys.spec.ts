@@ -28,8 +28,10 @@ test('mobile proposals are grouped under a needs-action exchange tab',async({pag
   await page.setViewportSize({width:390,height:844});
   await page.goto('/v2.html?isolated=proposal#exchanges');
 
-  await expect(page.getByRole('heading',{name:'Exchanges'})).toBeVisible();
-  await expect(page.getByRole('button',{name:/Needs action · 1/})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Exchanges',exact:true})).toBeVisible();
+  const needsAction=page.getByRole('button',{name:/Needs action · 1/});
+  await expect(needsAction).toBeVisible();
+  await needsAction.click();
   await expect(page.locator('.bc-request')).toBeVisible();
   await expect(page.locator('.bc-request').getByRole('button',{name:'Accept'})).toBeVisible();
   await noHorizontalOverflow(page);
