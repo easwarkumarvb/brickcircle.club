@@ -6,7 +6,9 @@ async function noHorizontalOverflow(page:any){
 
 test('390px reciprocal match reads like a collector opportunity, not backend output',async({page})=>{
   await page.setViewportSize({width:390,height:844});
-  await page.goto('/v2.html?isolated=matched#matches');
+  await page.goto('/v2.html?isolated=matched#home');
+  await page.getByRole('button',{name:'View my match'}).first().click();
+  await expect(page).toHaveURL(/#matches$/);
 
   await expect(page.getByRole('heading',{name:'Great matches'})).toBeVisible();
   const card=page.locator('.bc-match').first();
