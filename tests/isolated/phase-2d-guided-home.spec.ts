@@ -69,9 +69,9 @@ test('a reciprocal match becomes the primary next action',async({page})=>{
 test('My Sets shows transparent counts without an opaque readiness percentage',async({page})=>{
   await page.goto('/v2.html?isolated=partial#sets');
   const summary=page.locator('.bc-setup-summary');
-  await expect(summary).toContainText('2/3 owned');
-  await expect(summary).toContainText('1/3 wanted');
-  await expect(summary).toContainText('0/1 available');
+  await expect(summary).toContainText('2 owned');
+  await expect(summary).toContainText('1 wanted');
+  await expect(summary).toContainText('0 available');
   await expect(page.getByText(/% Match Ready/)).toHaveCount(0);
 });
 

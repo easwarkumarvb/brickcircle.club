@@ -46,26 +46,6 @@ function collapseBrowseDiscovery(){
   details.appendChild(popular);
 }
 
-function simplifyHeadings(){
-  const main=root();if(!main)return;
-  if(['browse','catalogue'].includes(route())){
-    setText(main.querySelector('.bc-page-head p'),'Search once, then choose: I own it or I want it.');
-    const q=main.querySelector('#bc-q');
-    if(q&&q.getAttribute('aria-label')!=='Search LEGO sets by set number, model name or theme')q.setAttribute('aria-label','Search LEGO sets by set number, model name or theme');
-  }
-  if(route()==='sets'){
-    setText(main.querySelector('.bc-page-head h1'),'My LEGO');
-    setText(main.querySelector('.bc-page-head p'),'Your collection and the sets you want next.');
-  }
-  if(route()==='matches'){
-    setText(main.querySelector('.bc-page-head h1'),'Matches');
-    setText(main.querySelector('.bc-page-head p'),'Only mutual matches appear here.');
-  }
-  if(route()==='exchanges'){
-    setText(main.querySelector('.bc-page-head h1'),'Exchanges');
-    setText(main.querySelector('.bc-page-head p'),'One place for proposals, active exchanges and returns.');
-  }
-}
 
 function removeRedundantLandingSections(){
   if(route()!=='home' || document.querySelector('.bc-dashboard-hero'))return;
@@ -78,7 +58,6 @@ function removeRedundantLandingSections(){
 function apply(){
   document.documentElement.classList.add('bc-zen');
   relabelNavigation();
-  simplifyHeadings();
   collapseDashboardEducation();
   collapseBrowseDiscovery();
   removeRedundantLandingSections();

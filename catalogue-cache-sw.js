@@ -1,9 +1,9 @@
-const RELEASE='20261003-mobile-home-onboarding-r1';
+const RELEASE='20261003-mobile-ux-integrated-r1';
 const SHELL_CACHE=`brickcircle-shell-${RELEASE}`;
 const DATA_CACHE='brickcircle-catalogue-v3';
 const IMAGE_CACHE='brickcircle-set-images-v1';
 const NETWORK_TIMEOUT_MS=8000;
-const SHELL=["/","/v2.html","/privacy.html","/terms.html","/app-v3.css?v=20261003-mobile-home-onboarding-r1","/mobile-ux-v1.css?v=20261003-mobile-home-onboarding-r1","/zen-ux-v1.css?v=20261003-mobile-home-onboarding-r1","/ux-mobile-v2.css?v=20261003-mobile-home-onboarding-r1","/analytics.js?v=20261003-mobile-home-onboarding-r1","/product-analytics.js?v=20261003-mobile-home-onboarding-r1","/observability-v26.js?v=20261003-mobile-home-onboarding-r1","/locations-v3.js?v=20261003-mobile-home-onboarding-r1","/web-push-config.js?v=20261003-mobile-home-onboarding-r1","/app-v3.js?v=20261003-mobile-home-onboarding-r1","/zen-ux-v1.js?v=20261003-mobile-home-onboarding-r1","/assets/brickcircle-logo.png"];
+const SHELL=["/","/v2.html","/privacy.html","/terms.html","/app-v3.css?v=20261003-mobile-ux-integrated-r1","/mobile-ux-v1.css?v=20261003-mobile-ux-integrated-r1","/zen-ux-v1.css?v=20261003-mobile-ux-integrated-r1","/ux-mobile-v2.css?v=20261003-mobile-ux-integrated-r1","/analytics.js?v=20261003-mobile-ux-integrated-r1","/product-analytics.js?v=20261003-mobile-ux-integrated-r1","/observability-v26.js?v=20261003-mobile-ux-integrated-r1","/locations-v3.js?v=20261003-mobile-ux-integrated-r1","/web-push-config.js?v=20261003-mobile-ux-integrated-r1","/app-v3.js?v=20261003-mobile-ux-integrated-r1","/zen-ux-v1.js?v=20261003-mobile-ux-integrated-r1","/assets/brickcircle-logo.png"];
 
 self.addEventListener('install',event=>{
   self.skipWaiting();

@@ -27,10 +27,11 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
     await page.goto('/',{waitUntil:'domcontentloaded'});
     await settle(page);
 
-    const hero=page.locator('.hero');
-    const cta=page.locator('.hero .cta').first();
+    const hero=page.locator('.bc-landing-hero');
+    const cta=hero.getByRole('button',{name:'Explore iconic sets'});
     await expect(hero).toBeVisible();
-    await expect(page.locator('.hero h1')).toContainText(/Experience more LEGO/i);
+    await expect(hero.getByRole('heading',{level:1})).toContainText(/Buy Less.*Build More/i);
+    await expect.poll(()=>hero.locator('img').evaluateAll(images=>images.every(img=>(img as HTMLImageElement).hidden||((img as HTMLImageElement).complete&&(img as HTMLImageElement).naturalWidth>0))),{timeout:15000}).toBeTruthy();
     await expect(cta).toBeVisible();
 
     const metrics=await page.evaluate(()=>({
@@ -54,7 +55,7 @@ test.describe('@cross-browser visual + accessibility gate',()=>{
   test('Join Free dialog works with keyboard and has no serious WCAG violations',async({page})=>{
     await page.setViewportSize({width:390,height:844});
     await page.goto('/',{waitUntil:'domcontentloaded'});
-    await page.locator('a[href="/v2.html?join=1"]').first().click();
+    await page.locator('.bc-landing-hero').getByRole('button',{name:'Join BrickCircle',exact:true}).click();
     const dialog=page.locator('#bc-overlay [role="dialog"]');
     await expect(dialog).toBeVisible({timeout:7000});
     await settle(page);
