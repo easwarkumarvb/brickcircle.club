@@ -32,7 +32,7 @@ test('coach CTA reuses the existing router without a new backend flow',async({pa
   await page.goto('/v2.html#home');
   await page.locator('#bc-first-match-coach').getByRole('button',{name:'Add owned sets'}).click();
   await expect(page).toHaveURL(/#browse$/);
-  await expect(page.getByRole('heading',{name:'Browse LEGO sets'})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'100 iconic LEGO sets'})).toBeVisible();
 });
 
 test('signed-out landing stays untouched by the first-match coach',async({page})=>{
