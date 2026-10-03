@@ -26,7 +26,7 @@ test('hero and final conversion actions reuse the existing auth flow',async({pag
   await expect(page.locator('#bc-email-signin')).toBeVisible();
 });
 
-test('See how it works moves the visual story into view',async({page})=>{
+test('How it works moves the visual story into view',async({page})=>{
   await page.setViewportSize({width:1280,height:600});
   await page.goto('/v2.html?isolated=signed-out#home');
   await page.getByRole('button',{name:'How it works'}).click();
