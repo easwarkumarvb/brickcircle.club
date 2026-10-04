@@ -171,18 +171,23 @@ test('overdue copy uses server RPC derived days',async({browser})=>{
   await context.close();
 });
 
-test('inbox opens canonical case conversations by case_id and direct messages separately',async({browser})=>{
+test('Messages separates canonical case history and direct collector history',async({browser})=>{
   const caseMessage={id:'case-message',case_id:'case-review-fix',sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'Meetup detail in the case',created_at:now};
   const directMessage={id:'direct-message',exchange_id:null,sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'General collector question',created_at:'2026-09-09T13:00:00.000Z'};
   const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACCEPTED'),{messages:[caseMessage],directMessages:[directMessage]}));
-  await page.getByRole('button',{name:'Inbox'}).click();
-  await expect(page.getByRole('button',{name:/Ramya Exchange conversation/})).toBeVisible();
-  await expect(page.getByRole('button',{name:/Ramya Direct message/})).toBeVisible();
-  await page.getByRole('button',{name:/Ramya Exchange conversation/}).click();
-  await expect(page).toHaveURL(/#exchange\/case-review-fix$/);
-  await page.getByRole('button',{name:'Inbox'}).click();
-  await page.getByRole('button',{name:/Ramya Direct message/}).click();
-  await expect(page.getByRole('heading',{name:'Message Ramya'})).toBeVisible();
+  await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
+  await expect(page.locator('.bc-msg-row')).toHaveCount(2);
+  await page.locator('[data-message-open="case:case-review-fix"]').click();
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-review-fix');
+  await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
+  await expect(page.locator('#bc-msg-chat')).not.toContainText(directMessage.body);
+  await page.getByRole('button',{name:'Open exchange',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>location.hash)).toBe('#exchange/case-review-fix');
+  await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
+  await page.locator('[data-message-open="direct:'+actors.ramya.id+'"]').click();
+  await expect(page.locator('.bc-msg-hero h1')).toContainText('Ramya');
+  await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
+  await expect(page.locator('#bc-msg-chat')).not.toContainText(caseMessage.body);
   await context.close();
 });
 

@@ -165,3 +165,27 @@ test('equal-timestamp history uses the id cursor without losing or duplicating m
   await expect(page.locator('#bc-msg-chat .bc-msg').first()).toContainText('Tie 000');
   await expect(page.locator('#bc-msg-chat .bc-msg').last()).toContainText('Tie 054');
 });
+
+test('a send from a previous login cannot unlock a newer send in the same conversation',async({page})=>{
+  await seed(page);await openDirect(page);
+  await page.evaluate(()=>{(window as any).__bcIsolated.messageSendDelayMs=4000});
+  await page.locator('#bc-msg-form textarea').fill('Previous login send');
+  await page.locator('#bc-msg-form button').click();
+  await page.evaluate(()=>{const s=(window as any).__bcIsolated;s.setSignedOut(true);s.emitAuth('SIGNED_OUT',null)});
+  await expect(page.locator('#bc-msg-form')).toHaveCount(0);
+  const authDialog=page.getByRole('dialog');
+  await authDialog.getByRole('textbox',{name:'Email',exact:true}).fill('collector@example.invalid');
+  await authDialog.getByRole('textbox',{name:'Password',exact:true}).fill('isolated-password');
+  await authDialog.locator('button[type="submit"]').click();
+  await expect(authDialog).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'View my match'}).first()).toBeVisible();
+  await openDirect(page);
+  await page.evaluate(()=>{(window as any).__bcIsolated.messageSendDelayMs=6000});
+  await page.locator('#bc-msg-form textarea').fill('Current login send');
+  expect(await page.evaluate(()=>(window as any).__bcIsolated.messages.filter((m:any)=>m.body==='Previous login send').length)).toBe(0);
+  await page.locator('#bc-msg-form button').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcIsolated.messages.filter((m:any)=>m.body==='Previous login send').length),{timeout:7000}).toBe(1);
+  await expect(page.locator('#bc-msg-form button')).toBeDisabled();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcIsolated.messages.filter((m:any)=>m.body==='Current login send').length),{timeout:8000}).toBe(1);
+  await expect(page.locator('#bc-msg-form button')).toBeEnabled();
+});

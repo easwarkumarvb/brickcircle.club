@@ -1322,7 +1322,7 @@ const DIRECT_THREAD_FALLBACK='No messages yet. Say hello and arrange your first 
 const CASE_THREAD_FALLBACK='No messages yet. Keep meetup, handoff, return and issue details here.';
 const threadCaches={direct:new Map(),case:new Map()};
 const threadDrafts=new Map();
-const pendingSends=new Set();
+const pendingSends=new Map();
 let threadCacheUid=null;
 function threadCache(kind,id,uid){
   if(threadCacheUid!==uid){threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();threadCacheUid=uid}
@@ -1422,7 +1422,8 @@ function bindThreadCompose(form,kind,id,senderName){
       if(caseRow&&terminalCaseStates.has(caseRow.state))return;
     }
     clearThreadError();
-    pendingSends.add(sendKey);
+    const sendOperation={};
+    pendingSends.set(sendKey,sendOperation);
     button.disabled=true;if(input)input.disabled=true;
     const restore=()=>{if(stillCurrent()){button.disabled=false;if(input){input.disabled=false;input.focus()}}};
     try{
@@ -1449,6 +1450,7 @@ function bindThreadCompose(form,kind,id,senderName){
       restore();
       toast('Message sent.');
     }finally{
+      if(pendingSends.get(sendKey)!==sendOperation)return;
       pendingSends.delete(sendKey);
       const liveForm=activeThreadForm(submitUid,kind,id);
       if(liveForm){
