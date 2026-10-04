@@ -26,14 +26,16 @@ const money=x=>Number(x)>0?'$'+Number(x).toLocaleString():'Value not listed';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
 const withTimeout=(promise,ms=12000)=>Promise.race([promise,new Promise((_,reject)=>setTimeout(()=>reject(new Error('This is taking longer than expected. Please check your connection and try again.')),ms))]);
-const routeName=()=>decodeURIComponent((location.hash||'#home').slice(1).split('/')[0]||'home');
-const routeId=()=>decodeURIComponent((location.hash||'').slice(1).split('/')[1]||'');
+const safeDecode=value=>{try{return decodeURIComponent(value)}catch(_){return value}};
+const routeName=()=>{const name=safeDecode((location.hash||'#home').slice(1).split('/')[0]||'home');return name==='inbox'?'messages':name};
+const routeId=()=>safeDecode((location.hash||'').slice(1).split('/')[1]||'');
 const isSignedIn=()=>!!S.user;
 const betaPWAEnabled=()=>window.BC_BETA_FLAGS?.pwaEnabled===true;
 const LOC=()=>window.BC_LOCATIONS||{};
 const countries=()=>Object.keys(LOC()).sort((a,b)=>a.localeCompare(b));
 const popularSets=['42143','42115','42083','42056','42141','42172','10283','21309','10318','10307'];
-const primaryRoutes=[['home','⌂','Home'],['browse','⌕','Find Sets'],['matches','⇄','Matches'],['exchanges','🤝','Exchanges'],['sets','🧱','My LEGO']];
+const desktopRoutes=[['home','⌂','Home'],['browse','⌕','Find Sets'],['sets','🧱','My LEGO'],['matches','⇄','Matches'],['exchanges','🤝','Exchanges'],['messages','💬','Messages']];
+const mobileRoutes=[['home','⌂','Home'],['browse','⌕','Find Sets'],['sets','🧱','My LEGO'],['matches','⇄','Matches'],['messages','💬','Messages']];
 
 const ICONIC_SET_NUMBERS=Object.freeze([
   '42143-1','42115-1','42083-1','42056-1','42172-1','42171-1','42141-1','42125-1','42154-1','42156-1',
@@ -198,11 +200,11 @@ function navigate(page,id=''){
 
 function shell(){
   let root=document.getElementById('bc-root');if(!root){root=document.createElement('div');root.id='bc-root';document.body.appendChild(root)}
-  const nav=primaryRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}">${l}</button>`).join('');
-  const mobile=primaryRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}" aria-label="${l}" ${routeName()===p?'aria-current="page"':''}><span>${i}</span>${l}</button>`).join('');
+  const nav=desktopRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}">${l}</button>`).join('');
+  const mobile=mobileRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}" aria-label="${l}" ${routeName()===p?'aria-current="page"':''}><span>${i}</span>${l}</button>`).join('');
   const unread=S.notifications.filter(n=>!n.read_at).length;
   const identity=S.profile||{};
-  root.innerHTML=`<header class="bc-topbar"><div class="bc-topbar-in"><button class="bc-logo" data-nav="home" aria-label="BrickCircle home"><img src="/assets/brickcircle-logo.png?v=20260913-logo" alt=""><span class="bc-brand-copy"><strong>BrickCircle</strong><small>Buy Less. Build More.</small></span></button><nav class="bc-desktop-nav" aria-label="Primary navigation">${nav}</nav><div class="bc-top-actions">${S.user?`<button class="bc-icon-btn" data-open="inbox" aria-label="Inbox">💬</button><button class="bc-icon-btn" data-open="notifications" aria-label="Notifications">🔔${unread?`<span class="bc-badge">${unread>9?'9+':unread}</span>`:''}</button>${S.user.id===OWNER_USER_ID?'<a class="bc-owner-admin-link" href="/admin.html" aria-label="Open BrickCircle admin dashboard">Admin</a>':''}<button class="bc-avatar-btn" data-nav="profile" aria-label="Profile and account controls">${avatar(identity)}</button><button class="bc-top-signout" type="button" data-signout-top>Log out</button>`:`<button class="bc-signin" data-auth>Join / Sign in</button>`}</div></div></header><main id="bc-main" class="bc-main">${loading()}</main><nav class="bc-mobile-nav" aria-label="Mobile navigation">${mobile}</nav>`;
+  root.innerHTML=`<header class="bc-topbar"><div class="bc-topbar-in"><button class="bc-logo" data-nav="home" aria-label="BrickCircle home"><img src="/assets/brickcircle-logo.png?v=20260913-logo" alt=""><span class="bc-brand-copy"><strong>BrickCircle</strong><small>Buy Less. Build More.</small></span></button><nav class="bc-desktop-nav" aria-label="Primary navigation">${nav}</nav><div class="bc-top-actions">${S.user?`<button class="bc-icon-btn" data-open="inbox" aria-label="Messages">💬</button><button class="bc-icon-btn" data-open="notifications" aria-label="Notifications">🔔${unread?`<span class="bc-badge">${unread>9?'9+':unread}</span>`:''}</button>${S.user.id===OWNER_USER_ID?'<a class="bc-owner-admin-link" href="/admin.html" aria-label="Open BrickCircle admin dashboard">Admin</a>':''}<button class="bc-avatar-btn" data-nav="profile" aria-label="Profile and account controls">${avatar(identity)}</button><button class="bc-top-signout" type="button" data-signout-top>Log out</button>`:`<button class="bc-signin" data-auth>Join / Sign in</button>`}</div></div></header><main id="bc-main" class="bc-main">${loading()}</main><nav class="bc-mobile-nav" aria-label="Mobile navigation">${mobile}</nav>`;
   wireAvatars(root);bindShell(root);
 }
 function bindShell(root=document){
@@ -210,18 +212,20 @@ function bindShell(root=document){
   $$('[data-auth]',root).forEach(b=>b.onclick=showAuth);
   $$('[data-signout-top]',root).forEach(b=>b.onclick=signOut);
   $$('[data-open="notifications"]',root).forEach(b=>b.onclick=showNotifications);
-  $$('[data-open="inbox"]',root).forEach(b=>b.onclick=showInbox);
+  $$('[data-open="inbox"]',root).forEach(b=>b.onclick=()=>navigate('messages'));
 }
 function syncNav(){
   $$('[data-nav]').forEach(b=>{const active=b.dataset.nav===routeName();b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
 }
 function app(){return document.getElementById('bc-main')}
-function page(html){const a=app();if(!a)return;const warning=S.refreshWarning?`<div class="bc-notice warn bc-refresh-warning" role="status" style="margin-bottom:14px"><b>Some information could not refresh.</b> Your last confirmed view is still shown. <button class="bc-btn ghost" data-refresh-retry>Retry</button></div>`:'';a.innerHTML=`<div class="bc-page">${S.user?firstMatchCoach():''}${warning}${html}</div>`;wireImages(a);wireAvatars(a);applyA11y(a);bindCommon(a);syncNav();announceRender(a);window.scrollTo({top:0,behavior:'instant'})}
+function page(html){const a=app();if(!a)return;const warning=S.refreshWarning?`<div class="bc-notice warn bc-refresh-warning" role="status" style="margin-bottom:14px"><b>Some information could not refresh.</b> Your last confirmed view is still shown. <button class="bc-btn ghost" data-refresh-retry>Retry</button></div>`:'';a.innerHTML=`<div class="bc-page">${S.user&&routeName()!=='messages'?firstMatchCoach():''}${warning}${html}</div>`;wireImages(a);wireAvatars(a);applyA11y(a);bindCommon(a);syncNav();announceRender(a);window.scrollTo({top:0,behavior:'instant'})}
 function bindCommon(root=document){
   $$('[data-action="browse"]',root).forEach(b=>b.onclick=()=>navigate('browse'));
   $$('[data-action="sets"]',root).forEach(b=>b.onclick=()=>navigate('sets'));
   $$('[data-action="matches"]',root).forEach(b=>b.onclick=()=>navigate('matches'));
   $$('[data-action="exchanges"]',root).forEach(b=>b.onclick=()=>navigate('exchanges'));
+  $$('[data-action="messages"]',root).forEach(b=>b.onclick=()=>navigate('messages'));
+  $$('[data-open-exchange]',root).forEach(b=>b.onclick=()=>navigate('exchange',b.dataset.openExchange));
   $$('[data-auth]',root).forEach(b=>b.onclick=showAuth);
   $$('[data-refresh-retry]',root).forEach(b=>b.onclick=async()=>{b.disabled=true;await refreshRoute()});
 }
@@ -274,7 +278,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={}}
+function clearProtectedState(){S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const result=await settledTimeout(db.rpc('bc_membership_status'));if(!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -357,9 +361,17 @@ async function openNotification(notification){
     return;
   }
   if(isReciprocalMatchNotification(notification)){navigate('matches');return}
+  if(notification?.kind==='message_received'&&!notificationExchangeId(notification)){
+    const actor=notification?.metadata?.actor_user_id||notification?.actor_user_id||notification?.sender_id;
+    navigate('messages',actor?`direct:${actor}`:'');
+    return;
+  }
+  if(notification?.kind==='exchange_message'){
+    const caseId=notification?.exchange_case_id||notification?.metadata?.exchange_case_id;
+    if(caseId){navigate('messages',`case:${caseId}`);return}
+  }
   const exchangeId=notification?.exchange_case_id||notification?.metadata?.exchange_case_id||notification?.metadata?.exchange_id;
   if(exchangeId){navigate('exchange',exchangeId);return}
-  if(notification?.kind==='exchange_message'&&exchangeId){navigate('exchange',exchangeId);return}
   shell();await renderRoute();
 }
 function stopNotificationRealtime(){
@@ -426,7 +438,16 @@ function lifecyclePresentation(notification){
   if(notification.kind==='exchange_accepted')return {label:'Exchange accepted',fallback:'Your BrickCircle exchange has been accepted.',action:'Open exchanges',route:'exchanges'};
   if(notification.kind==='exchange_declined')return {label:'Proposal declined',fallback:'Your BrickCircle proposal was declined.',action:'Open exchanges',route:'exchanges'};
   if(notification.kind==='exchange_cancelled')return {label:'Proposal cancelled',fallback:'Your BrickCircle exchange was cancelled.',action:'Open exchanges',route:'exchanges'};
-  if(notification.kind==='message_received')return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:notification?.metadata?.exchange_id?'exchange':'inbox',exchangeId:notification?.metadata?.exchange_id};
+  if(notification.kind==='message_received'){
+    const actor=notification?.metadata?.actor_user_id||notification?.actor_user_id||notification?.sender_id;
+    if(!notificationExchangeId(notification)&&actor)return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages',thread:`direct:${actor}`};
+    return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages'};
+  }
+  if(notification.kind==='exchange_message'){
+    const caseId=notification?.exchange_case_id||notification?.metadata?.exchange_case_id;
+    if(caseId)return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages',thread:`case:${caseId}`};
+    return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages'};
+  }
   if(notification.kind==='exchange_issue_reported')return {label:'Issue reported',fallback:'A peer reported an issue on your BrickCircle exchange.',action:'Open issue',route:'exchange',exchangeId:notificationExchangeId(notification)};
   if(notification.kind==='exchange_issue_response')return {label:'New issue response',fallback:'A peer responded to an issue on your BrickCircle exchange.',action:'Open issue',route:'exchange',exchangeId:notificationExchangeId(notification)};
   return {label:'Exchange updated',fallback:'Your BrickCircle exchange has been updated.',action:'Open exchanges',route:'exchanges'};
@@ -437,7 +458,7 @@ function showLifecycleNotification(notification){
   try{sessionStorage.setItem(`bc_lifecycle_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}
   const view=lifecyclePresentation(notification),root=document.createElement('section');root.id='bc-exchange-lifecycle-notice';root.className='bc-lifecycle-notice';root.setAttribute('role','status');
   root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(notification.title||view.label)}</h2><p>${esc(notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
-  document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.exchangeId)navigate('exchange',view.exchangeId);else if(view.route==='inbox')showInbox();else navigate(view.route)};return true;
+  document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.thread)navigate('messages',view.thread);else if(view.exchangeId)navigate('exchange',view.exchangeId);else navigate(view.route)};return true;
 }
 function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
 function showNextUnreadNotificationNotice(){
@@ -507,8 +528,9 @@ function caseItemStatus(row,workflow){if(row.exchange_review_required)return 'Ne
 function otherId(e){return e.user_a===S.user?.id?e.user_b:e.user_a}
 function otherProfile(e){return S.profiles[otherId(e)]||{display_name:'Collector'} }
 function itemName(id){const i=S.items[id];return i?.lego_sets?.name||S.sets[i?.set_number]?.name||i?.set_number||'LEGO set'}
-async function hydrateExchangeItems(rows=S.exchanges){
-  const ids=[...new Set(rows.flatMap(e=>[e.item_a,e.item_b]).filter(Boolean))];if(!ids.length)return;const missing=ids.filter(id=>!S.items[id]);if(missing.length){const {data}=await db.from('collection_items').select('*,lego_sets(*)').in('id',missing);(data||[]).forEach(i=>{S.items[i.id]=i;if(i.lego_sets)S.sets[i.set_number]=i.lego_sets})}
+async function hydrateExchangeItems(rows=S.exchanges,stillCurrent){
+  const ids=[...new Set(rows.flatMap(e=>[e.item_a,e.item_b]).filter(Boolean))];if(!ids.length)return true;const missing=ids.filter(id=>!S.items[id]);if(missing.length){const {data}=await db.from('collection_items').select('*,lego_sets(*)').in('id',missing);if(stillCurrent&&!stillCurrent())return false;(data||[]).forEach(i=>{S.items[i.id]=i;if(i.lego_sets)S.sets[i.set_number]=i.lego_sets})}
+  return true;
 }
 async function renderRoute(){
   const token=++S.renderToken;const r=routeName();syncNav();
@@ -519,8 +541,8 @@ async function renderRoute(){
   if(r==='matches')return renderMatches(token);
   if(r==='exchanges'||r==='requests'||r==='returns'||r==='meetup')return renderExchanges(token,r);
   if(r==='exchange')return renderExchangeDetail(routeId(),token);
+  if(r==='messages')return renderMessages(token);
   if(r==='profile')return renderProfile(token);
-  if(r==='inbox'){showInbox();return navigate('home')}
   return navigate('home');
 }
 
@@ -783,7 +805,7 @@ async function removeCollectionItem(id,name,button){
 async function renderMatches(token){
   if(!S.user){showAuth();return navigate('home')}const rd=readiness();if(rd.score<40&&!S.matches.length){page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div></div>${empty('⇄','Finish your match setup','Add owned sets, mark exchangeable copies and build a wishlist. BrickCircle can only create a reciprocal match when both sides line up.','Continue setup','sets')}`);return}
   const ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
-  page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>showProposal(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>quickMessage(b.dataset.messagePerson));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
+  page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>showProposal(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
 }
 function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
 async function showProposal(i){const m=S.matches[i];if(!m)return;await loadPeerReputation(m.match_user);const p=S.profiles[m.match_user]||{};const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill green">Reciprocal match</span><h2 style="margin-top:8px">Propose an exchange with ${esc(p.display_name||'this collector')}</h2><p class="bc-muted">Meet locally. Inspect both sets. Exchange only when you are both happy.</p></div><button class="bc-close" data-close>×</button></div><div class="bc-proposal-steps" aria-label="Proposal steps"><span class="done"><b>1</b>Your set</span><span class="done"><b>2</b>Their set</span><span class="current"><b>3</b>Terms</span></div><div class="bc-proposal-pair"><div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><i>⇄</i><div><span>You request</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div>${reputationTrustContext(m.match_user)}<form class="bc-form" id="bc-proposal"><div class="bc-field"><label>How long would you like to exchange?</label><select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></div><div class="bc-field"><label>Optional message</label><textarea class="bc-textarea" name="message">Hi! We have a reciprocal BrickCircle match. Would you like to meet locally, inspect both sets and exchange them temporarily?</textarea></div><div class="bc-notice warn"><b>Meet. Inspect. Exchange.</b><br>The proposal creates one shared case for meetup, inspection, handoff, return and messages.</div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Not now</button><button type="submit" class="bc-btn primary">Send proposal</button></div></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-proposal',o).onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),btn=$('button[type="submit"]',e.currentTarget),days=Number(f.get('days')),message=String(f.get('message')||''),intent={offered_item_id:m.offered_item,requested_item_id:m.requested_item,duration_days:days,message};if(btn.disabled)return;btn.disabled=true;btn.textContent='Sending…';const {data,error}=await canonicalRpc('create_exchange_case',{p_offered_item_id:m.offered_item,p_requested_item_id:m.requested_item,p_duration_days:days,p_message:message},intent);if(error||data?.ok===false){fail(error||new Error('Could not send the proposal.'));btn.disabled=false;btn.textContent='Send proposal';return}closeOverlay();await refreshCore();navigate('exchange',data.case?.id);toast(data?.idempotent?'Your existing proposal is open.':'Exchange proposal sent.');track('exchange_proposal_sent',{match_user:m.match_user,duration_days:days})}}
@@ -856,7 +878,7 @@ function exchangeTimeline(e){const current=stageForExchange(e),labels=['Proposal
 function renderExchangeDetailLoaded(e,messages,events,reviews,issues,issueResponses){
   const p=otherProfile(e),oid=otherId(e),mineA=e.user_a===S.user.id,myItem=mineA?e.item_a:e.item_b,theirItem=mineA?e.item_b:e.item_a,myName=itemName(myItem),theirName=itemName(theirItem),messagingClosed=terminalCaseStates.has(e.state),next=caseNextAction(e),secondary=caseSecondaryAction(e),overdueDays=Number(S.caseOverdue[e.id]||0),trust=reputationTrustContext(oid);
   const overdueNotice=overdueDays>0?`<div class="bc-notice warn" style="margin-top:12px"><b>Return overdue by ${overdueDays} day${overdueDays===1?'':'s'}</b><br>Please arrange the return with the other collector, or record an issue and ask BrickCircle support for help.</div>`:'';
-  page(`<button class="bc-back" data-action="exchanges">← Back to Exchanges</button><section class="bc-exchange-hero"><div class="bc-exchange-hero-top"><div><span class="bc-pill gold">${esc(exchangeStageLabel(e))} · with ${esc(p.display_name||'Collector')}${p.city?' · '+esc(p.city):''}</span><h1>${esc(myName)} ⇄ ${esc(theirName)}</h1><p>${e.duration_days}-day local temporary exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${trust}${overdueNotice}</div></div>${exchangeTimeline(e)}</section>${messagingClosed?'':`<section class="bc-mobile-next"><span>YOUR NEXT ACTION</span><h2>${esc(next.label||exchangeStageLabel(e))}</h2>${next.action?`<button class="bc-btn primary" data-case-action="${attr(next.action)}">${esc(next.label)}</button>`:''}${secondary?`<button class="bc-btn" data-case-action="${attr(secondary.action)}">${esc(secondary.label)}</button>`:''}</section>`}<div class="bc-exchange-layout"><div><section class="bc-card bc-flow-card" id="bc-flow">${flowMarkup(e,events)}</section>${caseIssuesMarkup(e,issues||[],issueResponses||[])}${reviewMarkup(e,p,reviews||[])}</div><aside><section class="bc-card bc-flow-card"><h2>Exchange conversation</h2><div class="bc-chat" id="bc-chat">${messages.length?messages.map(m=>`<div class="bc-msg ${m.sender_id===S.user.id?'mine':''}">${esc(m.body)}<small>${fmtDateTime(m.created_at)}</small></div>`).join(''):'<div class="bc-small">No messages yet. Keep meetup, handoff, return and issue details here.</div>'}</div>${messagingClosed?'':`<form class="bc-chat-form" id="bc-chat-form"><input name="message" maxlength="4000" placeholder="Message ${attr((p.display_name||'collector').split(' ')[0])}" required><button class="bc-btn primary">Send</button></form>`}</section><section class="bc-card bc-flow-card" style="margin-top:14px"><h2>Exchange guidance</h2><p>${esc(next.copy)}</p>${canReportCaseIssue(e)?'<button class="bc-btn danger" style="margin-top:10px" data-case-action="report_issue">Report an issue</button>':''}${legacyIssueCase(e)?`<div class="bc-notice warn" style="margin-top:10px"><b>Legacy case.</b><br>This exchange sits in a legacy custody review state, so the newer issue tools are unavailable here. Keep communicating with the other collector, or contact <a href="mailto:${attr(SUPPORT_EMAIL)}">${esc(SUPPORT_EMAIL)}</a>.</div>`:''}<button class="bc-btn" style="margin-top:10px" data-case-action="request_support">Need BrickCircle support?</button><div class="bc-notice warn" style="margin-top:12px"><b>Inspection first.</b><br>Meet publicly. Inspect condition, parts and completeness together. Confirm handoff only after you are satisfied.</div></section></aside></div>`);
+  page(`<button class="bc-back" data-action="exchanges">← Back to Exchanges</button><section class="bc-exchange-hero"><div class="bc-exchange-hero-top"><div><span class="bc-pill gold">${esc(exchangeStageLabel(e))} · with ${esc(p.display_name||'Collector')}${p.city?' · '+esc(p.city):''}</span><h1>${esc(myName)} ⇄ ${esc(theirName)}</h1><p>${e.duration_days}-day local temporary exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${trust}${overdueNotice}</div></div>${exchangeTimeline(e)}</section>${messagingClosed?'':`<section class="bc-mobile-next"><span>YOUR NEXT ACTION</span><h2>${esc(next.label||exchangeStageLabel(e))}</h2>${next.action?`<button class="bc-btn primary" data-case-action="${attr(next.action)}">${esc(next.label)}</button>`:''}${secondary?`<button class="bc-btn" data-case-action="${attr(secondary.action)}">${esc(secondary.label)}</button>`:''}</section>`}<div class="bc-exchange-layout"><div><section class="bc-card bc-flow-card" id="bc-flow">${flowMarkup(e,events)}</section>${caseIssuesMarkup(e,issues||[],issueResponses||[])}${reviewMarkup(e,p,reviews||[])}</div><aside><section class="bc-card bc-flow-card"><div class="bc-chat-head"><h2>Exchange conversation</h2><button class="bc-btn ghost" type="button" data-open-messages-case="${attr(e.id)}">Open in Messages</button></div><div class="bc-chat" id="bc-chat">${messages.length?messages.map(m=>`<div class="bc-msg ${m.sender_id===S.user.id?'mine':''}">${esc(m.body)}<small>${fmtDateTime(m.created_at)}</small></div>`).join(''):'<div class="bc-small">No messages yet. Keep meetup, handoff, return and issue details here.</div>'}</div>${messagingClosed?'':`<form class="bc-chat-form" id="bc-chat-form"><input name="message" maxlength="4000" placeholder="Message ${attr((p.display_name||'collector').split(' ')[0])}" required><button class="bc-btn primary">Send</button></form>`}</section><section class="bc-card bc-flow-card" style="margin-top:14px"><h2>Exchange guidance</h2><p>${esc(next.copy)}</p>${canReportCaseIssue(e)?'<button class="bc-btn danger" style="margin-top:10px" data-case-action="report_issue">Report an issue</button>':''}${legacyIssueCase(e)?`<div class="bc-notice warn" style="margin-top:10px"><b>Legacy case.</b><br>This exchange sits in a legacy custody review state, so the newer issue tools are unavailable here. Keep communicating with the other collector, or contact <a href="mailto:${attr(SUPPORT_EMAIL)}">${esc(SUPPORT_EMAIL)}</a>.</div>`:''}<button class="bc-btn" style="margin-top:10px" data-case-action="request_support">Need BrickCircle support?</button><div class="bc-notice warn" style="margin-top:12px"><b>Inspection first.</b><br>Meet publicly. Inspect condition, parts and completeness together. Confirm handoff only after you are satisfied.</div></section></aside></div>`);
   bindCommon(app());bindExchangeDetail(e,p)
 }
 function caseParticipantValue(e,prefix,mine=true){const suffix=(S.user.id===e.user_a)===mine?'a':'b';return e[`${prefix}_${suffix}_at`]}
@@ -895,7 +917,7 @@ function reviewMarkup(e,p,reviews){
   else body='<p class="bc-small">Peer reviews open once both returns are confirmed and the case is complete.</p>';
   return `<section class="bc-card bc-flow-card" style="margin-top:14px"><h2>Peer review</h2><p class="bc-small">Double-blind: each collector reviews the other privately, and reviews stay hidden until both are submitted or the reveal window opens.</p>${body}</section>`
 }
-function bindExchangeDetail(e,p){$$('[data-case-action]',app()).forEach(button=>button.onclick=()=>runCaseAction(e,button.dataset.caseAction,button));bindCaseIssues(e);const review=$('[data-review]',app());if(review)review.onclick=()=>showReview(e,p);const form=$('#bc-chat-form');if(form)form.onsubmit=async event=>{event.preventDefault();const data=new FormData(form),body=String(data.get('message')||'').trim(),button=$('button',form),intent={case_id:e.id,body};if(!body||button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('send_exchange_case_message',{p_case_id:e.id,p_body:body},intent);if(error){button.disabled=false;return fail(error,'Message was not sent. Please retry.')}form.reset();await refreshCore();await renderExchangeDetail(e.id,S.renderToken)}}
+function bindExchangeDetail(e,p){$$('[data-case-action]',app()).forEach(button=>button.onclick=()=>runCaseAction(e,button.dataset.caseAction,button));bindCaseIssues(e);$$('[data-open-messages-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.openMessagesCase}`));const review=$('[data-review]',app());if(review)review.onclick=()=>showReview(e,p);const form=$('#bc-chat-form');if(form)form.onsubmit=async event=>{event.preventDefault();const data=new FormData(form),body=String(data.get('message')||'').trim(),button=$('button',form),intent={case_id:e.id,body};if(!body||button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('send_exchange_case_message',{p_case_id:e.id,p_body:body},intent);if(error){button.disabled=false;return fail(error,'Message was not sent. Please retry.')}form.reset();await refreshCore();await renderExchangeDetail(e.id,S.renderToken)}}
 function scheduleCaseMeetup(e,returning=false){const title=returning?'Plan return meetup':'Plan public meetup',o=modal(`<div class="bc-modal-head"><div><h2>${title}</h2><p class="bc-muted">The other collector must accept the same public place and future time.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-meetup"><div class="bc-field"><label>Public venue</label><input class="bc-input" name="venue" value="${attr(returning?e.return_venue_name||'':e.meetup_venue_name||'')}" required></div><div class="bc-field"><label>Area / neighbourhood</label><input class="bc-input" name="area" value="${attr(returning?e.return_venue_area||'':e.meetup_venue_area||'')}"></div><div class="bc-field"><label>Date & time</label><input class="bc-input" name="when" type="datetime-local" required></div><button type="submit" class="bc-btn primary">Share proposal</button></form>`);$$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);$('#bc-case-meetup',o).onsubmit=async event=>{event.preventDefault();const data=new FormData(event.currentTarget),date=new Date(String(data.get('when'))),button=$('button[type="submit"]',event.currentTarget),action=returning?'propose_return':'propose_meetup';if(Number.isNaN(date.getTime())||date<=new Date())return toast('Choose a future date and time.');if(button.disabled)return;const payload={venue_name:String(data.get('venue')||'').trim(),venue_area:String(data.get('area')||'').trim(),meetup_at:date.toISOString()},intent={case_id:e.id,version:e.state_version,action,payload};button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not save the meetup proposal.')}closeOverlay();await refreshCore();await renderExchangeDetail(e.id,S.renderToken)}}
 async function runCaseAction(e,action,button){if(action==='propose_meetup')return scheduleCaseMeetup(e,false);if(action==='propose_return')return scheduleCaseMeetup(e,true);if(action==='report_issue'){if(!canReportCaseIssue(e))return toast('Issues can be reported once a handoff has been confirmed on this exchange.');return showCaseIssueForm(e)}if(action==='request_support')return showCaseSupportForm(e);if(action==='cancel_before_handoff')return cancelCaseBeforeMutualHandoff(e,button);if(action==='handoff'&&!confirm('Confirm only after the physical set has changed custody and you are satisfied with inspection. Continue?'))return;if(action==='return_confirm'&&!confirm('Confirm only after your own physical LEGO set is back and inspected. Continue?'))return;return performCaseTransition(e,action,{},button)}
 async function cancelCaseBeforeMutualHandoff(e,button){
@@ -1027,6 +1049,7 @@ async function signOut(){stopNotificationRealtime();clearNotificationPresentatio
 async function shareInvite(){if(!S.user){showAuth();return}try{const {data,error}=await db.rpc('bc_my_referral_code');if(error)throw error;const url=`${location.origin}/v2.html?ref=${encodeURIComponent(String(data||''))}`,text='Join me on BrickCircle — a local LEGO set exchange community for adult collectors. BrickCircle is free during beta.';if(navigator.share)await navigator.share({title:'Join BrickCircle',text,url});else if(navigator.clipboard){await navigator.clipboard.writeText(url);toast('Invite link copied.')}else prompt('Copy your BrickCircle invite link',url);track('beta_invite_shared')}catch(e){if(e?.name!=='AbortError')fail(e,'Could not create invite link.')}}
 function showNotifications(){
   if(!S.user)return showAuth();
+  clearNotificationPresentation();
   const unread=S.notifications.filter(notification=>!notification.read_at).length;
   const o=drawer(`<div class="bc-drawer-head"><div><h2>Notifications</h2><div class="bc-small">${unread?`${unread} unread`:'You’re caught up'}</div></div><button class="bc-close" data-close>×</button></div>${betaPWAEnabled()?'<button class="bc-btn" data-enable-push style="margin-bottom:10px">Enable system notifications</button>':''}${unread?'<button class="bc-btn" data-read-all style="margin:0 0 10px 8px">Mark all read</button>':''}<div>${S.notifications.length?S.notifications.map(notification=>`<button class="bc-notification ${notification.read_at?'':'unread'}" type="button" data-note="${attr(notification.id)}" style="display:block;width:100%;text-align:left;background:${notification.read_at?'#fff':'#fff9df'}"><b>${esc(notification.title||String(notification.kind||'Update').replace(/_/g,' '))}</b><div>${esc(notification.body||'')}</div><small>${fmtDateTime(notification.created_at)}${isProposalNotification(notification)?' · View proposal':isReciprocalMatchNotification(notification)?' · View match':''}</small></button>`).join(''):'<div class="bc-empty"><div class="bc-empty-icon">🔔</div><h3>No notifications yet</h3></div>'}</div>`);
   $('[data-close]',o).onclick=()=>o.closest('.bc-drawer-overlay').remove();
@@ -1034,8 +1057,654 @@ function showNotifications(){
   $('[data-read-all]',o)?.addEventListener('click',async()=>{const {error}=await db.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',S.user.id).is('read_at',null);if(error)return fail(error);await refreshCore();shell();await renderRoute();showNotifications()});
   $$('[data-note]',o).forEach(element=>element.onclick=()=>openNotification(S.notifications.find(notification=>notification.id===element.dataset.note)));
 }
-function showInbox(){if(!S.user)return showAuth();const groups={};S.messages.forEach(m=>{const other=m.sender_id===S.user.id?m.recipient_id:m.sender_id,key=m.case_id?`case:${m.case_id}`:`person:${other}`;(groups[key]??=[]).push(m)});const entries=Object.entries(groups);const o=drawer(`<div class="bc-drawer-head"><div><h2>Inbox</h2><div class="bc-small">Exchange conversations stay attached to their journey.</div></div><button class="bc-close" data-close>×</button></div>${entries.length?entries.map(([key,ms])=>{const last=ms[0],other=last.sender_id===S.user.id?last.recipient_id:last.sender_id,p=S.profiles[other]||{},latest=ms.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];return `<button class="bc-card bc-pad" style="width:100%;text-align:left;margin-bottom:8px" data-chat-key="${attr(key)}" data-chat-person="${attr(other)}" data-chat-case="${attr(last.case_id||'')}"><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${last.case_id?'Exchange conversation':'Direct message'}</div><div class="bc-small">${esc((latest.body||'').slice(0,90))}</div><div class="bc-small">${fmtDateTime(latest.created_at)}</div></button>`}).join(''):empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.')}`);$('[data-close]',o).onclick=()=>o.closest('.bc-drawer-overlay').remove();$$('[data-chat-key]',o).forEach(b=>b.onclick=()=>{const caseId=b.dataset.chatCase;o.closest('.bc-drawer-overlay').remove();if(caseId)navigate('exchange',caseId);else quickMessage(b.dataset.chatPerson)})}
-function quickMessage(person){if(!S.user)return showAuth();const p=S.profiles[person]||{};const o=modal(`<div class="bc-modal-head"><div><h2>Message ${esc(p.display_name||'collector')}</h2></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-quick-message"><textarea class="bc-textarea" name="message" maxlength="4000" required placeholder="Write your message"></textarea><button class="bc-btn primary">Send message</button></form>`);$('[data-close]',o).onclick=closeOverlay;$('#bc-quick-message',o).onsubmit=async ev=>{ev.preventDefault();const f=new FormData(ev.currentTarget),{error}=await db.from('messages').insert({sender_id:S.user.id,recipient_id:person,body:String(f.get('message'))});if(error)return fail(error);closeOverlay();toast('Message sent.');await refreshCore()}}
+/* --- Messages: conversation list + direct/case threads --- */
+function messagesThreadGuard(kind,id){return !!S.user&&routeName()==='messages'&&routeId()===`${kind}:${id}`}
+function parseMessagesTarget(){
+  const raw=routeId(),separator=raw.indexOf(':');
+  if(separator<1)return raw?{kind:'invalid'}:null;
+  const kind=raw.slice(0,separator).toLowerCase(),value=raw.slice(separator+1);
+  if(kind==='direct')return value?{kind:'direct',peerId:value}:{kind:'invalid'};
+  if(kind==='case')return value?{kind:'case',caseId:value}:{kind:'invalid'};
+  return {kind:'invalid'};
+}
+const MESSAGE_INDEX_PAGE_SIZE=100;
+const messageIndexByUid=new Map();
+let messageIndexUid=null;
+let messagesFilter='all';
+const watermarkPrefix='brickcircle:messages:seen:';
+function messageIndex(uid){
+  if(messageIndexUid!==uid){messageIndexByUid.clear();messageIndexUid=uid}
+  if(!messageIndexByUid.has(uid))messageIndexByUid.set(uid,{direct:new Map(),cases:new Map(),loadedAt:0});
+  return messageIndexByUid.get(uid);
+}
+function messageWatermarkKey(uid,threadKey){return `${watermarkPrefix}${uid}:${threadKey}`}
+function readMessageWatermark(uid,threadKey){try{return Number(localStorage.getItem(messageWatermarkKey(uid,threadKey)))||0}catch(_){return 0}}
+function writeMessageWatermark(uid,threadKey,stamp){try{localStorage.setItem(messageWatermarkKey(uid,threadKey),String(Math.max(0,Math.floor(stamp)||0)))}catch(_){}}
+function conversationThreadKey(group){return `${group.kind}:${group.kind==='case'?group.caseId:group.peerId}`}
+function conversationUnread(uid,group){
+  const watermark=readMessageWatermark(uid,conversationThreadKey(group));
+  let count=0;
+  (group.messages||[]).forEach(m=>{
+    if(m.sender_id===uid)return;
+    if(new Date(m.created_at).getTime()>watermark)count++;
+  });
+  return count;
+}
+function totalUnreadCount(uid){
+  const index=uid?messageIndexByUid.get(uid):null;
+  if(!index)return 0;
+  let total=0;
+  index.direct.forEach(group=>{total+=conversationUnread(uid,group)});
+  index.cases.forEach(group=>{total+=conversationUnread(uid,group)});
+  return total;
+}
+function updateMessageBadge(){
+  const uid=S.user?.id,unread=uid?totalUnreadCount(uid):0;
+  const inbox=$('[data-open="inbox"]');
+  const buttons=[...$$('[data-nav="messages"]')];
+  if(inbox)buttons.push(inbox);
+  buttons.forEach(button=>{
+    if(!button)return;
+    const base=button.getAttribute('data-bc-label')||button.getAttribute('aria-label')||'Messages';
+    if(!button.getAttribute('data-bc-label'))button.setAttribute('data-bc-label',base);
+    let badge=$('.bc-badge',button);
+    if(!unread){
+      badge?.remove();
+      button.setAttribute('aria-label',base);
+      return;
+    }
+    if(!badge){badge=document.createElement('span');badge.className='bc-badge';button.appendChild(badge)}
+    badge.textContent=unread>9?'9+':String(unread);
+    button.setAttribute('aria-label',`${base}, ${unread>9?'9+':unread} unread`);
+  });
+}
+function participantMessagesQuery(uid,cursor){
+  const scope=cursor?`and(or(sender_id.eq.${uid},recipient_id.eq.${uid}),${threadCursorPredicate(cursor)})`:`sender_id.eq.${uid},recipient_id.eq.${uid}`;
+  return db.from('messages').select('*').is('exchange_id',null).or(scope).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(MESSAGE_INDEX_PAGE_SIZE);
+}
+function participantCaseMessagesQuery(uid,cursor){
+  const scope=cursor?`and(or(sender_id.eq.${uid},recipient_id.eq.${uid}),${threadCursorPredicate(cursor)})`:`sender_id.eq.${uid},recipient_id.eq.${uid}`;
+  return db.from('exchange_case_messages').select('*').or(scope).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(MESSAGE_INDEX_PAGE_SIZE);
+}
+function participantCasesQuery(uid,cursor){
+  const scope=cursor?`and(or(user_a.eq.${uid},user_b.eq.${uid}),${threadCursorPredicate(cursor)})`:`user_a.eq.${uid},user_b.eq.${uid}`;
+  return db.from('exchange_cases').select('*').or(scope).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(MESSAGE_INDEX_PAGE_SIZE);
+}
+async function fetchPagedIndex(buildQuery,stillCurrent){
+  const rows=[];
+  let cursor=null;
+  for(;;){
+    if(stillCurrent&&!stillCurrent())return{data:rows,error:null,incomplete:true};
+    const {data,error}=await settledTimeout(buildQuery(cursor));
+    if(stillCurrent&&!stillCurrent())return{data:rows,error:null,incomplete:true};
+    if(error)return{data:rows,error};
+    const chunk=data||[];
+    rows.push(...chunk);
+    if(chunk.length<MESSAGE_INDEX_PAGE_SIZE)break;
+    const last=chunk[chunk.length-1];
+    const next={created_at:last.created_at,id:last.id};
+    if(cursor&&cursor.created_at===next.created_at&&String(cursor.id)===String(next.id))return{data:rows,error:new Error('Conversation history could not advance. Please retry.')};
+    cursor=next;
+  }
+  return{data:rows,error:null};
+}
+async function loadMessageIndex(uid,token){
+  const stillCurrent=()=>S.user?.id===uid&&token===S.renderToken;
+  const [direct,caseMessages,cases]=await Promise.all([
+    fetchPagedIndex(cursor=>participantMessagesQuery(uid,cursor),stillCurrent),
+    fetchPagedIndex(cursor=>participantCaseMessagesQuery(uid,cursor),stillCurrent),
+    fetchPagedIndex(cursor=>participantCasesQuery(uid,cursor),stillCurrent)
+  ]);
+  if(!stillCurrent())return null;
+  const loadError=direct.error||caseMessages.error||cases.error;
+  if(loadError)throw loadError;
+  const ownedCases=(cases.data||[]).filter(c=>c&&(c.user_a===uid||c.user_b===uid));
+  const caseParticipants=new Map(ownedCases.map(c=>[c.id,new Set([c.user_a,c.user_b])]));
+  const index=messageIndex(uid);
+  index.direct.clear();index.cases.clear();
+  (direct.data||[]).forEach(m=>{
+    if(m.exchange_id!=null)return;
+    if(m.sender_id!==uid&&m.recipient_id!==uid)return;
+    const peerId=m.sender_id===uid?m.recipient_id:m.sender_id;
+    if(!peerId||peerId===uid)return;
+    if(!index.direct.has(peerId))index.direct.set(peerId,{kind:'direct',peerId,messages:[]});
+    index.direct.get(peerId).messages.push(m);
+  });
+  (caseMessages.data||[]).forEach(m=>{
+    if(!m.case_id)return;
+    const participants=caseParticipants.get(m.case_id);
+    if(!participants)return;
+    if(m.sender_id===m.recipient_id)return;
+    if(!participants.has(m.sender_id)||!participants.has(m.recipient_id))return;
+    if(m.sender_id!==uid&&m.recipient_id!==uid)return;
+    if(!index.cases.has(m.case_id))index.cases.set(m.case_id,{kind:'case',caseId:m.case_id,messages:[]});
+    index.cases.get(m.case_id).messages.push(m);
+  });
+  (cases.data||[]).forEach(c=>{
+    if(!caseParticipants.has(c.id))return;
+    if(!index.cases.has(c.id))index.cases.set(c.id,{kind:'case',caseId:c.id,messages:[]});
+    index.cases.get(c.id).case=c;
+  });
+  [...index.direct.values(),...index.cases.values()].forEach(group=>{
+    group.messages.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||String(a.id).localeCompare(String(b.id)));
+    const last=group.messages[group.messages.length-1]||null;
+    group.last=last;
+    group.stamp=last?new Date(last.created_at).getTime():(group.case&&group.case.created_at?new Date(group.case.created_at).getTime():0);
+  });
+  index.loadedAt=Date.now();
+  const people=new Set();
+  index.direct.forEach(group=>people.add(group.peerId));
+  ownedCases.forEach(c=>{people.add(c.user_a);people.add(c.user_b)});
+  people.delete(uid);
+  const missing=[...people].filter(id=>!S.profiles[id]);
+  if(missing.length){
+    const {data,error}=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',missing),10000);
+    if(!stillCurrent())return null;
+    if(error)throw error;
+    (data||[]).forEach(p=>{S.profiles[p.id]=p});
+  }
+  if(!await hydrateExchangeItems(ownedCases,stillCurrent))return null;
+  return index;
+}
+function currentConversationKey(){
+  if(routeName()!=='messages')return'';
+  return routeId()||'';
+}
+function filteredConversationGroups(){
+  const uid=S.user?.id;
+  const index=uid?messageIndexByUid.get(uid):null;
+  if(!index)return[];
+  const groups=[...index.direct.values(),...index.cases.values()];
+  const filtered=groups.filter(group=>{
+    if(messagesFilter==='unread')return conversationUnread(uid,group)>0;
+    if(messagesFilter==='exchanges')return group.kind==='case';
+    if(messagesFilter==='collectors')return group.kind==='direct';
+    return true;
+  });
+  return filtered.sort((a,b)=>b.stamp-a.stamp);
+}
+function messagesFilterBarMarkup(){
+  return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
+}
+function messageRow(group,uid,selected){
+  const unread=conversationUnread(uid,group);
+  const unreadBadge=unread?`<span class="bc-msg-unread" title="Unread on this device" aria-label="${unread} unread on this device">${unread>9?'9+':unread}</span>`:'';
+  if(group.kind==='direct'){
+    const p=S.profiles[group.peerId]||{};
+    return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.last?fmtDateTime(group.last.created_at):''}</span></span><span class="bc-msg-row-preview">${esc(group.last?.body||'Start the conversation')}</span></span>${pill('Direct','blue')}${unreadBadge}</button>`;
+  }
+  const e=group.case||S.exchanges.find(row=>row.id===group.caseId)||{};
+  const p=S.profiles[otherId(e)]||{};
+  const closed=terminalCaseStates.has(e.state);
+  return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="case:${attr(group.caseId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.last?fmtDateTime(group.last.created_at):fmtDateTime(e.created_at)}</span></span><span class="bc-msg-row-preview">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}${group.last?` — ${esc(group.last.body)}`:''}</span></span>${pill(closed?`Closed · ${exchangeStageLabel(e)}`:exchangeStageLabel(e),closed?'':'gold')}${unreadBadge}</button>`;
+}
+function messagesListPaneMarkup(){
+  const uid=S.user?.id,groups=filteredConversationGroups(),selected=currentConversationKey();
+  const count=groups.length;
+  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} conversation${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
+}
+function reconcileMessageIndex(uid,kind,id){
+  const index=messageIndex(uid);
+  const cache=threadCaches[kind].get(`${uid}:${id}`);
+  if(!cache)return;
+  const store=kind==='case'?index.cases:index.direct;
+  let group=store.get(id);
+  if(!group){
+    group=kind==='case'?{kind:'case',caseId:id,messages:[],case:cache.caseRow||null}:{kind:'direct',peerId:id,messages:[]};
+    store.set(id,group);
+  }
+  if(kind==='case'&&cache.caseRow)group.case=cache.caseRow;
+  const seen=new Set(group.messages.map(m=>m.id));
+  cache.messages.forEach(m=>{if(m&&m.id&&!seen.has(m.id)){seen.add(m.id);group.messages.push(m)}});
+  group.messages.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||String(a.id).localeCompare(String(b.id)));
+  const last=group.messages[group.messages.length-1]||null;
+  group.last=last;
+  group.stamp=last?new Date(last.created_at).getTime():(group.case&&group.case.created_at?new Date(group.case.created_at).getTime():0);
+}
+function advanceThreadWatermark(uid,kind,id){
+  const cache=threadCaches[kind].get(`${uid}:${id}`);
+  if(!cache||!cache.messages.length)return;
+  const newest=new Date(cache.messages[cache.messages.length-1].created_at).getTime();
+  const threadKey=`${kind}:${id}`;
+  if(newest>readMessageWatermark(uid,threadKey))writeMessageWatermark(uid,threadKey,newest);
+  renderMessagesListPane();
+}
+function renderMessagesListPane(){
+  const pane=$('.bc-messages-list-pane',app());
+  if(!pane)return;
+  pane.innerHTML=messagesListPaneMarkup();
+  bindMessagesListPane(pane);
+  updateMessageBadge();
+}
+function bindMessagesListPane(root=app()){
+  $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
+  $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
+  $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
+}
+async function refreshMessagesList(){
+  const uid=S.user?.id;
+  if(!uid||routeName()!=='messages')return;
+  const token=S.renderToken;
+  const button=$('[data-refresh-messages-list]',app());
+  if(button){button.disabled=true;button.textContent='Refreshing…'}
+  let failure=null;
+  try{
+    await loadMessageIndex(uid,token);
+  }catch(error){failure=error}
+  if(token!==S.renderToken||S.user?.id!==uid||routeName()!=='messages')return;
+  if(button){button.disabled=false;button.textContent='↻ Refresh'}
+  if(failure){
+    const pane=$('.bc-messages-list-pane',app());
+    if(pane){
+      pane.innerHTML=`<div class="bc-msg-list-error" role="alert"><span>Conversations could not be refreshed.</span><button class="bc-btn" type="button" data-retry-messages-list>Retry</button></div>`;
+      $('[data-retry-messages-list]',app()).onclick=()=>refreshMessagesList();
+    }
+    return;
+  }
+  renderMessagesListPane();
+  updateMessageBadge();
+}
+async function renderMessagesList(token){
+  const uid=S.user?.id;
+  page(loading('Loading conversations…'));
+  let index=null,failure=null;
+  try{
+    index=await loadMessageIndex(uid,token);
+  }catch(error){failure=error}
+  if(token!==S.renderToken||S.user?.id!==uid||routeName()!=='messages'||routeId())return;
+  if(failure||!index)return renderMessagesUnavailable('Your conversations could not be loaded. Please retry.',()=>renderMessagesList(S.renderToken));
+  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">YOUR CONVERSATIONS</span><h1>Messages</h1><p>Direct messages and exchange conversations, newest first. Exchange chats stay attached to their case.</p></div><div class="bc-head-actions"><button class="bc-btn" data-action="exchanges">Open exchanges</button></div></div><div class="bc-messages-layout" data-view="list"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane">${empty('💬','Pick a conversation','Choose a direct message or an exchange conversation to read the history and reply.')}</section></div>`);
+  bindMessagesListPane();
+  updateMessageBadge();
+}
+const THREAD_PAGE_SIZE=50;
+const DIRECT_THREAD_FALLBACK='No messages yet. Say hello and arrange your first meetup.';
+const CASE_THREAD_FALLBACK='No messages yet. Keep meetup, handoff, return and issue details here.';
+const threadCaches={direct:new Map(),case:new Map()};
+const threadDrafts=new Map();
+const pendingSends=new Map();
+let threadCacheUid=null;
+function threadCache(kind,id,uid){
+  if(threadCacheUid!==uid){threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();threadCacheUid=uid}
+  const key=`${uid}:${id}`;
+  const store=threadCaches[kind];
+  if(!store.has(key))store.set(key,{kind,id,uid,messages:[],ids:new Set(),hasOlder:true,pair:null,participants:null,caseRow:null});
+  return store.get(key);
+}
+function mergeThreadHistory(cache,incoming){
+  (incoming||[]).forEach(m=>{
+    if(!m||!m.id||cache.ids.has(m.id))return;
+    cache.ids.add(m.id);
+    cache.messages.push(m);
+  });
+  cache.messages.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||String(a.id).localeCompare(String(b.id)));
+}
+function validateThreadRows(cache,rows){
+  if(!cache)return rows||[];
+  if(cache.kind==='case'){
+    const [a,b]=cache.participants||[];
+    return (rows||[]).filter(m=>m.case_id===cache.id&&a&&b&&((m.sender_id===a&&m.recipient_id===b)||(m.sender_id===b&&m.recipient_id===a)));
+  }
+  const [uid,peerId]=cache.pair||[];
+  return (rows||[]).filter(m=>m.exchange_id==null&&uid&&peerId&&((m.sender_id===uid&&m.recipient_id===peerId)||(m.sender_id===peerId&&m.recipient_id===uid)));
+}
+function threadCursorPredicate(cursor){return `or(created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id}))`}
+function threadLatestQuery(kind,id,uid){
+  return kind==='case'
+    ?db.from('exchange_case_messages').select('*').eq('case_id',id).or(`sender_id.eq.${uid},recipient_id.eq.${uid}`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(THREAD_PAGE_SIZE)
+    :db.from('messages').select('*').is('exchange_id',null).or(`and(sender_id.eq.${uid},recipient_id.eq.${id}),and(sender_id.eq.${id},recipient_id.eq.${uid})`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(THREAD_PAGE_SIZE);
+}
+function threadEarlierQuery(kind,id,uid,cursor){
+  const cursorFilter=threadCursorPredicate(cursor);
+  return kind==='case'
+    ?db.from('exchange_case_messages').select('*').eq('case_id',id).or(`and(sender_id.eq.${uid},${cursorFilter}),and(recipient_id.eq.${uid},${cursorFilter})`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(THREAD_PAGE_SIZE)
+    :db.from('messages').select('*').is('exchange_id',null).or(`and(sender_id.eq.${uid},recipient_id.eq.${id},${cursorFilter}),and(sender_id.eq.${id},recipient_id.eq.${uid},${cursorFilter})`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(THREAD_PAGE_SIZE);
+}
+async function mergeThreadLatest(kind,id,uid,stillCurrent){
+  const {data,error}=await settledTimeout(threadLatestQuery(kind,id,uid));
+  if(error)throw error;
+  if(stillCurrent&&!stillCurrent())return;
+  const cache=threadCache(kind,id,uid);
+  mergeThreadHistory(cache,validateThreadRows(cache,data));
+}
+function sameDay(a,b){const x=new Date(a),y=new Date(b);return x.getFullYear()===y.getFullYear()&&x.getMonth()===y.getMonth()&&x.getDate()===y.getDate()}
+function messageBubble(m,senderName){const mine=m.sender_id===S.user?.id;return `<div class="bc-msg ${mine?'mine':''}"><span class="bc-msg-sender">${mine?'You':esc(senderName||'Collector')}</span>${esc(m.body||'')}<small>${fmtDateTime(m.created_at)}</small></div>`}
+function earlierThreadButtonMarkup(){return `<button class="bc-msg-earlier" type="button" data-load-earlier>Load earlier messages</button>`}
+function threadChatMarkup(messages,fallback,senderName,hasOlder){
+  if(!messages.length)return `<div class="bc-small">${esc(fallback||'No messages yet.')}</div>`;
+  let markup=messages.length&&hasOlder?earlierThreadButtonMarkup():'',lastDay=null;
+  messages.forEach(m=>{
+    const day=new Date(m.created_at);
+    if(!lastDay||!sameDay(lastDay,day)){markup+=`<div class="bc-msg-day" role="separator" aria-label="Messages from ${esc(fmtDate(m.created_at))}">${esc(fmtDate(m.created_at))}</div>`;lastDay=day}
+    markup+=messageBubble(m,senderName);
+  });
+  return markup;
+}
+function updateThreadChat(cache,options={}){
+  const chat=$('#bc-msg-chat');if(!chat)return;
+  const {fallback='',senderName='',scrollMode='jump'}=options;
+  const prevTop=chat.scrollTop,prevHeight=chat.scrollHeight;
+  chat.innerHTML=threadChatMarkup(cache.messages,fallback,senderName,cache.hasOlder);
+  if(scrollMode==='prepend')chat.scrollTop=Math.max(0,prevTop+(chat.scrollHeight-prevHeight));
+  else if(scrollMode==='keep')chat.scrollTop=prevTop;
+  else requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight});
+}
+function bindThreadCompose(form,kind,id,senderName){
+  if(!form)return;
+  const uid=S.user?.id;
+  const key=`${uid}:${kind}:${id}`;
+  const input=$('textarea[name="message"]',form);
+  if(input){
+    const saved=threadDrafts.get(key);
+    if(saved)input.value=saved;
+    input.addEventListener('input',()=>{threadDrafts.set(key,input.value)});
+  }
+  if(pendingSends.has(key)){
+    const button=$('button[type="submit"]',form);
+    if(button)button.disabled=true;
+    if(input)input.disabled=true;
+    showThreadStatus('Sending…');
+  }
+  form.onsubmit=async ev=>{
+    ev.preventDefault();
+    if(!S.user){showAuth();return}
+    if(!messagesThreadGuard(kind,id))return;
+    const submitUid=S.user.id,token=S.renderToken;
+    const stillCurrent=()=>S.user?.id===submitUid&&token===S.renderToken&&messagesThreadGuard(kind,id);
+    const sendKey=`${submitUid}:${kind}:${id}`;
+    if(pendingSends.has(sendKey)){showThreadStatus('Sending…');return}
+    const body=String(new FormData(form).get('message')||'').trim();
+    if(!body){toast('Write a message before sending.');return}
+    const button=$('button[type="submit"]',form);
+    if(!button||button.disabled)return;
+    if(kind==='case'){
+      const caseRow=$('#bc-msg-chat')?.bcThread?.caseRow;
+      if(caseRow&&terminalCaseStates.has(caseRow.state))return;
+    }
+    clearThreadError();
+    const sendOperation={};
+    pendingSends.set(sendKey,sendOperation);
+    button.disabled=true;if(input)input.disabled=true;
+    const restore=()=>{if(stillCurrent()){button.disabled=false;if(input){input.disabled=false;input.focus()}}};
+    try{
+      const intent={case_id:id,body};
+      const result=kind==='case'?await settledTimeout(withTimeout(canonicalRpc('send_exchange_case_message',{p_case_id:id,p_body:body},intent),15000)):await settledTimeout(withTimeout(db.from('messages').insert({sender_id:submitUid,recipient_id:id,exchange_id:null,body}),15000));
+      if(!stillCurrent())return;
+      if(result.error){restore();showThreadError(result.error?.message||'Message was not sent. Please retry.');return}
+      const sentDraft=input?input.value:null;
+      form.reset();
+      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
+      try{
+        await mergeThreadLatest(kind,id,submitUid,stillCurrent);
+      }catch(_){
+        if(!stillCurrent())return;
+        restore();
+        showThreadError('Message sent — refresh the conversation to see it.');
+        return;
+      }
+      if(!stillCurrent())return;
+      updateThreadChat(threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
+      reconcileMessageIndex(submitUid,kind,id);
+      advanceThreadWatermark(submitUid,kind,id);
+      updateMessageBadge();
+      restore();
+      toast('Message sent.');
+    }finally{
+      if(pendingSends.get(sendKey)!==sendOperation)return;
+      pendingSends.delete(sendKey);
+      const liveForm=activeThreadForm(submitUid,kind,id);
+      if(liveForm){
+        clearThreadStatus();
+        const liveButton=$('button[type="submit"]',liveForm);
+        const liveInput=$('textarea[name="message"]',liveForm);
+        if(liveButton)liveButton.disabled=false;
+        if(liveInput)liveInput.disabled=false;
+      }
+    }
+  };
+}
+function showThreadError(message,retry){
+  const card=$('.bc-msg-thread-card',app());if(!card)return;
+  const chat=$('#bc-msg-chat',card);
+  let box=$('#bc-msg-error',card);
+  if(!box){
+    box=document.createElement('div');
+    box.id='bc-msg-error';
+    box.className='bc-msg-error';
+    box.setAttribute('role','alert');
+    box.hidden=true;
+    card.insertBefore(box,chat||null);
+  }
+  box.hidden=false;
+  box.innerHTML=`<span>${esc(message)}</span>${retry?'<button class="bc-btn" type="button" data-retry-thread>Retry</button>':''}`;
+  if(retry)$('[data-retry-thread]',box).onclick=()=>{box.hidden=true;box.innerHTML='';retry()};
+}
+function clearThreadError(){
+  const card=$('.bc-msg-thread-card',app());if(!card)return;
+  const box=$('#bc-msg-error',card);
+  if(box){box.hidden=true;box.innerHTML=''}
+}
+function showThreadStatus(message){
+  const card=$('.bc-msg-thread-card',app());if(!card)return;
+  const chat=$('#bc-msg-chat',card);
+  let box=$('#bc-msg-status',card);
+  if(!box){
+    box=document.createElement('div');
+    box.id='bc-msg-status';
+    box.className='bc-msg-status';
+    box.setAttribute('role','status');
+    box.hidden=true;
+    card.insertBefore(box,chat||null);
+  }
+  box.hidden=false;
+  box.textContent=message;
+}
+function clearThreadStatus(){
+  const box=$('#bc-msg-status',app());
+  if(box){box.hidden=true;box.textContent=''}
+}
+function activeThreadForm(uid,kind,id){
+  if(S.user?.id!==uid)return null;
+  const ctx=$('#bc-msg-chat')?.bcThread;
+  if(!ctx||ctx.kind!==kind||String(ctx.id)!==String(id))return null;
+  return $('#bc-msg-form');
+}
+async function loadEarlierThreadMessages(chat){
+  const ctx=chat?.bcThread;if(!ctx)return;
+  const {kind,id,senderName,fallback}=ctx;
+  if(!S.user||!messagesThreadGuard(kind,id))return;
+  const uid=S.user.id,token=S.renderToken;
+  const stillCurrent=()=>S.user?.id===uid&&token===S.renderToken&&messagesThreadGuard(kind,id);
+  const cache=threadCache(kind,id,uid);
+  const oldest=cache.messages[0];
+  if(!oldest)return;
+  const button=$('[data-load-earlier]',chat);
+  if(button){button.disabled=true;button.textContent='Loading…'}
+  const {data,error}=await settledTimeout(threadEarlierQuery(kind,id,uid,oldest));
+  if(error){
+    if(stillCurrent()){
+      if(button){button.disabled=false;button.textContent='Load earlier messages'}
+      showThreadError('Earlier messages could not be loaded.',()=>loadEarlierThreadMessages(chat));
+    }
+    return;
+  }
+  if(!stillCurrent())return;
+  mergeThreadHistory(cache,validateThreadRows(cache,data));
+  cache.hasOlder=(data||[]).length>=THREAD_PAGE_SIZE;
+  updateThreadChat(cache,{fallback,senderName,scrollMode:'prepend'});
+}
+function applyCaseMetadata(e){
+  const closed=terminalCaseStates.has(e.state);
+  const p=S.profiles[otherId(e)]||{};
+  const root=app();
+  const pill=$('[data-msg-stage-pill]',root);
+  if(pill){pill.className=`bc-pill ${closed?'':'gold'}`;pill.textContent=exchangeStageLabel(e)}
+  const title=$('[data-msg-case-title]',root);
+  if(title)title.textContent=`${itemName(e.item_a)} ⇄ ${itemName(e.item_b)}`;
+  const sub=$('[data-msg-case-sub]',root);
+  if(sub)sub.textContent=`With ${p.display_name||'Collector'} · ${Number(e.duration_days)||30}-day exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}`;
+  const next=caseNextAction(e);
+  const nextBlock=$('.bc-ex-next',root);
+  if(nextBlock){
+    const strong=$('strong',nextBlock),small=$('small',nextBlock);
+    if(strong)strong.textContent=next.label||exchangeStageLabel(e);
+    if(small)small.textContent=next.copy;
+  }
+  const timeline=$('.bc-timeline',root);
+  if(timeline)timeline.outerHTML=exchangeTimeline(e);
+  updateCaseComposerState(e,p);
+}
+function updateCaseComposerState(e,p){
+  const closed=terminalCaseStates.has(e.state);
+  const card=$('.bc-msg-thread-card',app());
+  if(!card)return;
+  const composer=$('#bc-msg-form',card);
+  if(closed){
+    if(composer)composer.remove();
+    if(!$('.bc-msg-readonly',card)){
+      const notice=document.createElement('div');
+      notice.className='bc-notice bc-msg-readonly';
+      notice.innerHTML='<b>Case closed.</b> This exchange conversation is read-only.';
+      card.appendChild(notice);
+    }
+    return;
+  }
+  const notice=$('.bc-msg-readonly',card);
+  if(notice)notice.remove();
+  if(!composer){
+    const firstName=(p.display_name||'collector').split(' ')[0];
+    card.insertAdjacentHTML('beforeend',`<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form>`);
+    bindThreadCompose($('#bc-msg-form'),'case',e.id,p.display_name);
+  }
+}
+async function refreshThread(chat){
+  const ctx=chat?.bcThread;if(!ctx)return;
+  const {kind,id,senderName,fallback}=ctx;
+  if(!S.user||!messagesThreadGuard(kind,id))return;
+  const uid=S.user.id,token=S.renderToken;
+  const stillCurrent=()=>S.user?.id===uid&&token===S.renderToken&&messagesThreadGuard(kind,id);
+  const form=$('#bc-msg-form'),input=form?$('textarea[name="message"]',form):null;
+  const draft=input?input.value:'';
+  const caret=input&&input.selectionStart!=null?[input.selectionStart,input.selectionEnd]:null;
+  const hadFocus=!!(input&&document.activeElement===input);
+  const button=$('[data-refresh-thread]',app());
+  if(button){button.disabled=true;button.textContent='Refreshing…'}
+  const [caseResult,messageFailure]=await Promise.all([
+    kind==='case'?settledTimeout(db.from('exchange_cases').select('*').eq('id',id).maybeSingle(),10000):Promise.resolve({data:null,error:null}),
+    (async()=>{try{await mergeThreadLatest(kind,id,uid,stillCurrent);return null}catch(error){return error}})()
+  ]);
+  if(!stillCurrent())return;
+  if(button){button.disabled=false;button.textContent='↻ Refresh'}
+  if(kind==='case'&&caseResult.data){
+    ctx.caseRow=caseResult.data;
+    applyCaseMetadata(caseResult.data);
+  }
+  if(!messageFailure)updateThreadChat(threadCache(kind,id,uid),{fallback,senderName,scrollMode:'keep'});
+  if(!messageFailure){
+    reconcileMessageIndex(uid,kind,id);
+    advanceThreadWatermark(uid,kind,id);
+  }
+  if(!caseResult.error&&!messageFailure)clearThreadError();
+  const liveForm=$('#bc-msg-form'),liveInput=liveForm?$('textarea[name="message"]',liveForm):null;
+  if(liveInput){liveInput.value=draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
+  updateMessageBadge();
+  if(caseResult.error||messageFailure){
+    showThreadError('Messages could not be refreshed.',()=>refreshThread(chat));
+  }
+}
+function bindMessagesPage(){
+  bindMessagesListPane();
+  $$('[data-refresh-thread]',app()).forEach(b=>b.onclick=()=>refreshThread($('#bc-msg-chat')));
+  const chat=$('#bc-msg-chat');
+  if(chat){
+    chat.addEventListener('click',event=>{
+      const button=event.target.closest('[data-load-earlier]');
+      if(!button||button.disabled)return;
+      loadEarlierThreadMessages(chat);
+    });
+    requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight});
+  }
+}
+function renderMessagesUnavailable(message,retry){
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button>${empty('⚠️','Conversation unavailable',message,retry?'Retry':'Back to messages',retry?'retry-thread-load':'messages')}`);
+  if(retry)$('[data-action="retry-thread-load"]',app()).onclick=retry;
+}
+async function renderDirectThread(token,peerId){
+  page(loading('Opening conversation…'));
+  const uid=S.user?.id;
+  const indexPromise=uid?loadMessageIndex(uid,token).catch(()=>null):Promise.resolve(null);
+  const {data:peer,error:peerError}=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').eq('id',peerId).maybeSingle(),10000);
+  if(token!==S.renderToken||S.user?.id!==uid||!messagesThreadGuard('direct',peerId))return;
+  if(peerError)return renderMessagesUnavailable('Collector details could not be loaded. Please retry.',()=>renderDirectThread(S.renderToken,peerId));
+  if(!peer)return renderMessagesUnavailable('This collector could not be found or no longer has a public profile.');
+  const {data:rows,error:messageError}=await settledTimeout(threadLatestQuery('direct',peerId,uid),10000);
+  if(token!==S.renderToken||S.user?.id!==uid||!messagesThreadGuard('direct',peerId))return;
+  if(messageError)return renderMessagesUnavailable('Your messages could not be loaded. Please retry.',()=>renderDirectThread(S.renderToken,peerId));
+  await indexPromise;
+  if(token!==S.renderToken||S.user?.id!==uid||!messagesThreadGuard('direct',peerId))return;
+  S.profiles[peerId]=peer;
+  const cache=threadCache('direct',peerId,uid);
+  cache.pair=[uid,peerId];cache.participants=null;
+  const firstLoad=cache.ids.size===0;
+  mergeThreadHistory(cache,validateThreadRows(cache,rows));
+  if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
+  const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill blue">Direct message</span><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p>${reputationTrustContext(peerId)}</div></div></section><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,DIRECT_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></section></section></div>`);
+  const chat=$('#bc-msg-chat');
+  if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
+  bindMessagesPage();
+  bindThreadCompose($('#bc-msg-form'),'direct',peerId,p.display_name);
+  advanceThreadWatermark(uid,'direct',peerId);
+  updateMessageBadge();
+}
+async function renderCaseThread(token,caseId){
+  page(loading('Opening exchange conversation…'));
+  const uid=S.user?.id;
+  const stillCurrent=()=>token===S.renderToken&&S.user?.id===uid&&messagesThreadGuard('case',caseId);
+  const indexPromise=uid?loadMessageIndex(uid,token).catch(()=>null):Promise.resolve(null);
+  const {data:e,error:caseError}=await settledTimeout(db.from('exchange_cases').select('*').eq('id',caseId).maybeSingle(),10000);
+  if(!stillCurrent())return;
+  if(caseError)return renderMessagesUnavailable('This exchange conversation could not be loaded. Please retry.',()=>renderCaseThread(S.renderToken,caseId));
+  if(!e||![e.user_a,e.user_b].includes(S.user.id))return renderMessagesUnavailable('This exchange conversation is unavailable or belongs to another collector.');
+  if(!await hydrateExchangeItems([e],stillCurrent))return;
+  if(!stillCurrent())return;
+  const oid=otherId(e);
+  const {data:peer}=await settledTimeout(oid?db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').eq('id',oid).maybeSingle():Promise.resolve({data:null,error:null}),10000);
+  if(!stillCurrent())return;
+  if(peer)S.profiles[oid]=peer;
+  const {data:rows,error:messageError}=await settledTimeout(threadLatestQuery('case',caseId,uid),10000);
+  if(!stillCurrent())return;
+  if(messageError)return renderMessagesUnavailable('Your exchange messages could not be loaded. Please retry.',()=>renderCaseThread(S.renderToken,caseId));
+  await indexPromise;
+  if(!stillCurrent())return;
+  const cache=threadCache('case',caseId,uid);
+  cache.participants=[e.user_a,e.user_b];cache.pair=null;
+  const firstLoad=cache.ids.size===0;
+  mergeThreadHistory(cache,validateThreadRows(cache,rows));
+  if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
+  const p=S.profiles[oid]||{},closed=terminalCaseStates.has(e.state),next=caseNextAction(e),firstName=(p.display_name||'collector').split(' ')[0];
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill ${closed?'':'gold'}" data-msg-stage-pill>${esc(exchangeStageLabel(e))}</span><h1 data-msg-case-title>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h1><p data-msg-case-sub>With ${esc(p.display_name||'Collector')} · ${Number(e.duration_days)||30}-day exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${reputationTrustContext(oid)}</div></div><button class="bc-btn primary" type="button" data-open-exchange="${attr(e.id)}">Open exchange</button></section><div class="bc-ex-next" role="status"><span>NEXT</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>${exchangeTimeline(e)}<div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,CASE_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div>${closed?'<div class="bc-notice"><b>Case closed.</b> This exchange conversation is read-only.</div>':`<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form>`}</section></section></div>`);
+  const chat=$('#bc-msg-chat');
+  if(chat)chat.bcThread={kind:'case',id:caseId,senderName:p.display_name,fallback:CASE_THREAD_FALLBACK,caseRow:e};
+  bindMessagesPage();
+  bindThreadCompose($('#bc-msg-form'),'case',e.id,p.display_name);
+  advanceThreadWatermark(uid,'case',caseId);
+  updateMessageBadge();
+}
+async function renderMessages(token){
+  if(!S.user){showAuth();return navigate('home')}
+  document.querySelector('.bc-match-login-notice')?.remove();
+  const target=parseMessagesTarget();
+  if(!target)return renderMessagesList(token);
+  if(target.kind==='direct'){
+    if(target.peerId===S.user.id)return renderMessagesUnavailable('You cannot open a direct conversation with yourself.');
+    return renderDirectThread(token,target.peerId);
+  }
+  if(target.kind==='case')return renderCaseThread(token,target.caseId);
+  return renderMessagesUnavailable('This conversation link is not valid. Open Messages and pick a conversation.');
+}
+function showInbox(){if(!S.user){showAuth();return}navigate('messages')}
+function quickMessage(peerId){if(!S.user){showAuth();return}if(!peerId)return showInbox();navigate('messages',`direct:${peerId}`)}
 
 function installPWA(){if(!S.installPrompt)return toast('Use your browser menu and choose Add to Home screen.');S.installPrompt.prompt();S.installPrompt.userChoice.finally(()=>{S.installPrompt=null})}
 async function disableBetaPWA(){
@@ -1072,6 +1741,6 @@ window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();rememberRoute()}
 window.addEventListener('pageshow',event=>{lastVisibleAt=Date.now();if(event.persisted)validateResume().catch(()=>{})});
 window.addEventListener('focus',()=>{lastVisibleAt=Date.now();validateResume().catch(()=>{})});
 window.addEventListener('online',()=>reconcileNotifications().catch(()=>{}));
-window.bcNav=navigate;window.bcAuth=showAuth;window.bcClose=closeOverlay;window.bcV3Refresh=refreshRoute;window.bcPushToast=toast;window.bcApplyA11y=()=>applyA11y(document);
+window.bcNav=navigate;window.bcAuth=showAuth;window.bcClose=closeOverlay;window.bcV3Refresh=refreshRoute;window.bcPushToast=toast;window.bcApplyA11y=()=>applyA11y(document);window.showInbox=showInbox;window.quickMessage=quickMessage;
 boot().catch(e=>{console.error('BrickCircle V3 boot failed',e);shell();page(empty('⚠️','BrickCircle could not start','Please refresh the page. If this continues, try again in a moment.'))});
 })();

@@ -91,11 +91,14 @@ test('mobile navigation keeps every beta-critical destination reachable',async({
   await page.goto('/v2.html#home');
   const mobile=page.locator('.bc-mobile-nav');
   await expect(mobile).toBeVisible();
-  for(const route of ['browse','sets','matches','exchanges']){
+  for(const route of ['browse','sets','matches','messages']){
     await mobile.locator(`[data-nav="${route}"]`).click();
     await expect(page).toHaveURL(new RegExp(`#${route}$`));
     await expect(page.locator(`.bc-mobile-nav [data-nav="${route}"]`)).toHaveAttribute('aria-current','page');
   }
+  await page.getByRole('button',{name:'Open exchanges',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>location.hash)).toBe('#exchanges');
+  await expect(page.getByRole('heading',{name:'Exchanges',exact:true})).toBeVisible();
 });
 
 declare global {interface Window {__bcIsolated:any}}
