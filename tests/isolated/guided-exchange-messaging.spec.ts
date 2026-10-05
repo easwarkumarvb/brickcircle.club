@@ -68,6 +68,9 @@ for(const kind of ['case','direct'])test(`${kind} delivery retry after a committ
 test('direct chat links to the exchange, and reconnect updates the guide without losing a draft',async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page,'easwar','PROPOSED',{},'messages/direct:'+B);
   await page.locator('[data-open-messages-case="guide-case"]').click();
+  await expect(page).toHaveURL(/#messages\/case:guide-case$/);
+  await expect(page.getByRole('region',{name:'Exchange next step'})).toBeVisible();
+  await expect(page.locator('.bc-conversation-guide')).toContainText('Waiting for their reply');
   const input=page.locator('#bc-msg-form textarea');await input.fill('Keep my draft');
   await page.evaluate(()=>{const s=(window as any).__bcThreeUser;s.data.exchanges[0].state='ACCEPTED';s.data.exchanges[0].state_version++;s.persist();window.dispatchEvent(new Event('online'))});
   await expect(page.locator('[data-thread-case-action="propose_meetup"]')).toBeVisible();await expect(input).toHaveValue('Keep my draft');
