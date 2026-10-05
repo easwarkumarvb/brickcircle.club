@@ -57,6 +57,10 @@ for(const kind of ['case','direct'])test(`${kind} delivery retry after a committ
   const input=page.locator('#bc-msg-form textarea');await input.fill('One delivery only');
   await page.locator('#bc-msg-form').evaluate((form:HTMLFormElement)=>form.requestSubmit());
   await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely');await expect(input).toHaveValue('One delivery only');
+  await page.locator('[data-refresh-thread]').click();
+  await expect(page.locator('#bc-msg-chat')).toContainText('One delivery only');
+  await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely');
+  await expect(input).toHaveValue('One delivery only');
   await page.locator('#bc-msg-form').evaluate((form:HTMLFormElement)=>form.requestSubmit());
   await expect(input).toHaveValue('');await expect(page.locator('#bc-msg-chat')).toContainText('One delivery only');
   expect(await page.evaluate(kind=>{const s=(window as any).__bcThreeUser;return (kind==='case'?s.data.messages:s.data.directMessages).filter((m:any)=>m.body==='One delivery only').length},kind)).toBe(1);

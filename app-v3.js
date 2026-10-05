@@ -230,7 +230,7 @@ function canonicalOperationStore(uid=S.user?.id){return `bc_canonical_ops:${uid|
 function canonicalOperationEntries(uid){try{return JSON.parse(sessionStorage.getItem(canonicalOperationStore(uid))||'{}')}catch(_){return {}}}
 function canonicalOperationKey(name,intent,uid=S.user?.id){const fingerprint=canonicalOperationFingerprint(name,intent),memoryKey=`${canonicalOperationStore(uid)}:${fingerprint}`,stored=canonicalOperationEntries(uid),existing=stored[fingerprint]||canonicalOperationMemory.get(memoryKey);if(existing)return existing;const key=crypto.randomUUID();stored[fingerprint]=key;canonicalOperationMemory.set(memoryKey,key);try{sessionStorage.setItem(canonicalOperationStore(uid),JSON.stringify(stored))}catch(_){}return key}
 function reconcileCanonicalOperation(name,intent,uid=S.user?.id){const fingerprint=canonicalOperationFingerprint(name,intent),memoryKey=`${canonicalOperationStore(uid)}:${fingerprint}`,stored=canonicalOperationEntries(uid);delete stored[fingerprint];canonicalOperationMemory.delete(memoryKey);try{sessionStorage.setItem(canonicalOperationStore(uid),JSON.stringify(stored))}catch(_){}}
-async function canonicalRpc(name,args,intent){const uid=S.user?.id,key=canonicalOperationKey(name,intent,uid),result=await db.rpc(name,{...args,p_idempotency_key:key});if(!result.error&&result.data?.ok!==false)reconcileCanonicalOperation(name,intent,uid);return result}
+async function canonicalRpc(name,args,intent){const uid=S.user?.id,key=canonicalOperationKey(name,intent,uid),result=await settledTimeout(db.rpc(name,{...args,p_idempotency_key:key}),15000);if(!result.error&&result.data?.ok!==false)reconcileCanonicalOperation(name,intent,uid);return result}
 
 const S={
   user:null,profile:null,liquidity:null,membership:null,collection:[],wishlist:[],matches:[],
@@ -1591,12 +1591,13 @@ function bindThreadCompose(form,kind,id,senderName){
     const sendOperation={};
     pendingSends.set(sendKey,sendOperation);
     button.disabled=true;if(input)input.disabled=true;
+    showThreadStatus('Sending…');
     const restore=()=>{if(stillCurrent()){button.disabled=false;if(input){input.disabled=false;input.focus()}}};
     try{
       const intent=kind==='case'?{case_id:id,body}:{recipient_id:id,body};
-      const result=kind==='case'?await settledTimeout(withTimeout(canonicalRpc('send_exchange_case_message',{p_case_id:id,p_body:body},intent),15000)):await settledTimeout(withTimeout(canonicalRpc('send_collector_message',{p_recipient_id:id,p_body:body},intent),15000));
+      const result=kind==='case'?await canonicalRpc('send_exchange_case_message',{p_case_id:id,p_body:body},intent):await canonicalRpc('send_collector_message',{p_recipient_id:id,p_body:body},intent);
       if(!stillCurrent())return;
-      if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.');return}
+      if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       const sentDraft=input?input.value:null;
       form.reset();
       if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
@@ -1629,7 +1630,7 @@ function bindThreadCompose(form,kind,id,senderName){
     }
   };
 }
-function showThreadError(message,retry){
+function showThreadError(message,retry,errorKind='refresh'){
   const card=$('.bc-msg-thread-card',app());if(!card)return;
   const chat=$('#bc-msg-chat',card);
   let box=$('#bc-msg-error',card);
@@ -1642,6 +1643,7 @@ function showThreadError(message,retry){
     card.insertBefore(box,chat||null);
   }
   box.hidden=false;
+  box.dataset.errorKind=errorKind;
   box.innerHTML=`<span>${esc(message)}</span>${retry?'<button class="bc-btn" type="button" data-retry-thread>Retry</button>':''}`;
   if(retry)$('[data-retry-thread]',box).onclick=()=>{box.hidden=true;box.innerHTML='';retry()};
 }
@@ -1813,9 +1815,10 @@ async function refreshThread(chat){
     reconcileMessageIndex(uid,kind,id);
     advanceThreadWatermark(uid,kind,id);
   }
-  if(!caseResult.error&&!messageFailure)clearThreadError();
+  if(!caseResult.error&&!messageFailure&&$('#bc-msg-error')?.dataset.errorKind!=='delivery')clearThreadError();
   const liveForm=$('#bc-msg-form'),liveInput=liveForm?$('textarea[name="message"]',liveForm):null;
-  if(liveInput){liveInput.value=draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
+  // A background read must never overwrite text/caret edited while it awaited I/O.
+  if(liveInput&&liveInput!==input){liveInput.value=threadDrafts.get(`${uid}:${kind}:${id}`)||draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
   updateMessageBadge();
   if(caseResult.error||messageFailure){
     showThreadError('Messages could not be refreshed.',()=>refreshThread(chat));
