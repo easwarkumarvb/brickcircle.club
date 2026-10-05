@@ -4,7 +4,7 @@ const assert = require('assert');
 
 const migrationName = '20260930111000_admin_dashboard_exchange_admin_authorization.sql';
 const sql = fs.readFileSync(path.join('supabase', 'migrations', migrationName), 'utf8');
-const edge = fs.readFileSync(path.join('supabase', 'functions', 'admin-dashboard', 'index.ts'), 'utf8');
+const edge = fs.readFileSync(path.join('supabase', 'functions', 'admin-dashboard', 'handler.mjs'), 'utf8');
 const client = fs.readFileSync('admin-dashboard.js', 'utf8');
 
 assert.match(sql, /create or replace function public\.is_exchange_admin\(\)/i);
@@ -26,13 +26,20 @@ assert.match(edge, /isExchangeAdmin !== true/);
 const verifyUserAt = edge.indexOf('userClient.auth.getUser()');
 const accessRpcAt = edge.indexOf("userClient.rpc('is_exchange_admin')");
 const strictAllowAt = edge.indexOf('isExchangeAdmin !== true');
-const serviceClientAt = edge.indexOf('const admin = createClient(url, service');
 assert.ok(verifyUserAt >= 0 && accessRpcAt > verifyUserAt);
 assert.ok(strictAllowAt > accessRpcAt);
-assert.ok(serviceClientAt > strictAllowAt);
+assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY/);
 
 assert.doesNotMatch(client, /OWNER_USER_ID|user\.id\s*!==/);
 assert.match(client, /db\.auth\.getUser\(\)/);
 assert.match(client, /functions\/v1\/admin-dashboard/);
 
 console.log('admin dashboard canonical authorization contract passed');
+
+const adminSql = fs.readFileSync('supabase/migrations/20261005143140_marketplace_admin_console.sql', 'utf8');
+assert.match(adminSql, /auth\.sessions/);
+assert.match(adminSql, /auth\.jwt\(\)->>'aal' is distinct from 'aal2'/);
+assert.match(adminSql, /perform private\.assert_marketplace_admin\(\)/);
+assert.match(adminSql, /pg_advisory_xact_lock/);
+assert.match(adminSql, /v_revision<>p_revision/);
+assert.doesNotMatch(adminSql, /update public\.exchange_cases/);
