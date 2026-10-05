@@ -69,6 +69,7 @@ html.bc-collector-preview .bc-msg.mine :is(.bc-msg-sender,small){color:#fff!impo
 html.bc-collector-preview .bc-msg-day{background:#e3e9f1!important;color:#465365!important;padding:5px 12px!important}
 html.bc-collector-preview .bc-msg-compose .bc-textarea{border-radius:12px!important;border-color:#c5cfdd!important;padding:12px!important}
 html.bc-collector-preview .bc-msg-compose .bc-btn.primary{background:#0759a6!important;border-color:#0759a6!important}
+html.bc-collector-preview :is(.bc-overlay,.bc-drawer-overlay){z-index:10050!important}
 html.bc-collector-preview .bc-mobile-nav{background:#fff!important;border-color:#dde3eb!important;backdrop-filter:none!important}
 @media(max-width:1000px){html.bc-collector-preview .bc-set-grid{grid-template-columns:repeat(3,minmax(0,1fr))!important}html.bc-collector-preview .bc-landing-hero{padding:30px!important}}
 @media(max-width:700px){
