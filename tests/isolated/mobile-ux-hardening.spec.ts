@@ -23,7 +23,7 @@ test('390px curated browse keeps search usable and controls large enough for tou
   expect(await search.evaluate(el=>parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
   expect(await search.evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(48);
   const columns=await page.locator('.bc-set-grid').evaluate(el=>getComputedStyle(el).gridTemplateColumns.split(' ').length);
-  expect(columns).toBe(1);
+  expect(columns).toBe(2);
   await noHorizontalOverflow(page);
 });
 
