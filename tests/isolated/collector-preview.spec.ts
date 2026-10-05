@@ -5,7 +5,7 @@ for(const width of [320,390,1440]){
   await page.setViewportSize({width,height:900});
   await page.goto(`${preview}?isolated=signed-out#home`);
   await expect(page.locator('.bc-landing-hero')).toBeVisible();
-  await expect(page.locator('html')).toHaveClass('bc-collector-preview');
+  await expect(page.locator('html')).toHaveClass(/\bbc-collector-preview\b/);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
   await page.goto(`${preview}?isolated=matched#browse`);
   await expect(page.locator('.bc-pop-chip')).toHaveCount(12);
@@ -38,6 +38,6 @@ for(const width of [320,390,1440]){
 test('canonical app does not opt into collector styles',async({page})=>{
  await page.goto('/v2.html?isolated=signed-out#home');
  await expect(page.locator('.bc-landing-hero')).toBeVisible();
- await expect(page.locator('html')).not.toHaveClass('bc-collector-preview');
+ await expect(page.locator('html')).not.toHaveClass(/\bbc-collector-preview\b/);
  await expect(page.locator('link[href*="visual-prototype.css"]')).toHaveCount(0);
 });
