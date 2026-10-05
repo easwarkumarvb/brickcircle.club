@@ -3,6 +3,7 @@ create table private.marketplace_admin_revisions (
   entity_type text not null check (entity_type in ('catalogue','support')),
   entity_id text not null,
   revision integer not null default 0,
+  catalogue_hidden boolean not null default false,
   status text check (status in ('open','in_progress','resolved')),
   primary key (entity_type,entity_id)
 );
@@ -24,6 +25,24 @@ create index marketplace_admin_audit_created_idx on private.marketplace_admin_au
 alter table private.marketplace_admin_revisions enable row level security;
 alter table private.marketplace_admin_audit enable row level security;
 revoke all on private.marketplace_admin_revisions,private.marketplace_admin_audit from public,anon,authenticated;
+
+-- Imports update source activity every day. An admin hide must survive those
+-- upserts; the private override is changed only by the audited admin RPC.
+create function private.preserve_admin_catalogue_visibility() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+  if exists (select 1 from private.marketplace_admin_revisions r
+    where r.entity_type='catalogue' and r.entity_id=new.set_number and r.catalogue_hidden) then
+    new.catalog_active:=false;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.preserve_admin_catalogue_visibility() from public,anon,authenticated,service_role;
+grant execute on function private.preserve_admin_catalogue_visibility() to service_role;
+create trigger preserve_admin_catalogue_visibility
+  before insert or update on public.lego_sets
+  for each row execute function private.preserve_admin_catalogue_visibility();
 
 create function private.assert_marketplace_admin() returns void
 language plpgsql security definer set search_path='' as $$
@@ -155,6 +174,8 @@ begin
   select revision,coalesce(status,v_status) into v_revision,v_status from private.marketplace_admin_revisions where entity_type=p_entity and entity_id=p_id for update;
   if v_revision<>p_revision then raise exception 'This record changed. Refresh and retry.' using errcode='40001'; end if;
   if p_entity='catalogue' then
+    update private.marketplace_admin_revisions set catalogue_hidden=(p_value='hidden')
+      where entity_type=p_entity and entity_id=p_id;
     update public.lego_sets set catalog_active=(p_value='visible') where set_number=p_id;
   else
     v_before:=jsonb_build_object('value',v_status);

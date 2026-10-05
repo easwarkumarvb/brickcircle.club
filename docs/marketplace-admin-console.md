@@ -12,7 +12,7 @@ Private revision and audit tables have RLS enabled and no client policies or gra
 
 ## Management actions
 
-- Catalogue visibility changes affect new Find Sets queries (`catalog_active`); existing collections and exchanges are retained. Already loaded or cached discovery views may refresh later. This is discovery management, not an emergency removal of historical records.
+- Catalogue visibility changes affect new Find Sets queries (`catalog_active`); existing collections and exchanges are retained. A private hide override and database trigger preserve admin-hidden sets across daily Rebrickable imports. Unhiding clears the override; source lifecycle flags continue to apply normally. Already loaded or cached discovery views may refresh later. This is discovery management, not an emergency removal of historical records.
 - Support requests have a separate internal triage status: open, in progress, resolved. The required reason doubles as an internal support note in the audit history. These changes do not close the underlying collector request, resolve a peer-reported issue or change an exchange state.
 - Each write locks the target row, checks the expected revision and writes an audit entry in the same transaction. UUID request IDs make uncertain-delivery retries idempotent. Reusing a request ID for different content and stale revisions return a conflict.
 - Member and exchange information is read-only. The console has no forced custody transitions, member deletion, identity verification overrides, arbitrary SQL or broad private-message access.

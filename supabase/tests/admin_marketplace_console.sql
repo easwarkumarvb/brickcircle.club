@@ -40,6 +40,9 @@ begin
   result:=public.admin_marketplace_mutate('catalogue',set_id,'hidden',rev,'Staging visibility test',rid);
   assert (result->>'revision')::int=rev+1;
   assert not (select catalog_active from public.lego_sets where set_number=set_id);
+  -- Model the existing daily importer reactivating the same set.
+  update public.lego_sets set catalog_active=true where set_number=set_id;
+  assert not (select catalog_active from public.lego_sets where set_number=set_id);
   result:=public.admin_marketplace_mutate('catalogue',set_id,'hidden',rev,'Staging visibility test',rid);
   assert (result->>'replayed')::boolean;
   assert (select count(*) from private.marketplace_admin_audit where actor_id=a and request_id=rid)=1;
@@ -47,6 +50,10 @@ begin
   begin perform public.admin_marketplace_mutate('catalogue',set_id,'visible',rev,'Staging visibility test',extensions.gen_random_uuid()); raise exception 'Stale revision allowed'; exception when serialization_failure then null; end;
   begin perform public.admin_marketplace_mutate('catalogue',set_id,'delete',rev+1,'Staging invalid test',extensions.gen_random_uuid()); raise exception 'Delete allowed'; exception when invalid_parameter_value then null; end;
   begin perform public.admin_marketplace_mutate('catalogue',set_id,'visible',rev+1,'short',extensions.gen_random_uuid()); raise exception 'Short reason allowed'; exception when invalid_parameter_value then null; end;
+  perform public.admin_marketplace_mutate('catalogue',set_id,'visible',rev+1,'Restore discovery after review',extensions.gen_random_uuid());
+  assert (select catalog_active from public.lego_sets where set_number=set_id);
+  update public.lego_sets set catalog_active=true where set_number=set_id;
+  assert (select catalog_active from public.lego_sets where set_number=set_id);
   select id,state into case_id,original_state from public.exchange_cases order by created_at,id limit 1;
   if case_id is null then raise exception 'Staging requires one exchange fixture'; end if;
   perform public.admin_marketplace_read('exchange_detail','',0,case_id::text);

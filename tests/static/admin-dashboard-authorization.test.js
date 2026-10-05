@@ -43,3 +43,6 @@ assert.match(adminSql, /perform private\.assert_marketplace_admin\(\)/);
 assert.match(adminSql, /pg_advisory_xact_lock/);
 assert.match(adminSql, /v_revision<>p_revision/);
 assert.doesNotMatch(adminSql, /update public\.exchange_cases/);
+assert.match(adminSql, /preserve_admin_catalogue_visibility/);
+assert.match(adminSql, /before insert or update on public\.lego_sets/);
+assert.match(adminSql, /new\.catalog_active:=false/);
