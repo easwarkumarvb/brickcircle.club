@@ -48,7 +48,7 @@ jobs:
       - name: Install Firefox + WebKit
         run: npx playwright install --with-deps firefox webkit
       - name: WebKit uncertain-delivery regression
-        run: npm run test:isolated -- tests/isolated/canonical-exchange-review-fixes.spec.ts --project=webkit --grep "committed response is lost"
+        run: npm run test:isolated -- tests/isolated/canonical-exchange-review-fixes.spec.ts --project=webkit --grep "committed response is lost" --retries=0 --repeat-each=3
       - name: Firefox + WebKit isolated functional suite
         run: npm run test:isolated -- --project=firefox --project=webkit
       - name: Upload Firefox and WebKit admin screenshots

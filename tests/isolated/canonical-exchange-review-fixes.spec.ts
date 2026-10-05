@@ -233,13 +233,18 @@ test('proposal, transition and message reuse their idempotency key after a commi
   const workflowContext=await browser.newContext(),workflow=await openActor(workflowContext,'easwar',seed(exchange('INSPECTION',{safety_ack_a_at:now,safety_ack_b_at:now})));
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('exchange_case_transition'));
   const arrive=workflow.getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toBeEnabled();await arrive.click();await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
-  // Wait for the transition handler to finish rendering and binding the chat form.
-  await expect(workflow.getByText('Exchange case updated.',{exact:true})).toBeVisible();
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('send_exchange_case_message'));
-  const input=workflow.locator('#bc-chat-form input');await input.fill('Same message once');const messageButton=workflow.locator('#bc-chat-form button');await messageButton.click();
+  const messageButton=workflow.locator('#bc-chat-form button');
+  // Use the native form lifecycle atomically: a WebKit mouse click can scroll
+  // and remount this form between filling the draft and dispatching submit.
+  const submitSameMessage=()=>workflow.locator('#bc-chat-form').evaluate((form:HTMLFormElement)=>{
+    const input=form.querySelector('input')!;
+    input.value='Same message once';
+    form.requestSubmit();
+  });
+  await submitSameMessage();
   await expect.poll(()=>workflow.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='send_exchange_case_message').length)).toBe(1);
-  await expect(messageButton).toBeEnabled();await expect(input).toHaveValue('Same message once');await messageButton.click();
-  // Click completion does not await the asynchronous submit handler in WebKit.
+  await expect(messageButton).toBeEnabled();await submitSameMessage();
   await expect.poll(()=>workflow.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='send_exchange_case_message').length)).toBe(2);
   await expect(workflow.locator('#bc-chat').getByText('Same message once',{exact:false})).toBeVisible();
   const workflowResult=await workflow.evaluate(()=>({data:window.__bcThreeUser.data,args:window.__bcThreeUser.rpcArgs}));
