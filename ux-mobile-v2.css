@@ -229,6 +229,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   min-height:42px!important;
 }
 .bc-pop-chip:hover{border-color:#c9c4b8!important;background:#fffbea!important}
+.bc-pop-chip[aria-pressed="true"]{background:var(--bc-ink)!important;color:#fff!important;border-color:var(--bc-ink)!important}
 .bc-set-grid{gap:14px!important}
 .bc-set-card{
   padding:12px!important;
@@ -691,6 +692,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 }
 .bc-myset-actions{justify-content:flex-end!important}
 .bc-toggle{min-height:44px!important}
+.bc-discovery-chips{flex-wrap:wrap;overflow-x:visible}
 
 @media (max-width:820px){
   .bc-discovery-chips{margin-inline:-1px;padding-bottom:2px}
