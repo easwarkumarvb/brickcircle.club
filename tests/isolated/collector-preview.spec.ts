@@ -30,7 +30,8 @@ for(const width of [320,390,1440]){
   await expect(page.locator('#bc-msg-chat')).toContainText('Saturday works for me.');
   await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
-  await page.getByRole('button',{name:'Back to Messages'}).click();
+  if(width<=820)await page.getByRole('button',{name:'Back to Messages'}).click();
+  else await page.locator('[data-refresh-messages-list]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
  });
 }
