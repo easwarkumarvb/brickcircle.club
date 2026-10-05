@@ -1099,7 +1099,7 @@ async function cancelCaseBeforeMutualHandoff(e,button){
   if(error){if(button)button.disabled=false;return fail(error,'Could not cancel before handoff. The exchange may have changed, or a handoff may already be confirmed. Refresh and retry.')}
   await refreshCore();await reloadCaseView(e.id);toast('Exchange cancelled before the mutual handoff.');
 }
-async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;return fail(error,'The exchange changed or this action is no longer available. Refresh and retry.')}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
+async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;fail(error,'The exchange may have changed. Checking the latest step before you retry.');if(messagesThreadGuard('case',e.id))await reloadCaseView(e.id);return}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
 function legacyIssueCase(e){return e.state==='HANDOFF_ISSUE'||e.state==='DISPUTED'}
 function canReportCaseIssue(e){return Boolean(e.handoff_at)&&!legacyIssueCase(e)}
 function reputationTrustContext(userId){

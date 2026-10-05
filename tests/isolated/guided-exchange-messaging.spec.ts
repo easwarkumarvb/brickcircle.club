@@ -77,3 +77,24 @@ test('direct chat links to the exchange, and reconnect updates the guide without
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({path:'test-results/guided-messaging-mobile.png',fullPage:true});
 });
+test('simultaneous partner confirmation refreshes a stale action before retry',async({page})=>{
+  await open(page,'easwar','MEETUP_CONFIRMED');
+  await expect(page.locator('[data-thread-case-action="safety_ack"]')).toBeVisible();
+  await page.evaluate(()=>{
+    const db=(window as any).BC_SUPABASE,original=db.rpc;let first=true;
+    db.rpc=async(name:any,args:any)=>{
+      if(first&&name==='exchange_case_transition'){
+        first=false;const s=(window as any).__bcThreeUser;
+        s.data.exchanges[0].state_version++;s.data.exchanges[0].safety_ack_b_at='2026-10-05T12:00:00Z';s.persist();
+        return {data:null,error:{code:'40001',message:'The exchange changed. Refresh and retry.'}};
+      }
+      return original(name,args);
+    };
+  });
+  await page.locator('[data-thread-case-action="safety_ack"]').click();
+  await page.locator('.bc-guide-checks summary').click();
+  await expect(page.locator('.bc-guide-checks tbody tr').first().locator('td').last()).toHaveText('Confirmed');
+  await page.locator('[data-thread-case-action="safety_ack"]').click();
+  await expect(page.locator('[data-thread-case-action="arrive"]')).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).__bcThreeUser.rpcArgs.filter((r:any)=>r.name==='exchange_case_transition').at(-1).args.p_expected_version)).toBe(6);
+});
