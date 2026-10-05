@@ -1,5 +1,5 @@
 {
-  "release": "20261005-curated-categories-r1",
+  "release": "20261005-collector-ux-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -9,6 +9,7 @@
     "/mobile-ux-v1.css",
     "/zen-ux-v1.css",
     "/ux-mobile-v2.css",
+    "/collector-ux.css",
     "/analytics.js",
     "/product-analytics.js",
     "/observability-v26.js",

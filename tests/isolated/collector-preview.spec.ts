@@ -1,11 +1,11 @@
 import {test,expect} from './fixtures';
-const preview='/visual-prototype.html';
+const preview='/v2.html';
 for(const width of [320,390,1440]){
- test(`collector preview preserves navigation and messaging at ${width}px`,async({page})=>{
+ test(`collector rollout preserves navigation and messaging at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:900});
   await page.goto(`${preview}?isolated=signed-out#home`);
   await expect(page.locator('.bc-landing-hero')).toBeVisible();
-  await expect(page.locator('html')).toHaveClass(/\bbc-collector-preview\b/);
+  await expect(page.locator('html')).toHaveClass(/\bbc-collector\b/);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
   await page.goto(`${preview}?isolated=matched#browse`);
   await expect(page.locator('.bc-pop-chip')).toHaveCount(12);
@@ -35,9 +35,9 @@ for(const width of [320,390,1440]){
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
  });
 }
-test('canonical app does not opt into collector styles',async({page})=>{
+test('canonical app loads the approved collector styles',async({page})=>{
  await page.goto('/v2.html?isolated=signed-out#home');
  await expect(page.locator('.bc-landing-hero')).toBeVisible();
- await expect(page.locator('html')).not.toHaveClass(/\bbc-collector-preview\b/);
- await expect(page.locator('link[href*="visual-prototype.css"]')).toHaveCount(0);
+ await expect(page.locator('html')).toHaveClass(/\bbc-collector\b/);
+ await expect(page.locator('link[href*="collector-ux.css"]')).toHaveCount(1);
 });
