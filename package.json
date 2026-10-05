@@ -6,7 +6,7 @@
     "release:sync": "node scripts/sync-release-assets.mjs",
     "release:check": "node scripts/sync-release-assets.mjs --check",
     "test:static": "playwright test --project=chromium --grep @static",
-    "syntax-check": "for f in app-v3.js exchangeable-persistence-v1.js locations-v3.js a11y-v1.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js web-push-config.js web-push-v1.js; do node --check \"$f\"; done",
+    "syntax-check": "for f in app-v3.js exchangeable-persistence-v1.js locations-v3.js a11y-v1.js observability-v26.js catalogue-cache-sw.js analytics.js product-analytics.js web-push-config.js web-push-v1.js admin-dashboard.js supabase/functions/admin-dashboard/handler.mjs; do node --check \"$f\"; done",
     "test:e2e": "playwright test --project=chromium --grep-invert @cross-browser",
     "test:isolated": "playwright test --config=playwright.isolated.config.ts",
     "test:isolated:chromium": "playwright test --config=playwright.isolated.config.ts --project=chromium",
@@ -14,7 +14,7 @@
     "smoke:hosted:exchange": "node scripts/hosted-exchange-smoke.mjs",
     "test:cross-browser": "playwright test tests/e2e/cross-browser-accessibility.spec.ts --project=chromium --project=firefox --project=webkit",
     "test:qa-all": "playwright test",
-    "test:security-contracts": "node tests/static/legacy-exchange-rpc-lockdown.test.js && node tests/static/admin-dashboard-authorization.test.js",
+    "test:security-contracts": "node tests/static/legacy-exchange-rpc-lockdown.test.js && node tests/static/admin-dashboard-authorization.test.js && node --test tests/static/admin-marketplace-api.test.mjs",
     "test:owner-review-recovery": "node tests/static/owner-review-recovery.test.js",
     "test:collector-avatar": "node tests/static/collector-avatar-pipeline.test.js"
   },

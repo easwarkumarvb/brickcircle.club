@@ -35,14 +35,28 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Chromium isolated functional suite
         run: npm run test:isolated:chromium
+      - name: Upload Chromium admin screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-console-chromium
+          path: test-results/**/admin-*.png
+          if-no-files-found: ignore
       - name: Reclaim test artifacts before cross-browser gate
         run: |
           rm -rf test-results playwright-report
           df -h /
       - name: Install Firefox + WebKit
         run: npx playwright install --with-deps firefox webkit
+      - name: WebKit uncertain-delivery regression
+        run: npm run test:isolated -- tests/isolated/canonical-exchange-review-fixes.spec.ts --project=webkit --grep "committed response is lost" --retries=0 --repeat-each=3
       - name: Firefox + WebKit isolated functional suite
         run: npm run test:isolated -- --project=firefox --project=webkit
+      - name: Upload Firefox and WebKit admin screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: admin-console-firefox-webkit
+          path: test-results/**/admin-*.png
+          if-no-files-found: ignore
       - name: Start branch-local static server
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/brickcircle-http.log 2>&1 &

@@ -16,16 +16,18 @@ test('adult confirmation is mandatory, server-stamped and immutable',()=>{
   expect(migration).toContain('grant execute on function public.confirm_adult_status(text, text) to authenticated');
 });
 
-test('admin data remains behind the dual owner and admin-role server gate',()=>{
+test('admin data remains behind trusted allowlist, session and MFA server gates',()=>{
   const client=read('admin-dashboard.js');
-  const edge=read('supabase/functions/admin-dashboard/index.ts');
+  const edge=read('supabase/functions/admin-dashboard/handler.mjs');
+  const adminSql=read('supabase/migrations/20261005143140_marketplace_admin_console.sql');
   const config=JSON.parse(read('vercel.json'));
 
-  expect(client).toContain("user.id!==OWNER_USER_ID");
-  expect(edge).toContain("authData.user.id === OWNER_USER_ID");
-  expect(edge).toContain("authData.user.app_metadata?.role === 'admin'");
-  expect(edge).toContain("Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')");
-  expect(edge).toContain("if (!isOwner || !hasAdminRole)");
+  expect(client).toContain('db.auth.getUser()');
+  expect(edge).toContain("userClient.rpc('is_exchange_admin')");
+  expect(edge).toContain('isExchangeAdmin !== true');
+  expect(edge).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
+  expect(adminSql).toContain('auth.sessions');
+  expect(adminSql).toContain("auth.jwt()->>'aal' is distinct from 'aal2'");
   expect(edge).toContain("'Cache-Control': 'no-store'");
   expect(read('admin-dashboard.js')).not.toContain('SUPABASE_SERVICE_ROLE_KEY');
 
