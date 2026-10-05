@@ -41,6 +41,12 @@ jobs:
           name: admin-console-chromium
           path: test-results/**/admin-*.png
           if-no-files-found: ignore
+      - name: Upload guided conversation screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: guided-messaging-chromium
+          path: test-results/**/guided-messaging-*.png
+          if-no-files-found: error
       - name: Reclaim test artifacts before cross-browser gate
         run: |
           rm -rf test-results playwright-report
@@ -57,6 +63,12 @@ jobs:
           name: admin-console-firefox-webkit
           path: test-results/**/admin-*.png
           if-no-files-found: ignore
+      - name: Upload cross-browser guided conversation screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: guided-messaging-firefox-webkit
+          path: test-results/**/guided-messaging-*.png
+          if-no-files-found: error
       - name: Start branch-local static server
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/brickcircle-http.log 2>&1 &

@@ -2,7 +2,7 @@
 -- Fixtures, messages and notifications all roll back.
 begin;
 do $$
-declare a uuid; b uuid; outsider uuid; cid uuid; result jsonb; replay jsonb; mid uuid; before_notes bigint;
+declare a uuid; b uuid; outsider uuid; cid uuid; result jsonb; replay jsonb; mid uuid; direct_mid uuid;
 begin
   assert not has_function_privilege('anon','public.send_collector_message(uuid,text,text)','EXECUTE');
   assert not has_function_privilege('anon','public.send_exchange_case_message(uuid,text,text)','EXECUTE');
@@ -15,6 +15,7 @@ begin
   result:=public.send_collector_message(b,'  Test direct delivery  ','qa-guided-direct');
   replay:=public.send_collector_message(b,'Test direct delivery','qa-guided-direct');
   assert replay->>'idempotent'='true';assert result->'message'->>'id'=replay->'message'->>'id';
+  direct_mid:=(result->'message'->>'id')::uuid;
   assert (select count(*) from public.messages where sender_id=a and client_message_key='qa-guided-direct')=1;
   begin perform public.send_collector_message(b,'Different body','qa-guided-direct');raise exception 'Changed replay accepted';exception when invalid_parameter_value then null;end;
   begin perform public.send_collector_message(outsider,'Test direct delivery','qa-guided-direct');raise exception 'Wrong recipient accepted';exception when invalid_parameter_value then null;end;
@@ -27,8 +28,11 @@ begin
   mid:=(result->'message'->>'id')::uuid;
   begin perform public.send_exchange_case_message(cid,'Changed case delivery','qa-guided-case');raise exception 'Changed case replay accepted';exception when invalid_parameter_value then null;end;
   begin perform public.send_exchange_case_message('00000000-0000-4000-8000-000000000000','Test case delivery','qa-guided-case');raise exception 'Wrong case replay accepted';exception when invalid_parameter_value then null;end;
+  begin perform public.send_exchange_case_message(null,'Test case delivery','qa-guided-case');raise exception 'Null case replay accepted';exception when invalid_parameter_value then null;end;
   begin perform public.send_exchange_case_message(cid,'','qa-blank-case');raise exception 'Blank case accepted';exception when invalid_parameter_value then null;end;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',b,'role','authenticated')::text,true);
+  assert (select count(*) from public.messages where id=direct_mid)=1;
+  assert (select count(*) from public.notifications where entity_type='message' and entity_id::text=direct_mid::text and user_id=b)=1;
   assert (select count(*) from public.exchange_case_messages where id=mid)=1;
   assert (select count(*) from public.notifications where exchange_case_message_id=mid and user_id=b)=1;
   perform set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated')::text,true);

@@ -43,7 +43,7 @@ begin
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('case-message:'||me::text||':'||clean_key,0));
   select * into created_message from public.exchange_case_messages where sender_id=me and idempotency_key=clean_key;
   if found then
-    if created_message.case_id<>p_case_id or created_message.body<>clean_body then raise exception 'Request key was used for another message' using errcode='22023'; end if;
+    if created_message.case_id is distinct from p_case_id or created_message.body<>clean_body then raise exception 'Request key was used for another message' using errcode='22023'; end if;
     return pg_catalog.jsonb_build_object('ok',true,'idempotent',true,'message',pg_catalog.to_jsonb(created_message));
   end if;
   select * into c from public.exchange_cases where id=p_case_id for share;
