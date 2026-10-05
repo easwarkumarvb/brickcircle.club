@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
+import {runInNewContext} from 'node:vm';
 
 const read=(path:string)=>fs.readFileSync(path,'utf8');
 const release=JSON.parse(read('release-assets.json')).release;
@@ -10,17 +11,22 @@ test('V3 opens on one curated iconic 100-set catalogue and searches the full cat
   expect(html).toContain(`/app-v3.js?v=${release}`);
   expect(html).not.toContain('/catalog-search-v32.js');
 
-  const iconicBlock=js.match(/const ICONIC_SET_NUMBERS=Object\.freeze\(\[([\s\S]*?)\]\);/);
-  expect(iconicBlock).not.toBeNull();
-  const iconicIds=[...(iconicBlock?.[1]||'').matchAll(/'([^']+)'/g)].map(match=>match[1]);
+  const block=js.slice(js.indexOf('const CATALOGUE_SEARCH_LIMIT='),js.indexOf('const OWNER_USER_ID='));
+  const categories=runInNewContext(block+';JSON.parse(JSON.stringify(CURATED_CATEGORIES))',{}, {timeout:1000});
+  const iconicIds=categories[0].sets;
   expect(iconicIds).toHaveLength(100);
   expect(new Set(iconicIds).size).toBe(100);
-  expect(iconicIds.slice(0,6)).toEqual(['42143-1','42115-1','42083-1','42056-1','42172-1','42171-1']);
+  expect(categories.map((c:any)=>c.label)).toEqual(['All favourites','Technic','Supercars','F1','Space','Engineering','Landmarks','City','Friends','Icons','Star Wars','Disney']);
+  for(const category of categories.slice(1)){
+    expect(category.sets.length).toBeGreaterThan(0);
+    expect(new Set(category.sets).size).toBe(category.sets.length);
+    for(const id of category.sets)expect(id).toMatch(/^[0-9]{5}-1$/);
+  }
 
   expect(js).toContain('<h1>100 iconic LEGO sets</h1>');
   expect(js).toContain('product code or keywords');
-  expect(js).toContain(".in('set_number',ICONIC_SET_NUMBERS)");
-  expect(js).toContain('const iconicRank=new Map(ICONIC_SET_NUMBERS.map');
+  expect(js).toContain(".in('set_number',activeCategory.sets)");
+  expect(js).toContain('const iconicRank=new Map(activeCategory.sets.map');
   expect(js).not.toContain('CATALOGUE_PAGE_SIZE=24');
   expect(js).not.toContain('<div class="bc-pager">');
   expect(js).not.toContain('id="bc-theme"');

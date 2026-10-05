@@ -37,20 +37,179 @@ const popularSets=['42143','42115','42083','42056','42141','42172','10283','2130
 const desktopRoutes=[['home','⌂','Home'],['browse','⌕','Find Sets'],['sets','🧱','My LEGO'],['matches','⇄','Matches'],['exchanges','🤝','Exchanges'],['messages','💬','Messages']];
 const mobileRoutes=[['home','⌂','Home'],['browse','⌕','Find Sets'],['sets','🧱','My LEGO'],['matches','⇄','Matches'],['messages','💬','Messages']];
 
-const ICONIC_SET_NUMBERS=Object.freeze([
-  '42143-1','42115-1','42083-1','42056-1','42172-1','42171-1','42141-1','42125-1','42154-1','42156-1',
-  '42161-1','42110-1','42114-1','42082-1','42055-1','42043-1','42100-1','42131-1','42146-1','42030-1',
-  '42070-1','42099-1','42129-1','42128-1','42145-1','42158-1','42179-1','42173-1','42176-1','42177-1',
-  '10283-1','10341-1','10318-1','10266-1','21321-1','21309-1','21061-1','21060-1','21058-1','21042-1',
-  '21046-1','21034-1','21028-1','21044-1','21054-1','21056-1','10307-1','10276-1','10214-1','10253-1',
-  '10295-1','10265-1','10262-1','10279-1','10252-1','10220-1','10242-1','10248-1','10271-1','10290-1',
-  '10300-1','10304-1','10317-1','10321-1','10330-1','10337-1','76919-1','76909-1','76918-1','76896-1',
-  '76914-1','76916-1','76915-1','76908-1','76911-1','76912-1','76917-1','10303-1','10261-1','10273-1',
-  '10294-1','75192-1','75313-1','75367-1','75252-1','75331-1','10240-1','21312-1','21332-1','21340-1',
-  '21335-1','21323-1','21327-1','21344-1','10277-1','10233-1','10219-1','21333-1','10326-1','10355-1'
-]);
 const CATALOGUE_SEARCH_LIMIT=100;
 const CATALOGUE_TIMEOUT_MS=8000;
+// Editorial selections: full builds only. See docs/curated-catalogue.md.
+const CURATED_CATEGORY_LISTS=Object.freeze([
+  {id:'technic',label:'Technic',sets:Object.freeze([
+    '42143-1', // Ferrari Daytona SP3
+    '42115-1', // Lamborghini Sián FKP 37
+    '42083-1', // Bugatti Chiron
+    '42056-1', // Porsche 911 GT3 RS
+    '42172-1', // McLaren P1
+    '42171-1', // Mercedes-AMG F1 W14 E Performance
+    '42141-1', // McLaren Formula 1 Team 2022 (First Edition)
+    '42100-1', // Liebherr R 9800 Excavator
+    '42131-1', // Cat D11 Bulldozer
+    '42146-1', // Liebherr Crawler Crane LR 13000
+    '42055-1', // Bucket Wheel Excavator
+    '42082-1', // Rough Terrain Crane
+    '42043-1', // Mercedes-Benz Arocs 3245
+    '42145-1', // Airbus H175 Rescue Helicopter
+    '42158-1', // NASA Mars Rover Perseverance
+    '42110-1', // Land Rover Defender
+    '42114-1', // 6x6 Volvo Articulated Hauler
+    '42128-1', // Heavy Duty Tow Truck
+    '42129-1', // 4x4 Mercedes-Benz Zetros Trial Truck
+    '42030-1', // Remote-Controlled Volvo L350F Wheel Loader
+    '42099-1', // 4x4 X-treme Off-Roader
+    '42154-1', // 2022 Ford GT
+    '42156-1', // Peugeot 9X8 Le Mans Hybrid Hypercar
+    '42161-1', // Lamborghini Huracán Tecnica
+    '42125-1', // Ferrari 488 GTE "AF Corse #51"
+  ])},
+  {id:'supercars',label:'Supercars',sets:Object.freeze([
+    '42143-1', // Ferrari Daytona SP3
+    '42115-1', // Lamborghini Sián FKP 37
+    '42083-1', // Bugatti Chiron
+    '42056-1', // Porsche 911 GT3 RS
+    '42172-1', // McLaren P1
+    '42125-1', // Ferrari 488 GTE "AF Corse #51"
+    '42154-1', // 2022 Ford GT
+    '42156-1', // Peugeot 9X8 Le Mans Hybrid Hypercar
+    '42161-1', // Lamborghini Huracán Tecnica
+    '76918-1', // McLaren Solus GT & McLaren F1 LM
+    '76914-1', // Ferrari 812 Competizione
+    '76915-1', // Pagani Utopia
+    '76908-1', // Lamborghini Countach
+    '76916-1', // Porsche 963
+    '76896-1', // Nissan GT-R NISMO
+  ])},
+  {id:'f1',label:'F1',sets:Object.freeze([
+    '42141-1', // McLaren Formula 1 Team 2022 (First Edition)
+    '42171-1', // Mercedes-AMG F1 W14 E Performance
+    '10330-1', // McLaren MP4/4 & Ayrton Senna
+    '76919-1', // 2023 McLaren Formula 1 Car
+    '76909-1', // Mercedes-AMG F1 W12 E Performance & Mercedes-AMG Project One
+  ])},
+  {id:'space',label:'Space',sets:Object.freeze([
+    '10283-1', // NASA Space Shuttle Discovery
+    '10341-1', // NASA Artemis Space Launch System
+    '21309-1', // NASA Apollo Saturn V
+    '10266-1', // NASA Apollo 11 Lunar Lander
+    '21321-1', // International Space Station
+    '42158-1', // NASA Mars Rover Perseverance
+    '42179-1', // Planet Earth and Moon in Orbit
+  ])},
+  {id:'engineering',label:'Engineering',sets:Object.freeze([
+    '42146-1', // Liebherr Crawler Crane LR 13000
+    '42100-1', // Liebherr R 9800 Excavator
+    '42131-1', // Cat D11 Bulldozer
+    '42055-1', // Bucket Wheel Excavator
+    '42082-1', // Rough Terrain Crane
+    '42043-1', // Mercedes-Benz Arocs 3245
+    '42030-1', // Remote-Controlled Volvo L350F Wheel Loader
+    '42128-1', // Heavy Duty Tow Truck
+    '42145-1', // Airbus H175 Rescue Helicopter
+    '10318-1', // Concorde
+    '10294-1', // Titanic
+    '10277-1', // Crocodile Locomotive
+    '10233-1', // Horizon Express
+    '10219-1', // Maersk Container Train
+    '21344-1', // The Orient Express Train
+  ])},
+  {id:'landmarks',label:'Landmarks',sets:Object.freeze([
+    '10307-1', // Eiffel Tower
+    '10276-1', // Colosseum
+    '10214-1', // Tower Bridge
+    '10253-1', // Big Ben
+    '21061-1', // Notre-Dame de Paris
+    '21060-1', // Himeji Castle
+    '21058-1', // Great Pyramid of Giza
+    '21042-1', // Statue of Liberty
+    '21046-1', // Empire State Building
+    '21034-1', // London
+    '21028-1', // New York City
+    '21044-1', // Paris
+    '21054-1', // The White House
+    '21056-1', // Taj Mahal
+  ])},
+  {id:'city',label:'City',sets:Object.freeze([
+    '60380-1', // Downtown
+    '60337-1', // Express Passenger Train
+    '60336-1', // Freight Train
+    '60271-1', // Main Square
+    '60423-1', // Downtown Streetcar and Station
+  ])},
+  {id:'friends',label:'Friends',sets:Object.freeze([
+    '42639-1', // Andrea's Modern Mansion
+    '41748-1', // Heartlake City Community Center
+    '41704-1', // Main Street Building
+    '42604-1', // Heartlake City Shopping Mall
+    '41732-1', // Downtown Flower and Design Stores
+  ])},
+  {id:'icons',label:'Icons',sets:Object.freeze([
+    '10305-1', // Lion Knights' Castle
+    '10316-1', // Lord of the Rings: Rivendell
+    '10333-1', // The Lord of the Rings: Barad-dûr
+    '10323-1', // PAC-MAN Arcade
+    '10326-1', // Natural History Museum
+    '10355-1', // Blacktron Renegade
+    '10300-1', // Back to the Future Time Machine
+    '10303-1', // Loop Coaster
+    '10261-1', // Roller Coaster
+    '10273-1', // Haunted House
+    '10295-1', // Porsche 911 Turbo & 911 Targa
+    '10265-1', // Ford Mustang
+    '10262-1', // James Bond Aston Martin DB5
+    '10279-1', // Volkswagen T2 Camper Van
+    '10252-1', // Volkswagen Beetle
+    '10220-1', // Volkswagen T1 Camper Van
+    '10242-1', // MINI Cooper
+    '10248-1', // Ferrari F40
+    '10271-1', // Fiat 500
+    '10290-1', // Pickup Truck
+    '10304-1', // Chevrolet Camaro Z/28 1969
+    '10317-1', // Land Rover Classic Defender 90
+    '10321-1', // Corvette
+    '10330-1', // McLaren MP4/4 & Ayrton Senna
+    '10337-1', // Lamborghini Countach 5000 Quattrovalvole
+    '10294-1', // Titanic
+    '10318-1', // Concorde
+  ])},
+  {id:'star-wars',label:'Star Wars',sets:Object.freeze([
+    '75192-1', // Millennium Falcon
+    '75313-1', // AT-AT
+    '75367-1', // Venator-Class Republic Attack Cruiser
+    '75252-1', // Imperial Star Destroyer
+    '75331-1', // The Razor Crest
+    '75355-1', // X-Wing Starfighter
+    '10240-1', // Red Five X-Wing Starfighter
+  ])},
+  {id:'disney',label:'Disney',sets:Object.freeze([
+    '43222-1', // Disney Castle
+    '71044-1', // Disney Train and Station
+    '43242-1', // Snow White and the Seven Dwarfs' Cottage
+    '43230-1', // Walt Disney Tribute Camera
+    '43217-1', // Up House​
+    '21326-1', // Winnie the Pooh
+    '43202-1', // The Madrigal House
+    '71040-1', // Disney Castle
+  ])}
+]);
+const CURATED_DEFAULT_IDS=(()=>{
+  const ordered=[],seen=new Set();
+  const longest=Math.max(...CURATED_CATEGORY_LISTS.map(category=>category.sets.length));
+  for(let index=0;index<longest&&ordered.length<CATALOGUE_SEARCH_LIMIT;index++){
+    for(const category of CURATED_CATEGORY_LISTS){
+      const id=category.sets[index];
+      if(id&&!seen.has(id)){seen.add(id);ordered.push(id)}
+      if(ordered.length===CATALOGUE_SEARCH_LIMIT)break;
+    }
+  }
+  return Object.freeze(ordered);
+})();
+const CURATED_CATEGORIES=Object.freeze([{id:'all',label:'All favourites',sets:CURATED_DEFAULT_IDS},...CURATED_CATEGORY_LISTS]);
 const OWNER_USER_ID='388ee0a7-2b93-4505-a70c-f4766d7ad50a';
 const ADULT_CONFIRMATION_VERSION='2026-09-11';
 const ADULT_ATTESTATION='I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.';
@@ -78,7 +237,7 @@ const S={
   requests:[],exchanges:[],notifications:[],messages:[],reviews:[],profiles:{},items:{},sets:{},
   reputation:{},caseOverdue:{},submittedPeerReviews:new Set(),
   exchangeCapabilities:{checked:true,releaseItem:true,contractVersion:2},
-  browse:{page:0,q:'',theme:'',year:'',rows:[],busy:false,lastCount:0},
+  browse:{page:0,q:'',theme:'',year:'',rows:[],busy:false,lastCount:0,category:'all'},
   setTab:'collection',exchangeTab:'active',providers:{google:true,apple:false},
   booted:false,installPrompt:null,renderToken:0,refreshWarning:''
 };
@@ -593,16 +752,18 @@ function cancelCatalogueRequest(){
 function scheduleCatalogueLoad(delay=180){
   cancelCatalogueRequest();
   const grid=$('#bc-set-grid'),status=$('#bc-cat-status');
-  if(status)status.textContent=S.browse.q?'Preparing search…':'Loading iconic sets…';
+  const activeCategory=CURATED_CATEGORIES.find(c=>c.id===(S.browse.category||'all'))||CURATED_CATEGORIES[0];
+  if(status)status.textContent=S.browse.q?'Preparing search…':(activeCategory.id==='all'?'Loading iconic sets…':`Loading ${activeCategory.label}…`);
   grid?.setAttribute('aria-busy','true');
   catalogueTimer=setTimeout(()=>loadCatalogue(S.renderToken),delay);
 }
 async function renderBrowse(token){
-  const discovery=[['Technic','Technic'],['Supercars','Ferrari'],['F1','Formula 1'],['Space','Space'],['Engineering','Crane'],['Landmarks','Architecture']];
-  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">FIND YOUR NEXT BUILD</span><h1>100 iconic LEGO sets</h1><p>Collector favourites across Technic, space, supercars, F1, engineering and landmarks. Search the full catalogue by set number, product code or keyword.</p></div>${S.user?`<div class="bc-head-actions">${pill(`${S.collection.length} owned`,'green')}${pill(`${S.wishlist.length} wanted`,'blue')}</div>`:''}</div><div class="bc-catalogue-tools"><div class="bc-searchrow"><input id="bc-q" class="bc-input" placeholder="Search any LEGO set — product code or keywords" aria-label="Search the full LEGO catalogue by product code, set number, model name or keywords" value="${attr(S.browse.q)}" autocomplete="off"></div><div class="bc-discovery-chips" aria-label="Popular LEGO categories">${discovery.map(([label,query])=>`<button class="bc-pop-chip" data-pop="${attr(query)}">${esc(label)}</button>`).join('')}</div><div class="bc-name-search-help bc-small">Try 42143, McLaren, Saturn V or Porsche. Search goes beyond the curated 100.</div></div><div class="bc-catalogue-meta"><div id="bc-cat-status" class="bc-small" role="status">Loading iconic sets…</div><div id="bc-cat-page-size" class="bc-small">100 curated sets · one page</div></div><div id="bc-set-grid" class="bc-set-grid" aria-busy="true">${loading('Loading iconic sets…')}</div>`);
+  const chips=CURATED_CATEGORIES.map(c=>`<button class="bc-pop-chip" data-cat="${attr(c.id)}" aria-pressed="${S.browse.category===c.id?'true':'false'}">${esc(c.label)}</button>`).join('');
+  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">FIND YOUR NEXT BUILD</span><h1>100 iconic LEGO sets</h1><p>Discover iconic builds across 11 categories, from Technic and F1 to City, Friends, Star Wars and Disney. Search any set by product code or keyword.</p></div>${S.user?`<div class="bc-head-actions">${pill(`${S.collection.length} owned`,'green')}${pill(`${S.wishlist.length} wanted`,'blue')}</div>`:''}</div><div class="bc-catalogue-tools"><div class="bc-searchrow"><input id="bc-q" class="bc-input" placeholder="Search any LEGO set — product code or keywords" aria-label="Search the full LEGO catalogue by product code, set number, model name or keywords" value="${attr(S.browse.q)}" autocomplete="off"></div><div class="bc-discovery-chips" aria-label="Popular LEGO categories">${chips}</div><div class="bc-name-search-help bc-small">Try 42143, McLaren, Saturn V or Porsche. Search goes beyond the curated 100.</div></div><div class="bc-catalogue-meta"><div id="bc-cat-status" class="bc-small" role="status">Loading iconic sets…</div><div id="bc-cat-page-size" class="bc-small">100 curated sets · one page</div></div><div id="bc-set-grid" class="bc-set-grid" aria-busy="true">${loading('Loading iconic sets…')}</div>`);
   const q=$('#bc-q');
-  q.oninput=()=>{S.browse.q=q.value.trim();scheduleCatalogueLoad()};
-  $$('[data-pop]').forEach(b=>b.onclick=()=>{q.value=b.dataset.pop;S.browse.q=b.dataset.pop;scheduleCatalogueLoad(0)});
+  const refreshCategoryChips=()=>$$('[data-cat]').forEach(b=>b.setAttribute('aria-pressed',String(!S.browse.q&&b.dataset.cat===S.browse.category)));
+  q.oninput=()=>{const v=q.value.trim();S.browse.q=v;S.browse.category=v?'':'all';refreshCategoryChips();scheduleCatalogueLoad()};
+  $$('[data-cat]').forEach(b=>b.onclick=()=>{S.browse.category=b.dataset.cat;S.browse.q='';q.value='';refreshCategoryChips();scheduleCatalogueLoad(0)});
   await loadCatalogue(token);
 }
 async function loadCatalogue(token=S.renderToken){
@@ -611,9 +772,10 @@ async function loadCatalogue(token=S.renderToken){
   const requestId=++catalogueSequence,controller=new AbortController();
   catalogueController=controller;S.browse.busy=true;
   const cleanQuery=String(S.browse.q||'').replace(/[,%()]/g,' ').trim();
-  const snapshot={q:cleanQuery};
+  const activeCategory=CURATED_CATEGORIES.find(c=>c.id===(S.browse.category||'all'))||CURATED_CATEGORIES[0];
+  const snapshot={q:cleanQuery,category:activeCategory.id};
   const grid=$('#bc-set-grid'),status=$('#bc-cat-status');
-  if(status)status.textContent=snapshot.q?`Searching the full catalogue for “${snapshot.q}”…`:'Loading iconic sets…';
+  if(status)status.textContent=snapshot.q?`Searching the full catalogue for “${snapshot.q}”…`:(activeCategory.id==='all'?'Loading iconic sets…':`Loading ${activeCategory.label}…`);
   grid?.setAttribute('aria-busy','true');
   let timedOut=false,data=null,error=null;
   const timeout=setTimeout(()=>{timedOut=true;controller.abort()},CATALOGUE_TIMEOUT_MS);
@@ -622,13 +784,13 @@ async function loadCatalogue(token=S.renderToken){
     if(snapshot.q){
       req=db.rpc('bc_search_lego_sets',{p_query:snapshot.q,p_theme:null,p_year:null,p_limit:CATALOGUE_SEARCH_LIMIT});
     }else{
-      req=db.from('lego_sets').select('set_number,name,year,piece_count,theme,estimated_value,image_url').eq('catalog_active',true).in('set_number',ICONIC_SET_NUMBERS);
+      req=db.from('lego_sets').select('set_number,name,year,piece_count,theme,estimated_value,image_url').eq('catalog_active',true).in('set_number',activeCategory.sets);
     }
     if(typeof req.abortSignal==='function')req=req.abortSignal(controller.signal);
     ({data,error}=await req);
     if(!error&&!snapshot.q){
-      const iconicRank=new Map(ICONIC_SET_NUMBERS.map((setNumber,index)=>[setNumber,index]));
-      data=(data||[]).slice().sort((a,b)=>(iconicRank.get(a.set_number)??Number.MAX_SAFE_INTEGER)-(iconicRank.get(b.set_number)??Number.MAX_SAFE_INTEGER));
+      const iconicRank=new Map(activeCategory.sets.map((setNumber,index)=>[setNumber,index]));
+      data=(data||[]).filter(row=>iconicRank.has(row.set_number)).sort((a,b)=>(iconicRank.get(a.set_number)??Number.MAX_SAFE_INTEGER)-(iconicRank.get(b.set_number)??Number.MAX_SAFE_INTEGER));
     }
   }catch(caught){error=caught}
   clearTimeout(timeout);
@@ -644,11 +806,11 @@ async function loadCatalogue(token=S.renderToken){
   }
   S.browse.rows=data||[];S.browse.lastCount=S.browse.rows.length;
   if(grid)grid.innerHTML=S.browse.rows.map(setCard).join('')||empty('🔎','No matching sets','Try a different set number, product code, model name or keyword.');
-  if(status)status.textContent=S.browse.rows.length?(snapshot.q?`${S.browse.rows.length} product${S.browse.rows.length===1?'':'s'} matching “${snapshot.q}” across the full catalogue`:`${S.browse.rows.length} iconic sets · curated for collectors`):'No matching sets';
+  if(status)status.textContent=S.browse.rows.length?(snapshot.q?`${S.browse.rows.length} product${S.browse.rows.length===1?'':'s'} matching “${snapshot.q}” across the full catalogue`:(activeCategory.id==='all'?`${S.browse.rows.length} iconic sets · curated for collectors`:`${S.browse.rows.length} set${S.browse.rows.length===1?'':'s'} · ${activeCategory.label}`)):'No matching sets';
   const pageSize=$('#bc-cat-page-size');
-  if(pageSize)pageSize.textContent=snapshot.q?`Up to ${CATALOGUE_SEARCH_LIMIT} full-catalogue matches`:`${ICONIC_SET_NUMBERS.length} curated sets · one page`;
+  if(pageSize)pageSize.textContent=snapshot.q?`Up to ${CATALOGUE_SEARCH_LIMIT} full-catalogue matches`:`${S.browse.rows.length} curated sets · one page`;
   wireImages(grid);bindSetActions(grid);bindSetDetailActions(grid);
-  try{track(snapshot.q?'catalogue_product_name_search':'catalogue_iconic_default_loaded',{query:snapshot.q,result_count:S.browse.rows.length,curated_count:ICONIC_SET_NUMBERS.length})}catch(_){ }
+  try{track(snapshot.q?'catalogue_product_name_search':'catalogue_curated_category_loaded',{query:snapshot.q,category:snapshot.category,result_count:S.browse.rows.length,curated_count:activeCategory.sets.length})}catch(_){ }
 }
 function setCard(s,index=99){
   const own=S.collection.find(x=>x.set_number===s.set_number),want=S.wishlist.find(x=>x.set_number===s.set_number);return `<article class="bc-set-card" data-set="${attr(s.set_number)}"><button class="bc-set-card-open" data-view-set="${attr(s.set_number)}" aria-label="View ${attr(s.name)} details">${setImage(s.set_number,s.name,index<6)}<div class="bc-set-card-copy"><div class="bc-set-theme">${pill(s.theme||'LEGO')}</div><h3>${esc(s.name)}</h3><div class="bc-set-meta">Set ${esc(s.set_number)}${s.year?` · ${s.year}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><span class="bc-set-view">View details →</span></div></button><div class="bc-set-actions"><button class="${own?'on':''}" data-own>${own?'✓ Owned':'＋ Own this'}</button><button class="want ${want?'on':''}" data-want>${want?'♥ Wanted':'♡ Want this'}</button></div></article>`

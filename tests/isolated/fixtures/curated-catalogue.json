@@ -1,0 +1,656 @@
+[
+  {
+    "set_number": "10214-1",
+    "name": "Tower Bridge",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10219-1",
+    "name": "Maersk Container Train",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10220-1",
+    "name": "Volkswagen T1 Camper Van",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10233-1",
+    "name": "Horizon Express",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10240-1",
+    "name": "Red Five X-Wing Starfighter",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10242-1",
+    "name": "MINI Cooper",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10248-1",
+    "name": "Ferrari F40",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10252-1",
+    "name": "Volkswagen Beetle",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10253-1",
+    "name": "Big Ben",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10261-1",
+    "name": "Roller Coaster",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10262-1",
+    "name": "James Bond Aston Martin DB5",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10265-1",
+    "name": "Ford Mustang",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10266-1",
+    "name": "NASA Apollo 11 Lunar Lander",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10271-1",
+    "name": "Fiat 500",
+    "theme": "Creator Expert",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10273-1",
+    "name": "Haunted House",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10276-1",
+    "name": "Colosseum",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10277-1",
+    "name": "Crocodile Locomotive",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10279-1",
+    "name": "Volkswagen T2 Camper Van",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10283-1",
+    "name": "NASA Space Shuttle Discovery",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10290-1",
+    "name": "Pickup Truck",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10294-1",
+    "name": "Titanic",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10295-1",
+    "name": "Porsche 911 Turbo & 911 Targa",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10300-1",
+    "name": "Back to the Future Time Machine",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10303-1",
+    "name": "Loop Coaster",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10304-1",
+    "name": "Chevrolet Camaro Z/28 1969",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10305-1",
+    "name": "Lion Knights' Castle",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10307-1",
+    "name": "Eiffel Tower",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10316-1",
+    "name": "Lord of the Rings: Rivendell",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10317-1",
+    "name": "Land Rover Classic Defender 90",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10318-1",
+    "name": "Concorde",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10321-1",
+    "name": "Corvette",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10323-1",
+    "name": "PAC-MAN Arcade",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10326-1",
+    "name": "Natural History Museum",
+    "theme": "Modular Buildings",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10330-1",
+    "name": "McLaren MP4/4 & Ayrton Senna",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10333-1",
+    "name": "The Lord of the Rings: Barad-dûr",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10337-1",
+    "name": "Lamborghini Countach 5000 Quattrovalvole",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10341-1",
+    "name": "NASA Artemis Space Launch System",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "10355-1",
+    "name": "Blacktron Renegade",
+    "theme": "Icons",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21028-1",
+    "name": "New York City",
+    "theme": "Skylines",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21034-1",
+    "name": "London",
+    "theme": "Skylines",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21042-1",
+    "name": "Statue of Liberty",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21044-1",
+    "name": "Paris",
+    "theme": "Skylines",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21046-1",
+    "name": "Empire State Building",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21054-1",
+    "name": "The White House",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21056-1",
+    "name": "Taj Mahal",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21058-1",
+    "name": "Great Pyramid of Giza",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21060-1",
+    "name": "Himeji Castle",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21061-1",
+    "name": "Notre-Dame de Paris",
+    "theme": "Architecture",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21309-1",
+    "name": "NASA Apollo Saturn V",
+    "theme": "LEGO Ideas and CUUSOO",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21321-1",
+    "name": "International Space Station",
+    "theme": "LEGO Ideas and CUUSOO",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21326-1",
+    "name": "Winnie the Pooh",
+    "theme": "LEGO Ideas and CUUSOO",
+    "catalog_active": true
+  },
+  {
+    "set_number": "21344-1",
+    "name": "The Orient Express Train",
+    "theme": "LEGO Ideas and CUUSOO",
+    "catalog_active": true
+  },
+  {
+    "set_number": "41704-1",
+    "name": "Main Street Building",
+    "theme": "Friends",
+    "catalog_active": true
+  },
+  {
+    "set_number": "41732-1",
+    "name": "Downtown Flower and Design Stores",
+    "theme": "Friends",
+    "catalog_active": true
+  },
+  {
+    "set_number": "41748-1",
+    "name": "Heartlake City Community Center",
+    "theme": "Friends",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42030-1",
+    "name": "Remote-Controlled Volvo L350F Wheel Loader",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42043-1",
+    "name": "Mercedes-Benz Arocs 3245",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42055-1",
+    "name": "Bucket Wheel Excavator",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42056-1",
+    "name": "Porsche 911 GT3 RS",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42082-1",
+    "name": "Rough Terrain Crane",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42083-1",
+    "name": "Bugatti Chiron",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42099-1",
+    "name": "4x4 X-treme Off-Roader",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42100-1",
+    "name": "Liebherr R 9800 Excavator",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42110-1",
+    "name": "Land Rover Defender",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42114-1",
+    "name": "6x6 Volvo Articulated Hauler",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42115-1",
+    "name": "Lamborghini Sián FKP 37",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42125-1",
+    "name": "Ferrari 488 GTE \"AF Corse #51\"",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42128-1",
+    "name": "Heavy Duty Tow Truck",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42129-1",
+    "name": "4x4 Mercedes-Benz Zetros Trial Truck",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42131-1",
+    "name": "Cat D11 Bulldozer",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42141-1",
+    "name": "McLaren Formula 1 Team 2022 (First Edition)",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42143-1",
+    "name": "Ferrari Daytona SP3",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42145-1",
+    "name": "Airbus H175 Rescue Helicopter",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42146-1",
+    "name": "Liebherr Crawler Crane LR 13000",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42154-1",
+    "name": "2022 Ford GT",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42156-1",
+    "name": "Peugeot 9X8 Le Mans Hybrid Hypercar",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42158-1",
+    "name": "NASA Mars Rover Perseverance",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42161-1",
+    "name": "Lamborghini Huracán Tecnica",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42171-1",
+    "name": "Mercedes-AMG F1 W14 E Performance",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42172-1",
+    "name": "McLaren P1",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42179-1",
+    "name": "Planet Earth and Moon in Orbit",
+    "theme": "Technic",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42604-1",
+    "name": "Heartlake City Shopping Mall",
+    "theme": "Friends",
+    "catalog_active": true
+  },
+  {
+    "set_number": "42639-1",
+    "name": "Andrea's Modern Mansion",
+    "theme": "Friends",
+    "catalog_active": true
+  },
+  {
+    "set_number": "43202-1",
+    "name": "The Madrigal House",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "43217-1",
+    "name": "Up House​",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "43222-1",
+    "name": "Disney Castle",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "43230-1",
+    "name": "Walt Disney Tribute Camera",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "43242-1",
+    "name": "Snow White and the Seven Dwarfs' Cottage",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "60271-1",
+    "name": "Main Square",
+    "theme": "City",
+    "catalog_active": true
+  },
+  {
+    "set_number": "60336-1",
+    "name": "Freight Train",
+    "theme": "Trains",
+    "catalog_active": true
+  },
+  {
+    "set_number": "60337-1",
+    "name": "Express Passenger Train",
+    "theme": "Trains",
+    "catalog_active": true
+  },
+  {
+    "set_number": "60380-1",
+    "name": "Downtown",
+    "theme": "City",
+    "catalog_active": true
+  },
+  {
+    "set_number": "60423-1",
+    "name": "Downtown Streetcar and Station",
+    "theme": "Trains",
+    "catalog_active": true
+  },
+  {
+    "set_number": "71040-1",
+    "name": "Disney Castle",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "71044-1",
+    "name": "Disney Train and Station",
+    "theme": "Disney",
+    "catalog_active": true
+  },
+  {
+    "set_number": "75192-1",
+    "name": "Millennium Falcon",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "75252-1",
+    "name": "Imperial Star Destroyer",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "75313-1",
+    "name": "AT-AT",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "75331-1",
+    "name": "The Razor Crest",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "75355-1",
+    "name": "X-Wing Starfighter",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "75367-1",
+    "name": "Venator-Class Republic Attack Cruiser",
+    "theme": "Ultimate Collector Series",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76896-1",
+    "name": "Nissan GT-R NISMO",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76908-1",
+    "name": "Lamborghini Countach",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76909-1",
+    "name": "Mercedes-AMG F1 W12 E Performance & Mercedes-AMG Project One",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76914-1",
+    "name": "Ferrari 812 Competizione",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76915-1",
+    "name": "Pagani Utopia",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76916-1",
+    "name": "Porsche 963",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76918-1",
+    "name": "McLaren Solus GT & McLaren F1 LM",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  },
+  {
+    "set_number": "76919-1",
+    "name": "2023 McLaren Formula 1 Car",
+    "theme": "Speed Champions",
+    "catalog_active": true
+  }
+]

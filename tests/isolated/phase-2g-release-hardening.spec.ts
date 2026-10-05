@@ -89,7 +89,7 @@ test('canonical browse owns iconic discovery without a duplicate gallery',async(
   await expect(page.locator('#bc-year')).toHaveCount(0);
   await expect(page.locator('#bc-set-grid .bc-set-card')).toHaveCount(3);
   await expect(page.locator('#bc-set-grid .bc-set-card').first()).toContainText('Ferrari Daytona SP3');
-  await expect(page.locator('#bc-cat-page-size')).toHaveText('100 curated sets · one page');
+  await expect(page.locator('#bc-cat-page-size')).toHaveText('3 curated sets · one page');
 });
 
 
