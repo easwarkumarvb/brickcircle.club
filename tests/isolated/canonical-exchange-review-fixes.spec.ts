@@ -181,7 +181,7 @@ test('Messages separates canonical case history and direct collector history',as
   await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-review-fix');
   await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
   await expect(page.locator('#bc-msg-chat')).not.toContainText(directMessage.body);
-  await page.getByRole('button',{name:'Open exchange',exact:true}).click();
+  await page.getByRole('button',{name:'Exchange details',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>location.hash)).toBe('#exchange/case-review-fix');
   await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
   await page.locator('[data-message-open="direct:'+actors.ramya.id+'"]').click();
@@ -201,7 +201,7 @@ test('share meetup proposal submits the canonical transition and persists its de
   await form.locator('[name="when"]').fill('2099-10-02T15:34');
   await form.getByRole('button',{name:'Share proposal'}).click();
   await expect(form).toHaveCount(0);
-  await expect(page.getByText('Waiting for the other collector to accept the meetup.')).toBeVisible();
+  await expect(page.getByText('Your meetup proposal is shared. Chat here if you need to adjust the plan.')).toBeVisible();
   const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],calls:window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition')}));
   expect(result.calls).toHaveLength(1);
   expect(result.calls[0].args).toMatchObject({p_action:'propose_meetup',p_payload:{venue_name:'Udupi Garden',venue_area:'Sanjaynagar',meetup_at:expectedAt}});

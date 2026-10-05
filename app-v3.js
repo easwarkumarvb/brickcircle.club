@@ -226,11 +226,11 @@ const canonicalOperationMemory=new Map();
 
 function stableOperationValue(value){if(Array.isArray(value))return value.map(stableOperationValue);if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(key=>[key,stableOperationValue(value[key])]));return value}
 function canonicalOperationFingerprint(name,intent){return JSON.stringify(stableOperationValue({operation:name,intent}))}
-function canonicalOperationStore(){return `bc_canonical_ops:${S.user?.id||'anonymous'}`}
-function canonicalOperationEntries(){try{return JSON.parse(sessionStorage.getItem(canonicalOperationStore())||'{}')}catch(_){return {}}}
-function canonicalOperationKey(name,intent){const fingerprint=canonicalOperationFingerprint(name,intent),memoryKey=`${canonicalOperationStore()}:${fingerprint}`,stored=canonicalOperationEntries(),existing=stored[fingerprint]||canonicalOperationMemory.get(memoryKey);if(existing)return existing;const key=crypto.randomUUID();stored[fingerprint]=key;canonicalOperationMemory.set(memoryKey,key);try{sessionStorage.setItem(canonicalOperationStore(),JSON.stringify(stored))}catch(_){}return key}
-function reconcileCanonicalOperation(name,intent){const fingerprint=canonicalOperationFingerprint(name,intent),memoryKey=`${canonicalOperationStore()}:${fingerprint}`,stored=canonicalOperationEntries();delete stored[fingerprint];canonicalOperationMemory.delete(memoryKey);try{sessionStorage.setItem(canonicalOperationStore(),JSON.stringify(stored))}catch(_){}}
-async function canonicalRpc(name,args,intent){const key=canonicalOperationKey(name,intent),result=await db.rpc(name,{...args,p_idempotency_key:key});if(!result.error&&result.data?.ok!==false)reconcileCanonicalOperation(name,intent);return result}
+function canonicalOperationStore(uid=S.user?.id){return `bc_canonical_ops:${uid||'anonymous'}`}
+function canonicalOperationEntries(uid){try{return JSON.parse(sessionStorage.getItem(canonicalOperationStore(uid))||'{}')}catch(_){return {}}}
+function canonicalOperationKey(name,intent,uid=S.user?.id){const fingerprint=canonicalOperationFingerprint(name,intent),memoryKey=`${canonicalOperationStore(uid)}:${fingerprint}`,stored=canonicalOperationEntries(uid),existing=stored[fingerprint]||canonicalOperationMemory.get(memoryKey);if(existing)return existing;const key=crypto.randomUUID();stored[fingerprint]=key;canonicalOperationMemory.set(memoryKey,key);try{sessionStorage.setItem(canonicalOperationStore(uid),JSON.stringify(stored))}catch(_){}return key}
+function reconcileCanonicalOperation(name,intent,uid=S.user?.id){const fingerprint=canonicalOperationFingerprint(name,intent),memoryKey=`${canonicalOperationStore(uid)}:${fingerprint}`,stored=canonicalOperationEntries(uid);delete stored[fingerprint];canonicalOperationMemory.delete(memoryKey);try{sessionStorage.setItem(canonicalOperationStore(uid),JSON.stringify(stored))}catch(_){}}
+async function canonicalRpc(name,args,intent){const uid=S.user?.id,key=canonicalOperationKey(name,intent,uid),result=await settledTimeout(db.rpc(name,{...args,p_idempotency_key:key}),15000);if(!result.error&&result.data?.ok!==false)reconcileCanonicalOperation(name,intent,uid);return result}
 
 const S={
   user:null,profile:null,liquidity:null,membership:null,collection:[],wishlist:[],matches:[],
@@ -377,7 +377,7 @@ function syncNav(){
   $$('[data-nav]').forEach(b=>{const active=b.dataset.nav===routeName();b.classList.toggle('active',active);if(active)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
 }
 function app(){return document.getElementById('bc-main')}
-function page(html){const a=app();if(!a)return;const warning=S.refreshWarning?`<div class="bc-notice warn bc-refresh-warning" role="status" style="margin-bottom:14px"><b>Some information could not refresh.</b> Your last confirmed view is still shown. <button class="bc-btn ghost" data-refresh-retry>Retry</button></div>`:'';a.innerHTML=`<div class="bc-page">${S.user&&routeName()!=='messages'?firstMatchCoach():''}${warning}${html}</div>`;wireImages(a);wireAvatars(a);applyA11y(a);bindCommon(a);syncNav();announceRender(a);window.scrollTo({top:0,behavior:'instant'})}
+function page(html){stopThreadSync();const a=app();if(!a)return;const warning=S.refreshWarning?`<div class="bc-notice warn bc-refresh-warning" role="status" style="margin-bottom:14px"><b>Some information could not refresh.</b> Your last confirmed view is still shown. <button class="bc-btn ghost" data-refresh-retry>Retry</button></div>`:'';a.innerHTML=`<div class="bc-page">${S.user&&routeName()!=='messages'?firstMatchCoach():''}${warning}${html}</div>`;wireImages(a);wireAvatars(a);applyA11y(a);bindCommon(a);syncNav();announceRender(a);window.scrollTo({top:0,behavior:'instant'})}
 function bindCommon(root=document){
   $$('[data-action="browse"]',root).forEach(b=>b.onclick=()=>navigate('browse'));
   $$('[data-action="sets"]',root).forEach(b=>b.onclick=()=>navigate('sets'));
@@ -437,7 +437,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function clearProtectedState(){stopThreadSync();S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const result=await settledTimeout(db.rpc('bc_membership_status'));if(!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -1010,7 +1010,7 @@ async function respondRequest(id,action){
   }
   renderExchangeBody();
 }
-function showCounterProposal(exchange){const o=modal(`<div class="bc-modal-head"><div><h2>Counterproposal</h2><p class="bc-muted">Update the duration without creating another exchange case.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-counter"><div class="bc-field"><label>Temporary exchange period</label><select class="bc-select" name="days">${[30,60,90].map(days=>`<option value="${days}" ${days===exchange.duration_days?'selected':''}>${days} days</option>`).join('')}</select></div><div class="bc-field"><label>Message</label><textarea class="bc-textarea" name="message">${esc(exchange.opening_message||'')}</textarea></div><button type="submit" class="bc-btn primary">Send counterproposal</button></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-counter',o).onsubmit=async event=>{event.preventDefault();const form=new FormData(event.currentTarget),button=$('button[type="submit"]',event.currentTarget),payload={duration_days:Number(form.get('days')),message:String(form.get('message')||'')},intent={case_id:exchange.id,version:exchange.state_version,action:'counter',payload};if(button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:exchange.id,p_expected_version:exchange.state_version,p_action:'counter',p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not send the counterproposal.')}closeOverlay();await refreshCore();navigate('exchange',exchange.id);toast('Counterproposal sent in the same exchange case.')}}
+function showCounterProposal(exchange){const o=modal(`<div class="bc-modal-head"><div><h2>Counterproposal</h2><p class="bc-muted">Update the duration without creating another exchange case.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-counter"><div class="bc-field"><label>Temporary exchange period</label><select class="bc-select" name="days">${[30,60,90].map(days=>`<option value="${days}" ${days===exchange.duration_days?'selected':''}>${days} days</option>`).join('')}</select></div><div class="bc-field"><label>Message</label><textarea class="bc-textarea" name="message">${esc(exchange.opening_message||'')}</textarea></div><button type="submit" class="bc-btn primary">Send counterproposal</button></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-counter',o).onsubmit=async event=>{event.preventDefault();const form=new FormData(event.currentTarget),button=$('button[type="submit"]',event.currentTarget),payload={duration_days:Number(form.get('days')),message:String(form.get('message')||'')},intent={case_id:exchange.id,version:exchange.state_version,action:'counter',payload};if(button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:exchange.id,p_expected_version:exchange.state_version,p_action:'counter',p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not send the counterproposal.')}closeOverlay();await refreshCore();messagesThreadGuard('case',exchange.id)?await reloadCaseView(exchange.id):navigate('exchange',exchange.id);toast('Counterproposal sent in the same exchange case.')}}
 function exchangeStageLabel(e){return {PROPOSED:'Proposal pending',ACCEPTED:'Plan meetup',MEETUP_PLANNING:'Review meetup',MEETUP_CONFIRMED:'Safety checklist',INSPECTION:'Meet and inspect',HANDOFF_PENDING:'Confirm handoff',HANDOFF_ISSUE:'Legacy custody review',ACTIVE:e.return_due_at&&new Date(e.return_due_at)<new Date()?'Return overdue':'Temporary exchange active',EARLY_RETURN:'Early return requested',RETURN_PLANNING:'Plan return',RETURN_INSPECTION:'Inspect returned sets',DISPUTED:'Legacy issue',DECLINED:'Declined',WITHDRAWN:'Withdrawn',EXPIRED:'Expired',CANCELLED:'Cancelled',COMPLETED:'Completed'}[e.state]||'In progress'}
 function exchangeCard(e){const p=otherProfile(e),a=itemName(e.item_a),b=itemName(e.item_b),stage=stageForExchange(e),closed=terminalCaseStates.has(e.state),next=caseNextAction(e);return `<article class="bc-card bc-ex-card"><div class="bc-ex-top"><div><span class="bc-pill ${e.state==='DISPUTED'||e.state==='HANDOFF_ISSUE'?'red':e.state==='COMPLETED'?'green':e.state==='ACTIVE'?'blue':'gold'}">${esc(exchangeStageLabel(e))}</span><h3>${esc(a)} ⇄ ${esc(b)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${e.duration_days} days${e.return_due_at?` · return ${fmtDate(e.return_due_at)}`:''}</div></div><button class="bc-btn ${closed?'':'primary'}" data-exchange="${e.id}">${closed?'View history':'Continue →'}</button></div>${closed?'':`<div class="bc-ex-next"><span>Next</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>`}<div class="bc-ex-progress">${[1,2,3,4,5].map(n=>`<i class="bc-ex-step ${n<stage?'done':n===stage?'current':''}"></i>`).join('')}</div><div class="bc-small">Proposal → Meetup → Handoff → Experience → Return</div></article>`}
 
@@ -1046,24 +1046,28 @@ function renderExchangeDetailLoaded(e,messages,events,reviews,issues,issueRespon
 function caseParticipantValue(e,prefix,mine=true){const suffix=(S.user.id===e.user_a)===mine?'a':'b';return e[`${prefix}_${suffix}_at`]}
 function caseNextAction(e){const mine=S.user.id,recipient=e.recipient_id===mine,meetupOther=e.meetup_proposed_by&&e.meetup_proposed_by!==mine,returnOther=e.return_proposed_by&&e.return_proposed_by!==mine;
   if(e.migration_review_required)return {action:null,label:'',copy:'This migrated exchange is paused while BrickCircle reconciles physical custody and item locks.'};
-  if(e.state==='PROPOSED')return recipient?{action:'accept',label:'Accept proposal',copy:'Accept, decline, or make a counterproposal before the deadline.'}:{action:null,label:'',copy:'Waiting for the other collector to respond.'};
+  if(e.state==='PROPOSED')return recipient?{action:'accept',label:'Accept proposal',copy:'Accept, decline, or make a counterproposal before the deadline.'}:{action:null,label:'Waiting for their reply',copy:'Your proposal is sent. The other collector can accept, decline or suggest another duration.'};
   if(e.state==='ACCEPTED')return {action:'propose_meetup',label:'Plan public meetup',copy:'Choose a public place and future time.'};
-  if(e.state==='MEETUP_PLANNING')return meetupOther?{action:'accept_meetup',label:'Accept meetup',copy:'Review and accept the proposed place and time.'}:{action:null,label:'',copy:'Waiting for the other collector to accept the meetup.'};
+  if(e.state==='MEETUP_PLANNING')return meetupOther?{action:'accept_meetup',label:'Accept meetup',copy:'Review and accept the proposed place and time.'}:{action:null,label:'Waiting for meetup agreement',copy:'Your meetup proposal is shared. Chat here if you need to adjust the plan.'};
   if(e.state==='MEETUP_CONFIRMED'&&!caseParticipantValue(e,'safety_ack'))return {action:'safety_ack',label:'Accept safety checklist',copy:'Agree to meet publicly and inspect both sets before handoff.'};
+  if(e.state==='MEETUP_CONFIRMED')return {action:null,label:'Waiting for their safety confirmation',copy:'You have agreed to meet publicly and inspect both sets. The other collector must confirm too.'};
   if(e.state==='INSPECTION'&&!caseParticipantValue(e,'arrived'))return {action:'arrive',label:'I have arrived',copy:'Confirm only when you are physically at the agreed public meetup.'};
   if(e.state==='INSPECTION'&&!caseParticipantValue(e,'arrived',false))return {action:null,label:'',copy:'Waiting for the other collector to arrive. Inspection unlocks after both arrivals.'};
   if(e.state==='INSPECTION'&&!caseParticipantValue(e,'inspected'))return {action:'inspect',label:'I inspected the set',copy:'Inspect condition, parts and completeness together.'};
+  if(e.state==='INSPECTION')return {action:null,label:'Waiting for their inspection',copy:'You have approved inspection. Handoff unlocks when both collectors are satisfied.'};
   if(e.state==='HANDOFF_PENDING'&&!caseParticipantValue(e,'handoff'))return {action:'handoff',label:'Confirm physical handoff',copy:'Confirm only after physical custody changes.'};
+  if(e.state==='HANDOFF_PENDING')return {action:null,label:'Waiting for their handoff confirmation',copy:'Your handoff is recorded. The exchange starts only after both physical handoffs are confirmed.'};
   if(e.state==='ACTIVE')return {action:'propose_return',label:'Plan normal return',copy:`The return is due ${fmtDate(e.return_due_at)}. You may also request an early return.`};
   if(e.state==='EARLY_RETURN')return {action:'propose_return',label:'Plan return meetup',copy:'Both sets stay locked until mutual return confirmation.'};
-  if(e.state==='RETURN_PLANNING')return returnOther?{action:'accept_return',label:'Accept return meetup',copy:'Review and accept the return place and time.'}:{action:null,label:'',copy:'Waiting for the other collector to accept the return meetup.'};
+  if(e.state==='RETURN_PLANNING')return returnOther?{action:'accept_return',label:'Accept return meetup',copy:'Review and accept the return place and time.'}:{action:null,label:'Waiting for return agreement',copy:'Your return meetup is shared. Both collectors must agree before confirming the return.'};
   if(e.state==='RETURN_INSPECTION'&&!caseParticipantValue(e,'return_arrived'))return {action:'return_arrive',label:'I arrived for return',copy:'Confirm when you are at the public return meetup.'};
   if(e.state==='RETURN_INSPECTION'&&!caseParticipantValue(e,'return_arrived',false))return {action:null,label:'',copy:'Waiting for the other collector to arrive. Return inspection unlocks after both arrivals.'};
   if(e.state==='RETURN_INSPECTION'&&!caseParticipantValue(e,'return_inspected'))return {action:'return_inspect',label:'I inspected my returned set',copy:'Check condition, parts and completeness before confirming.'};
   if(e.state==='RETURN_INSPECTION'&&!caseParticipantValue(e,'return_confirmed'))return {action:'return_confirm',label:'Confirm set returned',copy:'Confirm only after your physical set is back.'};
   if(legacyIssueCase(e))return {action:null,label:'',copy:'This is a legacy case, so the new issue tools are not available here. Keep communicating with the other collector and contact BrickCircle support for help with custody.'};
-  if(e.state==='COMPLETED')return {action:null,label:'',copy:'Both returns are confirmed. Each owner must review and re-enable their own set.'};
-  return {action:null,label:'',copy:'Waiting for the other collector’s confirmation.'};
+  if(e.state==='COMPLETED')return {action:null,label:'Exchange complete',copy:'Both sets are back. Open exchange details to review your collector and re-enable your set in My LEGO.'};
+  if(terminalCaseStates.has(e.state))return {action:null,label:'Exchange closed',copy:'This exchange is closed. Its conversation remains available as a record.'};
+  return {action:null,label:'Waiting for their confirmation',copy:'Your step is recorded. The other collector must confirm before the exchange can move on.'};
 }
 function caseSecondaryAction(e){if(e.migration_review_required)return null;if(e.state==='PROPOSED')return {action:e.proposer_id===S.user.id?'withdraw':'decline',label:e.proposer_id===S.user.id?'Withdraw':'Decline'};if(['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(e.state))return {action:'cancel_before_handoff',label:'Cancel before handoff'};if(e.state==='ACTIVE')return {action:'early_return',label:'Request early return'};return null}
 function flowMarkup(e,events){const mineA=S.user.id===e.user_a,steps=[['Safety checklist',mineA?e.safety_ack_a_at:e.safety_ack_b_at,mineA?e.safety_ack_b_at:e.safety_ack_a_at],['Arrival',mineA?e.arrived_a_at:e.arrived_b_at,mineA?e.arrived_b_at:e.arrived_a_at],['Inspection',mineA?e.inspected_a_at:e.inspected_b_at,mineA?e.inspected_b_at:e.inspected_a_at],['Handoff',mineA?e.handoff_a_at:e.handoff_b_at,mineA?e.handoff_b_at:e.handoff_a_at],['Return inspection',mineA?e.return_inspected_a_at:e.return_inspected_b_at,mineA?e.return_inspected_b_at:e.return_inspected_a_at],['Return confirmation',mineA?e.return_confirmed_a_at:e.return_confirmed_b_at,mineA?e.return_confirmed_b_at:e.return_confirmed_a_at]];return `<h2>${esc(exchangeStageLabel(e))}</h2>${e.meetup_at?`<div class="bc-notice"><b>Meetup</b><br>${esc(e.meetup_venue_name||'Public venue')}${e.meetup_venue_area?` · ${esc(e.meetup_venue_area)}`:''}<br>${fmtDateTime(e.meetup_at)}</div>`:''}${e.return_meetup_at?`<div class="bc-notice"><b>Return meetup</b><br>${esc(e.return_venue_name||'Public venue')}${e.return_venue_area?` · ${esc(e.return_venue_area)}`:''}<br>${fmtDateTime(e.return_meetup_at)}</div>`:''}<section class="bc-shared-checklist" aria-label="Shared exchange checklist">${steps.map(([label,mine,theirs],index)=>`<div class="bc-flow-step ${mine?'done':''}"><div class="bc-flow-step-number">${mine?'✓':index+1}</div><div><b>${label}</b><div class="bc-flow-step-status"><span>You: ${mine?'confirmed':'not yet'}</span><span>Other collector: ${theirs?'confirmed':'waiting'}</span></div></div></div>`).join('')}</section><details class="bc-case-history"><summary>Case history · ${events.length} events</summary>${events.map(event=>`<div class="bc-small">${fmtDateTime(event.created_at)} · ${esc(event.event_type.replaceAll('_',' '))} · ${esc(event.resulting_state)}</div>`).join('')}</details>`}
@@ -1079,9 +1083,9 @@ function reviewMarkup(e,p,reviews){
   else body='<p class="bc-small">Peer reviews open once both returns are confirmed and the case is complete.</p>';
   return `<section class="bc-card bc-flow-card" style="margin-top:14px"><h2>Peer review</h2><p class="bc-small">Double-blind: each collector reviews the other privately, and reviews stay hidden until both are submitted or the reveal window opens.</p>${body}</section>`
 }
-function bindExchangeDetail(e,p){$$('[data-case-action]',app()).forEach(button=>button.onclick=()=>runCaseAction(e,button.dataset.caseAction,button));bindCaseIssues(e);$$('[data-open-messages-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.openMessagesCase}`));const review=$('[data-review]',app());if(review)review.onclick=()=>showReview(e,p);const form=$('#bc-chat-form');if(form)form.onsubmit=async event=>{event.preventDefault();const data=new FormData(form),body=String(data.get('message')||'').trim(),button=$('button',form),intent={case_id:e.id,body};if(!body||button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('send_exchange_case_message',{p_case_id:e.id,p_body:body},intent);if(error){button.disabled=false;return fail(error,'Message was not sent. Please retry.')}form.reset();await refreshCore();await renderExchangeDetail(e.id,S.renderToken)}}
-function scheduleCaseMeetup(e,returning=false){const title=returning?'Plan return meetup':'Plan public meetup',o=modal(`<div class="bc-modal-head"><div><h2>${title}</h2><p class="bc-muted">The other collector must accept the same public place and future time.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-meetup"><div class="bc-field"><label>Public venue</label><input class="bc-input" name="venue" value="${attr(returning?e.return_venue_name||'':e.meetup_venue_name||'')}" required></div><div class="bc-field"><label>Area / neighbourhood</label><input class="bc-input" name="area" value="${attr(returning?e.return_venue_area||'':e.meetup_venue_area||'')}"></div><div class="bc-field"><label>Date & time</label><input class="bc-input" name="when" type="datetime-local" required></div><button type="submit" class="bc-btn primary">Share proposal</button></form>`);$$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);$('#bc-case-meetup',o).onsubmit=async event=>{event.preventDefault();const data=new FormData(event.currentTarget),date=new Date(String(data.get('when'))),button=$('button[type="submit"]',event.currentTarget),action=returning?'propose_return':'propose_meetup';if(Number.isNaN(date.getTime())||date<=new Date())return toast('Choose a future date and time.');if(button.disabled)return;const payload={venue_name:String(data.get('venue')||'').trim(),venue_area:String(data.get('area')||'').trim(),meetup_at:date.toISOString()},intent={case_id:e.id,version:e.state_version,action,payload};button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not save the meetup proposal.')}closeOverlay();await refreshCore();await renderExchangeDetail(e.id,S.renderToken)}}
-async function runCaseAction(e,action,button){if(action==='propose_meetup')return scheduleCaseMeetup(e,false);if(action==='propose_return')return scheduleCaseMeetup(e,true);if(action==='report_issue'){if(!canReportCaseIssue(e))return toast('Issues can be reported once a handoff has been confirmed on this exchange.');return showCaseIssueForm(e)}if(action==='request_support')return showCaseSupportForm(e);if(action==='cancel_before_handoff')return cancelCaseBeforeMutualHandoff(e,button);if(action==='handoff'&&!confirm('Confirm only after the physical set has changed custody and you are satisfied with inspection. Continue?'))return;if(action==='return_confirm'&&!confirm('Confirm only after your own physical LEGO set is back and inspected. Continue?'))return;return performCaseTransition(e,action,{},button)}
+function bindExchangeDetail(e,p){$$('[data-case-action]',app()).forEach(button=>button.onclick=()=>runCaseAction(e,button.dataset.caseAction,button));bindCaseIssues(e);$$('[data-open-messages-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.openMessagesCase}`));const review=$('[data-review]',app());if(review)review.onclick=()=>showReview(e,p);const form=$('#bc-chat-form');if(form)form.onsubmit=async event=>{event.preventDefault();const data=new FormData(form),body=String(data.get('message')||'').trim(),button=$('button',form),intent={case_id:e.id,body};if(!body||button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('send_exchange_case_message',{p_case_id:e.id,p_body:body},intent);if(error){button.disabled=false;return fail(error,'Message was not sent. Please retry.')}form.reset();await refreshCore();await reloadCaseView(e.id)}}
+function scheduleCaseMeetup(e,returning=false){const title=returning?'Plan return meetup':'Plan public meetup',o=modal(`<div class="bc-modal-head"><div><h2>${title}</h2><p class="bc-muted">The other collector must accept the same public place and future time.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-meetup"><div class="bc-field"><label>Public venue</label><input class="bc-input" name="venue" value="${attr(returning?e.return_venue_name||'':e.meetup_venue_name||'')}" required></div><div class="bc-field"><label>Area / neighbourhood</label><input class="bc-input" name="area" value="${attr(returning?e.return_venue_area||'':e.meetup_venue_area||'')}"></div><div class="bc-field"><label>Date & time</label><input class="bc-input" name="when" type="datetime-local" required></div><button type="submit" class="bc-btn primary">Share proposal</button></form>`);$$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);$('#bc-case-meetup',o).onsubmit=async event=>{event.preventDefault();const data=new FormData(event.currentTarget),date=new Date(String(data.get('when'))),button=$('button[type="submit"]',event.currentTarget),action=returning?'propose_return':'propose_meetup';if(Number.isNaN(date.getTime())||date<=new Date())return toast('Choose a future date and time.');if(button.disabled)return;const payload={venue_name:String(data.get('venue')||'').trim(),venue_area:String(data.get('area')||'').trim(),meetup_at:date.toISOString()},intent={case_id:e.id,version:e.state_version,action,payload};button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not save the meetup proposal.')}closeOverlay();await refreshCore();await reloadCaseView(e.id)}}
+async function runCaseAction(e,action,button){if(action==='counter')return showCounterProposal(e);if(action==='propose_meetup')return scheduleCaseMeetup(e,false);if(action==='propose_return')return scheduleCaseMeetup(e,true);if(action==='report_issue'){if(!canReportCaseIssue(e))return toast('Issues can be reported once a handoff has been confirmed on this exchange.');return showCaseIssueForm(e)}if(action==='request_support')return showCaseSupportForm(e);if(action==='cancel_before_handoff')return cancelCaseBeforeMutualHandoff(e,button);if(action==='handoff'&&!confirm('Confirm only after the physical set has changed custody and you are satisfied with inspection. Continue?'))return;if(action==='return_confirm'&&!confirm('Confirm only after your own physical LEGO set is back and inspected. Continue?'))return;return performCaseTransition(e,action,{},button)}
 async function cancelCaseBeforeMutualHandoff(e,button){
   const oneSided=e.handoff_a_at||e.handoff_b_at;
   const reason=prompt(oneSided?'One collector has already confirmed the handoff, so a set may physically have moved. Tell the other collector what happened.':'Why are you cancelling before the mutual handoff? (required)');
@@ -1093,9 +1097,9 @@ async function cancelCaseBeforeMutualHandoff(e,button){
   const intent={case_id:e.id,version:e.state_version,action:'cancel_exchange_case_before_mutual_handoff',reason:trimmed};
   const {error}=await canonicalRpc('cancel_exchange_case_before_mutual_handoff',{p_case_id:e.id,p_expected_version:e.state_version,p_reason:trimmed},intent);
   if(error){if(button)button.disabled=false;return fail(error,'Could not cancel before handoff. The exchange may have changed, or a handoff may already be confirmed. Refresh and retry.')}
-  await refreshCore();await renderExchangeDetail(e.id,S.renderToken);toast('Exchange cancelled before the mutual handoff.');
+  await refreshCore();await reloadCaseView(e.id);toast('Exchange cancelled before the mutual handoff.');
 }
-async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;return fail(error,'The exchange changed or this action is no longer available. Refresh and retry.')}await refreshCore();await renderExchangeDetail(e.id,S.renderToken);toast('Exchange case updated.')}
+async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;fail(error,'The exchange may have changed. Checking the latest step before you retry.');if(messagesThreadGuard('case',e.id))await reloadCaseView(e.id);return}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
 function legacyIssueCase(e){return e.state==='HANDOFF_ISSUE'||e.state==='DISPUTED'}
 function canReportCaseIssue(e){return Boolean(e.handoff_at)&&!legacyIssueCase(e)}
 function reputationTrustContext(userId){
@@ -1144,13 +1148,13 @@ async function submitCaseIssueResponse(e,issueId,form){
   button.disabled=true;
   const {error}=await canonicalRpc('respond_exchange_case_issue',{p_issue_id:issueId,p_body:body,p_evidence:[]},{case_id:e.id,issue_id:issueId,body});
   if(error){button.disabled=false;return fail(error,'Your response was not added. Please retry.')}
-  await refreshCore();await renderExchangeDetail(e.id,S.renderToken);toast('Response added.');
+  await refreshCore();await reloadCaseView(e.id);toast('Response added.');
 }
 async function setCaseIssueStatus(e,issueId,action,button){
   if(button)button.disabled=true;
   const {error}=await canonicalRpc('set_exchange_case_issue_status',{p_issue_id:issueId,p_action:action},{case_id:e.id,issue_id:issueId,action});
   if(error){if(button)button.disabled=false;return fail(error,'Could not update the issue. Please retry.')}
-  await refreshCore();await renderExchangeDetail(e.id,S.renderToken);toast(action==='resolve'?'Resolution acknowledgement recorded.':'Issue left unresolved for the record.');
+  await refreshCore();await reloadCaseView(e.id);toast(action==='resolve'?'Resolution acknowledgement recorded.':'Issue left unresolved for the record.');
 }
 function showCaseIssueForm(e){
   const o=modal(`<div class="bc-modal-head"><div><h2>Report an issue</h2><p class="bc-muted">Describe what happened in your own words. The other collector can respond, and either of you can mark the issue resolved.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-issue"><div class="bc-field"><label>What happened?</label><select class="bc-select" name="category" required>${CASE_ISSUE_CATEGORY_OPTIONS.map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></div><div class="bc-field"><label>Description</label><textarea class="bc-textarea" name="description" maxlength="4000" required placeholder="What is missing, damaged, different or overdue? Include the set number and what you checked."></textarea></div><div class="bc-notice"><b>Recording an issue does not decide fault.</b><br>Keep coordinating in the conversation. For platform, safety or technical help use “Need BrickCircle support?”.</div><button class="bc-btn primary" type="submit">Report issue</button></form>`);
@@ -1160,7 +1164,7 @@ function showCaseIssueForm(e){
     button.disabled=true;
     const {error}=await canonicalRpc('report_exchange_case_issue',{p_case_id:e.id,p_category:category,p_description:description,p_evidence:[]},{case_id:e.id,category,description});
     if(error){button.disabled=false;return fail(error,'Could not report the issue. Please retry.')}
-    closeOverlay();await refreshCore();await renderExchangeDetail(e.id,S.renderToken);toast('Issue reported. The other collector can respond here.')};
+    closeOverlay();await refreshCore();await reloadCaseView(e.id);toast('Issue reported. The other collector can respond here.')};
 }
 function showCaseSupportForm(e){
   const o=modal(`<div class="bc-modal-head"><div><h2>Need BrickCircle support?</h2><p class="bc-muted">Support helps with platform, safety and technical matters.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-support"><div class="bc-field"><label>What do you need help with?</label><select class="bc-select" name="category" required>${[['technical','Technical problem'],['safety','Safety concern'],['account','Account question'],['other','Something else']].map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></div><div class="bc-field"><label>Note</label><textarea class="bc-textarea" name="note" maxlength="2000" required placeholder="What happened, and what would help?"></textarea></div><div class="bc-notice"><b>Support does not choose a winner.</b><br>BrickCircle support helps with platform, safety and technical matters, but does not decide fault or who is right. We reply at <a href="mailto:${attr(SUPPORT_EMAIL)}">${esc(SUPPORT_EMAIL)}</a>.</div><button class="bc-btn primary" type="submit">Send to support</button></form>`);
@@ -1184,7 +1188,7 @@ function showReview(e,p){
     const intent={case_id:e.id,overall:args.p_overall_rating,reliability:args.p_return_reliability,accuracy:args.p_set_accuracy,communication:args.p_communication,condition:args.p_condition_accuracy,again:args.p_would_exchange_again,comment:args.p_comment};
     const {data,error}=await canonicalRpc('submit_peer_exchange_review',args,intent);
     if(error||data?.ok===false){fail(error||new Error('Could not submit your review.'),'Could not submit your review. Please retry.');btn.disabled=false;return}
-    S.submittedPeerReviews.add(e.id);rememberPeerReviewSubmitted(e.id);closeOverlay();toast('Review submitted. It stays hidden until both reviews are in or the reveal window opens.');await refreshCore();await renderExchangeDetail(e.id,S.renderToken)
+    S.submittedPeerReviews.add(e.id);rememberPeerReviewSubmitted(e.id);closeOverlay();toast('Review submitted. It stays hidden until both reviews are in or the reveal window opens.');await refreshCore();await reloadCaseView(e.id)
   }
 }
 
@@ -1587,12 +1591,13 @@ function bindThreadCompose(form,kind,id,senderName){
     const sendOperation={};
     pendingSends.set(sendKey,sendOperation);
     button.disabled=true;if(input)input.disabled=true;
+    showThreadStatus('Sending…');
     const restore=()=>{if(stillCurrent()){button.disabled=false;if(input){input.disabled=false;input.focus()}}};
     try{
-      const intent={case_id:id,body};
-      const result=kind==='case'?await settledTimeout(withTimeout(canonicalRpc('send_exchange_case_message',{p_case_id:id,p_body:body},intent),15000)):await settledTimeout(withTimeout(db.from('messages').insert({sender_id:submitUid,recipient_id:id,exchange_id:null,body}),15000));
+      const intent=kind==='case'?{case_id:id,body}:{recipient_id:id,body};
+      const result=kind==='case'?await canonicalRpc('send_exchange_case_message',{p_case_id:id,p_body:body},intent):await canonicalRpc('send_collector_message',{p_recipient_id:id,p_body:body},intent);
       if(!stillCurrent())return;
-      if(result.error){restore();showThreadError(result.error?.message||'Message was not sent. Please retry.');return}
+      if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       const sentDraft=input?input.value:null;
       form.reset();
       if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
@@ -1625,7 +1630,7 @@ function bindThreadCompose(form,kind,id,senderName){
     }
   };
 }
-function showThreadError(message,retry){
+function showThreadError(message,retry,errorKind='refresh'){
   const card=$('.bc-msg-thread-card',app());if(!card)return;
   const chat=$('#bc-msg-chat',card);
   let box=$('#bc-msg-error',card);
@@ -1638,6 +1643,7 @@ function showThreadError(message,retry){
     card.insertBefore(box,chat||null);
   }
   box.hidden=false;
+  box.dataset.errorKind=errorKind;
   box.innerHTML=`<span>${esc(message)}</span>${retry?'<button class="bc-btn" type="button" data-retry-thread>Retry</button>':''}`;
   if(retry)$('[data-retry-thread]',box).onclick=()=>{box.hidden=true;box.innerHTML='';retry()};
 }
@@ -1672,7 +1678,7 @@ function activeThreadForm(uid,kind,id){
   return $('#bc-msg-form');
 }
 async function loadEarlierThreadMessages(chat){
-  const ctx=chat?.bcThread;if(!ctx)return;
+  const ctx=chat?.bcThread;if(!ctx||ctx.refreshing)return;
   const {kind,id,senderName,fallback}=ctx;
   if(!S.user||!messagesThreadGuard(kind,id))return;
   const uid=S.user.id,token=S.renderToken;
@@ -1695,6 +1701,51 @@ async function loadEarlierThreadMessages(chat){
   cache.hasOlder=(data||[]).length>=THREAD_PAGE_SIZE;
   updateThreadChat(cache,{fallback,senderName,scrollMode:'prepend'});
 }
+
+function caseConversationGuide(e){
+  const next=caseNextAction(e),secondary=caseSecondaryAction(e),closed=terminalCaseStates.has(e.state),returning=['EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION'].includes(e.state);
+  const prefixes=returning?[['Arrival','return_arrived'],['Inspection','return_inspected'],['Set returned','return_confirmed']]:[['Safety','safety_ack'],['Arrival','arrived'],['Inspection','inspected'],['Handoff','handoff']];
+  const showChecks=returning?e.state==='RETURN_INSPECTION':['MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(e.state);
+  const venue=returning?e.return_venue_name:e.meetup_venue_name,area=returning?e.return_venue_area:e.meetup_venue_area,when=returning?e.return_meetup_at:e.meetup_at;
+  return `<section class="bc-conversation-guide bc-card" aria-label="Exchange next step"><div class="bc-guide-heading"><span class="bc-pill ${closed?'':next.action?'gold':'blue'}">${closed?'Closed':next.action?'Your turn':'Waiting for partner'}</span><span class="bc-small">${esc(exchangeStageLabel(e))}</span></div><h2>${esc(next.label||exchangeStageLabel(e))}</h2><p>${esc(next.copy)}</p>${when?`<div class="bc-guide-meetup"><b>${returning?'Return meetup':'Meetup'}${e.state==='MEETUP_PLANNING'||e.state==='RETURN_PLANNING'?' · awaiting agreement':''}</b><span>${esc(venue||'Public venue')}${area?' · '+esc(area):''}</span><time>${fmtDateTime(when)}</time></div>`:''}${showChecks?`<details class="bc-guide-checks"><summary>Both collectors’ confirmations</summary><table><thead><tr><th scope="col">Step</th><th scope="col">You</th><th scope="col">Partner</th></tr></thead><tbody>${prefixes.map(([label,prefix])=>`<tr><th scope="row">${label}</th><td>${caseParticipantValue(e,prefix)?'Confirmed':'Not yet'}</td><td>${caseParticipantValue(e,prefix,false)?'Confirmed':'Not yet'}</td></tr>`).join('')}</tbody></table></details>`:''}<div class="bc-guide-actions">${!closed&&next.action?`<button class="bc-btn primary" type="button" data-thread-case-action="${attr(next.action)}">${esc(next.label)}</button>`:''}${!closed&&e.state==='PROPOSED'&&e.recipient_id===S.user.id?'<button class="bc-btn" type="button" data-thread-case-action="counter">Suggest another duration</button>':''}${!closed&&secondary?`<details class="bc-guide-options"><summary>Other options</summary><button class="bc-btn" type="button" data-thread-case-action="${attr(secondary.action)}">${esc(secondary.label)}</button></details>`:''}</div><p class="bc-guide-note">Messages help you coordinate. Use the confirmation button to record an agreed step.</p></section>`;
+}
+const threadCaseActions=new Set();
+function bindThreadCaseActions(e){
+  $$('[data-thread-case-action]',app()).forEach(button=>{
+    if(threadCaseActions.has(e.id))button.disabled=true;
+    button.onclick=async()=>{
+      if(threadCaseActions.has(e.id)||!messagesThreadGuard('case',e.id))return;
+      threadCaseActions.add(e.id);
+      $$('[data-thread-case-action]',app()).forEach(b=>b.disabled=true);
+      try{await runCaseAction(e,button.dataset.threadCaseAction,button)}
+      finally{threadCaseActions.delete(e.id);if(messagesThreadGuard('case',e.id))$$('[data-thread-case-action]',app()).forEach(b=>b.disabled=false)}
+    };
+  });
+}
+async function reloadCaseView(id){
+  if(messagesThreadGuard('case',id)){
+    const chat=$('#bc-msg-chat');
+    if(chat?.bcThread?.refreshing){chat.bcThread.refreshAgain=true;return}
+    return refreshThread(chat);
+  }
+  if(routeName()==='exchange'&&routeId()===id)return renderExchangeDetail(id,S.renderToken);
+}
+function directExchangeLinks(peerId){
+  const cases=S.exchanges.filter(e=>[e.user_a,e.user_b].includes(S.user.id)&&[e.user_a,e.user_b].includes(peerId)&&!terminalCaseStates.has(e.state));
+  if(!cases.length)return '<p class="bc-small bc-direct-explanation">Use this chat to get acquainted. A proposal creates a separate conversation for that exchange.</p>';
+  return `<section class="bc-direct-exchange-links bc-card" aria-label="Exchanges with this collector"><b>Continue your exchange here</b><p>Meetup plans and confirmations belong in the exchange conversation.</p>${cases.map(e=>`<button type="button" class="bc-btn" data-open-messages-case="${attr(e.id)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}</button>`).join('')}</section>`;
+}
+let threadSyncTimer=null;
+function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;}
+function syncVisibleThread(){
+  const chat=$('#bc-msg-chat');
+  if(document.hidden||navigator.onLine===false||!chat?.bcThread||pendingSends.has(`${S.user?.id}:${chat.bcThread.kind}:${chat.bcThread.id}`))return;
+  refreshThread(chat).catch(()=>{});
+}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)syncVisibleThread()});
+window.addEventListener('online',syncVisibleThread);
+window.addEventListener('pagehide',stopThreadSync);
+
 function applyCaseMetadata(e){
   const closed=terminalCaseStates.has(e.state);
   const p=S.profiles[otherId(e)]||{};
@@ -1705,13 +1756,8 @@ function applyCaseMetadata(e){
   if(title)title.textContent=`${itemName(e.item_a)} ⇄ ${itemName(e.item_b)}`;
   const sub=$('[data-msg-case-sub]',root);
   if(sub)sub.textContent=`With ${p.display_name||'Collector'} · ${Number(e.duration_days)||30}-day exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}`;
-  const next=caseNextAction(e);
-  const nextBlock=$('.bc-ex-next',root);
-  if(nextBlock){
-    const strong=$('strong',nextBlock),small=$('small',nextBlock);
-    if(strong)strong.textContent=next.label||exchangeStageLabel(e);
-    if(small)small.textContent=next.copy;
-  }
+  const guide=$('.bc-conversation-guide',root);
+  if(guide){guide.outerHTML=caseConversationGuide(e);bindThreadCaseActions(e)}
   const timeline=$('.bc-timeline',root);
   if(timeline)timeline.outerHTML=exchangeTimeline(e);
   updateCaseComposerState(e,p);
@@ -1740,7 +1786,7 @@ function updateCaseComposerState(e,p){
   }
 }
 async function refreshThread(chat){
-  const ctx=chat?.bcThread;if(!ctx)return;
+  const ctx=chat?.bcThread;if(!ctx||ctx.refreshing)return;
   const {kind,id,senderName,fallback}=ctx;
   if(!S.user||!messagesThreadGuard(kind,id))return;
   const uid=S.user.id,token=S.renderToken;
@@ -1751,12 +1797,15 @@ async function refreshThread(chat){
   const hadFocus=!!(input&&document.activeElement===input);
   const button=$('[data-refresh-thread]',app());
   if(button){button.disabled=true;button.textContent='Refreshing…'}
+  ctx.refreshing=true;
+  try{
   const [caseResult,messageFailure]=await Promise.all([
     kind==='case'?settledTimeout(db.from('exchange_cases').select('*').eq('id',id).maybeSingle(),10000):Promise.resolve({data:null,error:null}),
     (async()=>{try{await mergeThreadLatest(kind,id,uid,stillCurrent);return null}catch(error){return error}})()
   ]);
   if(!stillCurrent())return;
   if(button){button.disabled=false;button.textContent='↻ Refresh'}
+  if(kind==='case'&&!caseResult.error&&(!caseResult.data||![caseResult.data.user_a,caseResult.data.user_b].includes(uid)))return renderMessagesUnavailable('This exchange conversation is no longer available.');
   if(kind==='case'&&caseResult.data){
     ctx.caseRow=caseResult.data;
     applyCaseMetadata(caseResult.data);
@@ -1766,15 +1815,22 @@ async function refreshThread(chat){
     reconcileMessageIndex(uid,kind,id);
     advanceThreadWatermark(uid,kind,id);
   }
-  if(!caseResult.error&&!messageFailure)clearThreadError();
+  if(!caseResult.error&&!messageFailure&&$('#bc-msg-error')?.dataset.errorKind!=='delivery')clearThreadError();
   const liveForm=$('#bc-msg-form'),liveInput=liveForm?$('textarea[name="message"]',liveForm):null;
-  if(liveInput){liveInput.value=draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
+  // A background read must never overwrite text/caret edited while it awaited I/O.
+  if(liveInput&&liveInput!==input){liveInput.value=threadDrafts.get(`${uid}:${kind}:${id}`)||draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
   updateMessageBadge();
   if(caseResult.error||messageFailure){
     showThreadError('Messages could not be refreshed.',()=>refreshThread(chat));
   }
+  }finally{
+    ctx.refreshing=false;
+    if(ctx.refreshAgain){ctx.refreshAgain=false;if(stillCurrent())refreshThread(chat).catch(()=>{})}
+  }
 }
 function bindMessagesPage(){
+  stopThreadSync();threadSyncTimer=setInterval(syncVisibleThread,15000);
+  $$('[data-open-messages-case]',app()).forEach(b=>b.onclick=()=>navigate('messages',`case:${b.dataset.openMessagesCase}`));
   bindMessagesListPane();
   $$('[data-refresh-thread]',app()).forEach(b=>b.onclick=()=>refreshThread($('#bc-msg-chat')));
   const chat=$('#bc-msg-chat');
@@ -1811,7 +1867,7 @@ async function renderDirectThread(token,peerId){
   mergeThreadHistory(cache,validateThreadRows(cache,rows));
   if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill blue">Direct message</span><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p>${reputationTrustContext(peerId)}</div></div></section><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,DIRECT_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill blue">Direct message</span><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p>${reputationTrustContext(peerId)}</div></div></section>${directExchangeLinks(peerId)}<div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,DIRECT_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
@@ -1845,10 +1901,11 @@ async function renderCaseThread(token,caseId){
   mergeThreadHistory(cache,validateThreadRows(cache,rows));
   if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
   const p=S.profiles[oid]||{},closed=terminalCaseStates.has(e.state),next=caseNextAction(e),firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill ${closed?'':'gold'}" data-msg-stage-pill>${esc(exchangeStageLabel(e))}</span><h1 data-msg-case-title>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h1><p data-msg-case-sub>With ${esc(p.display_name||'Collector')} · ${Number(e.duration_days)||30}-day exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${reputationTrustContext(oid)}</div></div><button class="bc-btn primary" type="button" data-open-exchange="${attr(e.id)}">Open exchange</button></section><div class="bc-ex-next" role="status"><span>NEXT</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>${exchangeTimeline(e)}<div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,CASE_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div>${closed?'<div class="bc-notice"><b>Case closed.</b> This exchange conversation is read-only.</div>':`<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form>`}</section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill ${closed?'':'gold'}" data-msg-stage-pill>${esc(exchangeStageLabel(e))}</span><h1 data-msg-case-title>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h1><p data-msg-case-sub>With ${esc(p.display_name||'Collector')} · ${Number(e.duration_days)||30}-day exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${reputationTrustContext(oid)}</div></div><button class="bc-btn" type="button" data-open-exchange="${attr(e.id)}">Exchange details</button></section>${caseConversationGuide(e)}<details class="bc-guide-journey"><summary>Exchange journey</summary>${exchangeTimeline(e)}</details><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,CASE_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div>${closed?'<div class="bc-notice"><b>Case closed.</b> This exchange conversation is read-only.</div>':`<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form>`}</section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'case',id:caseId,senderName:p.display_name,fallback:CASE_THREAD_FALLBACK,caseRow:e};
   bindMessagesPage();
+  bindThreadCaseActions(e);
   bindThreadCompose($('#bc-msg-form'),'case',e.id,p.display_name);
   advanceThreadWatermark(uid,'case',caseId);
   updateMessageBadge();

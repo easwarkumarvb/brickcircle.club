@@ -189,3 +189,26 @@ test('a send from a previous login cannot unlock a newer send in the same conver
   await expect.poll(()=>page.evaluate(()=>(window as any).__bcIsolated.messages.filter((m:any)=>m.body==='Current login send').length),{timeout:8000}).toBe(1);
   await expect(page.locator('#bc-msg-form button')).toBeEnabled();
 });
+test('typing during a slow background refresh preserves the newer text and caret',async({page})=>{
+  await seed(page);await openDirect(page);
+  const input=page.locator('#bc-msg-form textarea');await input.fill('Original draft');
+  await page.evaluate(()=>{(window as any).__bcIsolated.messageReadDelayMs=800;(document.querySelector('[data-refresh-thread]') as HTMLButtonElement).click()});
+  await expect(page.locator('[data-refresh-thread]')).toHaveText('Refreshing…');
+  await input.fill('Newer text typed during refresh');await input.evaluate((e:HTMLTextAreaElement)=>e.setSelectionRange(3,8));
+  await expect(page.locator('[data-refresh-thread]')).toHaveText('↻ Refresh');
+  await expect(input).toHaveValue('Newer text typed during refresh');
+  expect(await input.evaluate((e:HTMLTextAreaElement)=>[e.selectionStart,e.selectionEnd])).toEqual([3,8]);
+});
+test('a success arriving after send timeout retains the original retry key',async({page})=>{
+  await seed(page);await openDirect(page);
+  await page.evaluate(()=>{(window as any).__bcIsolated.messageSendDelayMs=17000});
+  const input=page.locator('#bc-msg-form textarea');await input.fill('Late confirmed delivery');
+  await page.locator('#bc-msg-form').evaluate((f:HTMLFormElement)=>f.requestSubmit());
+  await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely',{timeout:17000});
+  await expect(input).toHaveValue('Late confirmed delivery');
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcIsolated.messages.filter((m:any)=>m.body==='Late confirmed delivery').length),{timeout:5000}).toBe(1);
+  await page.locator('#bc-msg-form').evaluate((f:HTMLFormElement)=>f.requestSubmit());
+  await expect(input).toHaveValue('');
+  const result=await page.evaluate(()=>{const s=(window as any).__bcIsolated;return {count:s.messages.filter((m:any)=>m.body==='Late confirmed delivery').length,keys:s.rpcCalls.filter((r:any)=>r.name==='send_collector_message').map((r:any)=>r.args.p_idempotency_key)}});
+  expect(result.count).toBe(1);expect(result.keys).toHaveLength(2);expect(result.keys[0]).toBe(result.keys[1]);
+});

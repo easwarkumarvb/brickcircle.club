@@ -249,6 +249,13 @@ const db={
       persist();const lost=lostAfterCommit(name);if(lost)return lost;
       return {data:{ok:true,case:{...exchange},event,idempotent:false},error:null};
     }
+    if(name==='send_collector_message'){
+      const prior=data.directMessages.find(row=>row.sender_id===active().id&&row.client_message_key===args.p_idempotency_key);
+      if(prior)return {data:{ok:true,message:prior,idempotent:true},error:null};
+      const message={id:`direct-${data.directMessages.length+1}`,sender_id:active().id,recipient_id:args.p_recipient_id,exchange_id:null,body:args.p_body,client_message_key:args.p_idempotency_key,created_at:NOW};
+      data.directMessages.push(message);persist();const lost=lostAfterCommit(name);if(lost)return lost;
+      return {data:{ok:true,message,idempotent:false},error:null};
+    }
     if(name==='send_exchange_case_message'){
       const prior=data.messages.find(row=>row.sender_id===active().id&&row.idempotency_key===args.p_idempotency_key);
       if(prior)return {data:{ok:true,message:prior,idempotent:true},error:null};
