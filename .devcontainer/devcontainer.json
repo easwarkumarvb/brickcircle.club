@@ -2,6 +2,11 @@
   "name": "BrickCircle cloud development",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:22-bookworm",
   "remoteUser": "node",
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {
+      "version": "latest"
+    }
+  },
   "hostRequirements": {
     "cpus": 2,
     "memory": "8gb",
