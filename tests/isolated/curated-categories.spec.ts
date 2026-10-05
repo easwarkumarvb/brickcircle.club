@@ -108,12 +108,12 @@ test('retry preserves category and reports actual count excluding inactive sets'
   await expect(page.locator('#bc-set-grid [data-set="43222-1"]')).toHaveCount(0);
   await expect(page.locator('#bc-cat-page-size')).toHaveText('7 curated sets · one page');
 });
-test('all mobile chips are reachable without page overflow',async({page})=>{
-  await page.setViewportSize({width:390,height:844});
+for(const width of [390,1440])test('all category chips are reachable at '+width+'px',async({page})=>{
+  await page.setViewportSize({width,height:844});
   for(const [label] of cases){
     const chip=page.getByRole('button',{name:label,exact:true});await chip.scrollIntoViewIfNeeded();await chip.click();
     await expect(page.locator('#bc-cat-status')).toContainText(label);
-    const box=(await chip.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(390);
+    const box=(await chip.boundingBox())!;expect(box.x).toBeGreaterThanOrEqual(0);expect(box.x+box.width).toBeLessThanOrEqual(width);
   }
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
