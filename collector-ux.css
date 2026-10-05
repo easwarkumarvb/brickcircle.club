@@ -24,6 +24,7 @@ html.bc-collector .bc-showcase-card img{height:190px!important;object-fit:contai
 html.bc-collector .bc-showcase-card span{color:#556171!important;font-size:10px!important;letter-spacing:.1em!important}
 html.bc-collector .bc-showcase-card strong{color:#17202d!important;font-size:17px!important}
 html.bc-collector .bc-showcase-link{background:#ffd500!important;color:#17202d!important;border:0!important;box-shadow:0 8px 20px #0002!important}
+html.bc-collector .bc-showcase-link b{color:#17202d!important}
 html.bc-collector .bc-landing-heading h2{font-size:clamp(26px,3vw,38px)!important}
 html.bc-collector :is(.bc-story-flow article,.bc-trust-grid article,.bc-landing-workflow article){background:#fff!important;border:1px solid #dde3eb!important;border-radius:20px!important}
 html.bc-collector .bc-landing-final{background:#17202d!important;color:#fff!important;border-radius:24px!important}
