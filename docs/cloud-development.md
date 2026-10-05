@@ -20,6 +20,13 @@ Open the workspace from https://github.com/codespaces or connect from a terminal
 gh codespace ssh --codespace WORKSPACE_NAME
 ```
 
+If Windows OpenSSH fails, use the Git for Windows SSH client for this terminal session:
+
+```powershell
+$env:PATH='C:\Program Files\Git\usr\bin;'+$env:PATH
+gh codespace ssh --codespace WORKSPACE_NAME -- -F none
+```
+
 Inside the cloud terminal:
 
 ```bash
