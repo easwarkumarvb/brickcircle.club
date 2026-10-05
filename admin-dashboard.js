@@ -19,6 +19,7 @@
   let epoch = 0, loadId = 0, detailId = 0, change = null, pending = null, submitting = false;
   let mfaFactor = null, mfaNew = false, mfaBusy = false;
   let mfaGeneration = 0;
+  let lastUserId = null;
   const requests = new Set();
   function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
   function purge(message) {
@@ -27,7 +28,7 @@
     const abandonedFactor=mfaNew&&!mfaBusy?mfaFactor:null; mfaFactor=null; mfaNew=false;
     if(abandonedFactor) db?.auth.mfa.unenroll({factorId:abandonedFactor}).catch(()=>{});
     requests.forEach(controller => controller.abort()); requests.clear();
-    rows = []; total = 0; change = null; pending = null;
+    rows = []; total = 0; change = null; pending = null; query=''; page=0; lastUserId=null;
     $('results').replaceChildren(); $('detail-body').replaceChildren();
     $('detail-dialog').close(); $('change-dialog').close();
     $('mfa-dialog').close(); $('mfa-qr').removeAttribute('src'); $('mfa-secret').textContent=''; $('mfa-code').value='';
@@ -47,6 +48,10 @@
       if (sessionError || userError || !sessionData?.session?.access_token || !userData?.user) {
         purge('Sign in to your approved administrator account.'); throw new Error('Administrator sign-in required.');
       }
+      if(lastUserId&&lastUserId!==userData.user.id) {
+        purge('Account changed. Refresh to verify administrator access.'); throw new Error('Account changed. Refresh to continue.');
+      }
+      lastUserId=userData.user.id;
       const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-dashboard`, {
         method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: {Authorization: `Bearer ${sessionData.session.access_token}`, apikey: SUPABASE_KEY, 'Content-Type':'application/json'},
@@ -222,7 +227,10 @@
   $('next').addEventListener('click',()=>{if((page+1)*25<total){page++;load();}});
   $('refresh').addEventListener('click',load);
   $('signout').addEventListener('click',async()=>{purge('Signed out.');await db?.auth.signOut({scope:'local'});location.assign('/#home');});
-  db?.auth.onAuthStateChange((event)=>{if(event==='SIGNED_OUT') {purge('Signed out. Sign in to your administrator account.');$('refresh').disabled=false;}});
+  db?.auth.onAuthStateChange((event,session)=>{
+    if(event==='SIGNED_OUT') purge('Signed out. Sign in to your administrator account.');
+    else if(event==='SIGNED_IN'&&lastUserId&&session?.user?.id!==lastUserId) purge('Account changed. Refresh to verify administrator access.');
+  });
   window.addEventListener('pagehide',()=>purge('Session locked. Refresh to continue.'));
   window.addEventListener('pageshow',event=>{if(event.persisted) load();});
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!$('detail-dialog').open&&!$('change-dialog').open) load();});

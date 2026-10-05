@@ -5,7 +5,7 @@ const id='12345678-1234-1234-1234-123456789012';
 const set={set_number:'42115-1',name:'Lamborghini Sián',theme:'Technic',year:2020,piece_count:3696,catalog_active:true,revision:0};
 async function setup(page:Page,{denied=false,mfa=false,enrolled=false,uncertain=false}={}){
   const requests:any[]=[];let writes=0,verified=!mfa;let current={...set};const audit:any[]=[];
-  await page.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'application/javascript',body:`window.supabase={createClient(){return {auth:{getSession:async()=>({data:{session:{access_token:'test-token'}}}),getUser:async()=>({data:{user:{id:'${id}'}}}),onAuthStateChange(fn){window.__signout=()=>fn('SIGNED_OUT');return {data:{subscription:{unsubscribe(){}}}}},signOut:async()=>({}),mfa:{listFactors:async()=>({data:{totp:${enrolled?'[{id:"factor",status:"verified"}]':'[]'}}}),enroll:async()=>({data:{id:'factor',totp:{qr_code:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=',secret:'test-setup-secret'}}}),challengeAndVerify:async()=>{window.__verified=true;return {};},unenroll:async()=>{window.__unenrolled=true;return {};}}}}}};`}));
+  await page.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'application/javascript',body:`window.supabase={createClient(){return {auth:{getSession:async()=>({data:{session:{access_token:'test-token'}}}),getUser:async()=>({data:{user:{id:'${id}'}}}),onAuthStateChange(fn){window.__signout=()=>fn('SIGNED_OUT');window.__authEvent=(event,session)=>fn(event,session);return {data:{subscription:{unsubscribe(){}}}}},signOut:async()=>({}),mfa:{listFactors:async()=>({data:{totp:${enrolled?'[{id:"factor",status:"verified"}]':'[]'}}}),enroll:async()=>({data:{id:'factor',totp:{qr_code:'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciLz4=',secret:'test-setup-secret'}}}),challengeAndVerify:async()=>{window.__verified=true;return {};},unenroll:async()=>{window.__unenrolled=true;return {};}}}}}};`}));
   await page.route('**/functions/v1/admin-dashboard',async route=>{
     const body=route.request().postDataJSON();requests.push(body);
     if(denied){await route.fulfill({status:403,json:{error:'Administrator access required.'}});return;}
@@ -68,9 +68,15 @@ test('signout immediately erases private record and dialog content',async({page}
   await setup(page);await page.goto('/admin.html');await page.locator('[data-section="members"]').click();await page.getByRole('button',{name:'View collector'}).click();await expect(page.locator('#detail-body')).toContainText('collector@example.test');
   await page.evaluate(()=>(window as any).__signout());await expect(page.locator('#dashboard')).toBeHidden();await expect(page.locator('#detail-dialog')).not.toBeVisible();await expect(page.locator('#detail-body')).toBeEmpty();await expect(page.locator('#results')).toBeEmpty();
 });
+test('switching accounts immediately clears private data before another authorization check',async({page})=>{
+  await setup(page);await page.goto('/admin.html');await expect(page.locator('#dashboard')).toBeVisible();await page.evaluate(()=>(window as any).__authEvent('SIGNED_IN',{user:{id:'another-member'}}));await expect(page.locator('#dashboard')).toBeHidden();await expect(page.locator('#results')).toBeEmpty();await expect(page.locator('#status')).toContainText('Account changed');
+});
 for(const enrolled of [false,true])test(`required authenticator flow ${enrolled?'verifies existing factor':'enrolls first factor'} before displaying private data`,async({page})=>{
   await setup(page,{mfa:true,enrolled});await page.goto('/admin.html');await expect(page.locator('#mfa-dialog')).toBeVisible();await expect(page.locator('#dashboard')).toBeHidden();
   if(!enrolled){await expect(page.locator('#mfa-setup')).toBeVisible();await expect(page.locator('#mfa-secret')).toContainText('test-setup-secret');}
   else await expect(page.locator('#mfa-setup')).toBeHidden();
   await page.locator('#mfa-code').fill('123456');await page.locator('#verify-mfa').click();await expect(page.locator('#dashboard')).toBeVisible();await expect(page.locator('#mfa-dialog')).not.toBeVisible();await expect(page.locator('#mfa-secret')).toBeEmpty();await expect(page.locator('#mfa-qr')).not.toHaveAttribute('src');
+});
+test('cancelled authenticator enrollment clears the setup key and removes only its new factor',async({page})=>{
+  await setup(page,{mfa:true});await page.goto('/admin.html');await expect(page.locator('#mfa-secret')).toContainText('test-setup-secret');await page.locator('#cancel-mfa').click();await expect(page.locator('#mfa-dialog')).not.toBeVisible();await expect(page.locator('#mfa-secret')).toBeEmpty();await expect(page.locator('#mfa-qr')).not.toHaveAttribute('src');await expect.poll(()=>page.evaluate(()=>Boolean((window as any).__unenrolled))).toBe(true);await expect(page.locator('#dashboard')).toBeHidden();
 });
