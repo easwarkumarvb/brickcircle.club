@@ -1,5 +1,5 @@
 {
-  "release": "20261005-messaging-r1",
+  "release": "20261006-collector-auth-r1",
   "shell": [
     "/",
     "/v2.html",
