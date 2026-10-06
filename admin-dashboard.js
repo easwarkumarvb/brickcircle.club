@@ -20,14 +20,26 @@
   let mfaFactor = null, mfaNew = false, mfaBusy = false;
   let mfaGeneration = 0;
   let lastUserId = null;
+  let accessCertain = false, lastUpdated = null, renderedView = null;
+  const API_DEADLINE_MS = 15000;
   const requests = new Set();
+  class AdminError extends Error {
+    constructor(code, message) { super(message); this.code = code; }
+  }
+  function lockWrites() {
+    accessCertain = false;
+    if(!pending) $('confirm-change').disabled=true;
+    document.querySelectorAll('[data-action="catalogue"], [data-action="support"]').forEach(button => { button.disabled = true; });
+  }
+  function cancelStaleReads() { requests.forEach(request=>{if(!request.current()) request.cancel();}); }
   function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
   function purge(message) {
     epoch++; loadId++; detailId++;
     mfaGeneration++;
     const abandonedFactor=mfaNew&&!mfaBusy?mfaFactor:null; mfaFactor=null; mfaNew=false;
     if(abandonedFactor) db?.auth.mfa.unenroll({factorId:abandonedFactor}).catch(()=>{});
-    requests.forEach(controller => controller.abort()); requests.clear();
+    requests.forEach(request => request.cancel()); requests.clear();
+    accessCertain=false; lastUpdated=null; renderedView=null;
     rows = []; total = 0; change = null; pending = null; query=''; page=0; lastUserId=null;
     $('results').replaceChildren(); $('detail-body').replaceChildren();
     $('detail-dialog').close(); $('change-dialog').close();
@@ -37,39 +49,94 @@
     $('refresh').disabled = false;
     status(message, true);
   }
-  async function api(body) {
-    const currentEpoch = epoch;
-    const controller = new AbortController(); requests.add(controller);
-    try {
-      if (!db) throw new Error('Authentication could not load. Refresh the page.');
-      const {data: sessionData, error: sessionError} = await db.auth.getSession();
-      const {data: userData, error: userError} = await db.auth.getUser();
-      if (currentEpoch !== epoch) throw new DOMException('Stale request', 'AbortError');
-      if (sessionError || userError || !sessionData?.session?.access_token || !userData?.user) {
-        purge('Sign in to your approved administrator account.'); throw new Error('Administrator sign-in required.');
+  async function api(body, isCurrent = () => true) {
+    const currentEpoch = epoch, account = lastUserId;
+    const controller = new AbortController();
+    let active = true, timer, rejectCancellation;
+    const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
+    const request = {current:isCurrent, cancel() { active=false; controller.abort(); rejectCancellation(new DOMException('Stale request', 'AbortError')); }};
+    requests.add(request);
+    const check = () => {
+      if (!active || currentEpoch !== epoch || !isCurrent() || (account && account !== lastUserId))
+        throw new DOMException('Stale request', 'AbortError');
+    };
+    // One clock covers SDK calls, delivery and body parsing. Aborting fetch alone
+    // cannot bound an SDK promise, and abandoned promises must never change state.
+    timer = setTimeout(() => {
+      active=false; controller.abort();
+      rejectCancellation(new AdminError('timeout', 'Operation timed out. Delivery may be unknown.'));
+    }, API_DEADLINE_MS);
+    const wait = async promise => { const value = await Promise.race([promise, cancellation]); check(); return value; };
+    const authFailure = error => {
+      if (['session_not_found','refresh_token_not_found','refresh_token_already_used','bad_jwt','user_not_found'].includes(error?.code) || [401,403].includes(error?.status)) {
+        purge('Your session is no longer valid. Sign in again.');
+        throw new AdminError('unauthenticated', 'Administrator sign-in required.');
       }
+      throw new AdminError('unavailable', 'Authentication is temporarily unavailable. Refresh to verify access.');
+    };
+    try {
+      if (!db) throw new AdminError('unavailable', 'Authentication could not load. Refresh the page.');
+      const {data: sessionData, error: sessionError} = await wait(db.auth.getSession());
+      if (sessionError) authFailure(sessionError);
+      if (!sessionData?.session?.access_token) {
+        purge('Sign in to your approved administrator account.'); throw new AdminError('unauthenticated', 'Administrator sign-in required.');
+      }
+      if (lastUserId && sessionData.session.user?.id && lastUserId !== sessionData.session.user.id) {
+        purge('Account changed. Refresh to verify administrator access.'); throw new AdminError('unauthenticated', 'Account changed.');
+      }
+      if(sessionData.session.user?.id) lastUserId=sessionData.session.user.id;
+      const {data: userData, error: userError} = await wait(db.auth.getUser(sessionData.session.access_token));
+      if (userError) authFailure(userError);
+      if (!userData?.user) { purge('Sign in to your approved administrator account.'); throw new AdminError('unauthenticated', 'Administrator sign-in required.'); }
       if(lastUserId&&lastUserId!==userData.user.id) {
-        purge('Account changed. Refresh to verify administrator access.'); throw new Error('Account changed. Refresh to continue.');
+        purge('Account changed. Refresh to verify administrator access.'); throw new AdminError('unauthenticated', 'Account changed. Refresh to continue.');
       }
       lastUserId=userData.user.id;
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-dashboard`, {
+      const response = await wait(fetch(`${SUPABASE_URL}/functions/v1/admin-dashboard`, {
         method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: {Authorization: `Bearer ${sessionData.session.access_token}`, apikey: SUPABASE_KEY, 'Content-Type':'application/json'},
         body: JSON.stringify(body)
-      });
-      const data = await response.json();
-      if (currentEpoch !== epoch) throw new DOMException('Stale request', 'AbortError');
+      }));
+      // An explicit denial is authoritative even if its response body is broken.
+      if ([401,403].includes(response.status)) {
+        // Release this operation before purge cancels the other requests. Read a
+        // denial body only for its message/MFA hint, never as authorized content.
+        requests.delete(request);
+        purge('Administrator access required. Sign in or verify your authenticator.');
+        const deniedEpoch=epoch, deniedLoadId=loadId;
+        let denial;
+        try { denial=await Promise.race([response.json(),cancellation]); } catch { /* denial still wins */ }
+        if(deniedEpoch!==epoch || deniedLoadId!==loadId) throw new DOMException('Stale request','AbortError');
+        if(denial?.code==='mfa_required') {
+          status('Authenticator verification is required to access the admin console.',true);
+          beginMFA();
+        } else status(denial?.error || 'Administrator access required.',true);
+        throw new AdminError(denial?.code || (response.status===401?'unauthenticated':'forbidden'), denial?.error || 'Administrator access required.');
+      }
+      let data;
+      try { data = await wait(response.json()); }
+      catch (error) {
+        if (error.code === 'timeout' || error.name === 'AbortError') throw error;
+        throw new AdminError('unavailable', 'Invalid response from the admin service. Refresh to retry.');
+      }
       if (!response.ok) {
         if (data.code === 'mfa_required') {
           purge('Authenticator verification is required to access the admin console.');
-          await beginMFA();
-          throw new Error('Enter your authenticator code to unlock the console.');
+          beginMFA();
+          throw new AdminError('mfa_required', 'Enter your authenticator code to unlock the console.');
         }
-        if ([401,403].includes(response.status)) purge(data.error || 'Administrator access required.');
-        throw new Error(data.error || 'Unable to load admin data. Try refreshing.');
+        throw new AdminError(data.code || ({401:'unauthenticated',403:'forbidden',409:'conflict',400:'validation',404:'not_found'}[response.status] || 'unavailable'), data.error || 'Unable to load admin data. Try refreshing.');
       }
+      if (!data || typeof data !== 'object' || Array.isArray(data) || (body.operation==='read' && !body.section.endsWith('_detail') && (!data.generated_at || (body.section==='overview' ? !data.summary : !Array.isArray(data.rows) || !Number.isInteger(data.total)))))
+        throw new AdminError('unavailable', 'Invalid response from the admin service. Refresh to retry.');
+      if(body.operation==='mutate' && (!Number.isInteger(data.revision) || typeof data.audit_id!=='string'))
+        throw new AdminError('unavailable', 'Change response could not be verified. Delivery may be unknown.');
       return data;
-    } finally { requests.delete(controller); }
+    } catch (error) {
+      if (currentEpoch===epoch && isCurrent() && error.name!=='AbortError') lockWrites();
+      if (error instanceof AdminError || error.name==='AbortError') throw error;
+      throw new AdminError('unavailable', 'Admin service unavailable. Refresh to verify access.');
+    } finally { active=false; clearTimeout(timer); requests.delete(request); }
   }
   function badge(value) { const label = String(value ?? 'Unknown').replaceAll('_',' '); return `<span class="badge ${['visible','resolved','COMPLETED'].includes(value)?'good':['open','hidden'].includes(value)?'warn':''}">${esc(label)}</span>`; }
   async function beginMFA() {
@@ -145,17 +212,25 @@
   }
   async function load() {
     const id = ++loadId;
-    $('refresh').disabled = true; $('dashboard').hidden = true;
-    $('results').replaceChildren(); rows = [];
+    detailId++;
+    if($('detail-dialog').open) $('detail-dialog').close();
+    $('detail-body').replaceChildren();
+    cancelStaleReads();
+    const view = JSON.stringify([section,page,query]);
+    lockWrites();
+    $('refresh').disabled = true;
+    if (view !== renderedView) { $('dashboard').hidden = true; $('results').replaceChildren(); rows = []; lastUpdated=null; }
     $('page-title').textContent = sections[section][0]; $('page-description').textContent = sections[section][1];
     document.querySelectorAll('[data-section]').forEach(button=>{if(button.dataset.section===section) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');});
     status('Loading current marketplace data…');
     try {
-      const data = await api({operation:'read', section, query, page});
+      const data = await api({operation:'read', section, query, page}, () => id === loadId);
       if (id !== loadId) return;
       $('navigation').hidden = false; $('dashboard').hidden = false; $('access-actions').hidden = true;
       $('search-form').hidden = section === 'overview'; $('pagination').hidden = section === 'overview';
       $('search-hint').textContent = {members:'Name, email, city or country',catalogue:'Set number, name or theme',exchanges:'Exchange ID, collector ID or stage',support:'Request ID, exchange ID, category or status (open, in_progress, resolved)',audit:'Record ID, action or administrator ID'}[section] || '';
+      accessCertain=true; lastUpdated=data.generated_at; renderedView=view;
+      if(change&&!submitting) $('confirm-change').disabled=false;
       if (section === 'overview') renderOverview(data);
       else {
         rows = data.rows || []; total = data.total || 0; renderRows();
@@ -164,16 +239,17 @@
       }
       status(`Updated ${date(data.generated_at)}. Private administrator view.`);
     } catch (error) {
-      if (id === loadId && error.name !== 'AbortError') status(error.message, true);
+      if (id === loadId && error.name !== 'AbortError') status(`${error.message}${lastUpdated ? ` Stale view — last updated ${date(lastUpdated)}. New changes are disabled until a successful refresh.` : ''}`, true);
     } finally { if (id === loadId) $('refresh').disabled = false; }
   }
   function fields(object) { return `<div class="detail-list">${Object.entries(object).map(([key,value])=>`<div><small>${esc(key.replaceAll('_',' '))}</small><strong>${esc(value ?? '—')}</strong></div>`).join('')}</div>`; }
   async function detail(kind, row) {
     const id = ++detailId;
+    cancelStaleReads();
     $('detail-title').textContent = kind === 'member' ? 'Collector details' : 'Exchange timeline';
     $('detail-body').textContent = 'Loading record…'; $('detail-dialog').showModal();
     try {
-      const data = await api({operation:'read', section:kind==='member'?'member_detail':'exchange_detail', id:kind==='member'?row.id:(row.case_id || row.id)});
+      const data = await api({operation:'read', section:kind==='member'?'member_detail':'exchange_detail', id:kind==='member'?row.id:(row.case_id || row.id)}, () => id === detailId);
       if (id !== detailId) return;
       if (kind === 'member') {
         if (!data.member) { $('detail-body').textContent='Collector no longer exists.'; return; }
@@ -185,33 +261,41 @@
     } catch (error) { if (id === detailId && error.name !== 'AbortError') $('detail-body').textContent = error.message; }
   }
   function edit(entity, row) {
-    change = {entity, id:entity==='catalogue'?row.set_number:row.id, revision:row.revision}; pending = null;
+    const target = entity==='catalogue'?row.set_number:row.id;
+    if (!accessCertain || (pending && (pending.entity!==entity || pending.id!==target))) { status('Refresh to verify access and retry or review the outstanding change first.',true); return; }
+    change = {entity, id:target, revision:row.revision};
     const choices = entity==='catalogue' ? [['visible','Visible in Find Sets'],['hidden','Hidden from Find Sets']] : [['open','Open'],['in_progress','In progress'],['resolved','Resolved']];
     $('change-value').innerHTML = choices.map(([value,label])=>`<option value="${value}">${label}</option>`).join('');
     $('change-value').value = entity==='catalogue'?(row.catalog_active?'visible':'hidden'):row.status;
     $('change-description').textContent = entity==='catalogue'?`${row.name} (${row.set_number}). Change whether this set appears in discovery.`:`Support request ${row.id}. Triage status is internal and does not change the exchange or resolve a collector-reported issue.`;
     $('change-title').textContent = entity==='catalogue'?'Manage catalogue visibility':'Triage support request';
-    $('change-reason').value=''; $('change-status').textContent='';
-    $('change-reason').disabled=false; $('change-value').disabled=false; $('confirm-change').disabled=false;
+    $('change-reason').value=pending?.reason || ''; $('change-status').textContent=pending?'Delivery is unknown. Retry submits the same recorded request safely.':'';
+    if(pending) $('change-value').value=pending.value;
+    $('change-reason').disabled=Boolean(pending); $('change-value').disabled=Boolean(pending); $('confirm-change').disabled=false;
     $('change-dialog').showModal();
   }
   $('change-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (!change || submitting) return;
+    event.preventDefault(); if (!change || submitting || (!pending && !accessCertain)) return;
     if (!pending) pending = {operation:'mutate', ...change, value:$('change-value').value, reason:$('change-reason').value.trim(), request_id:crypto.randomUUID()};
     if (pending.reason.length < 10) { $('change-status').textContent='Provide a reason of at least 10 characters.'; pending=null; return; }
     const attempted = pending;
     submitting=true; $('confirm-change').disabled=true; $('change-value').disabled=true; $('change-reason').disabled=true; $('cancel-change').disabled=true;
     $('change-status').textContent='Recording change…'; $('change-status').classList.remove('error');
     try {
-      await api(attempted); $('change-dialog').close(); pending=null; change=null; await load();
+      await api(attempted); if(pending!==attempted) return; $('change-dialog').close(); pending=null; change=null; await load();
     } catch (error) {
-      if (error.name !== 'AbortError') { $('change-status').textContent=`${error.message} Retry submits the same recorded request safely. For a conflict, cancel and refresh first.`; $('change-status').classList.add('error'); }
-    } finally { submitting=false; $('confirm-change').disabled=false; $('cancel-change').disabled=false; }
+      if (pending===attempted && error.name !== 'AbortError') {
+        const rejected=['conflict','validation','not_found'].includes(error.code);
+        $('change-status').textContent=`${error.message} ${rejected?'Cancel and refresh to review the record before another change.':'Retry submits the same recorded request safely. Cancel does not roll back a delivered change.'}`;
+        $('change-status').classList.add('error');
+        if(rejected) pending=null;
+      }
+    } finally { submitting=false; $('confirm-change').disabled=!pending&&!accessCertain; $('cancel-change').disabled=false; }
   });
   $('change-dialog').addEventListener('cancel', event=>{if(submitting) event.preventDefault();});
-  $('cancel-change').addEventListener('click',()=>{if(!submitting){$('change-dialog').close();change=null;pending=null;}});
+   $('cancel-change').addEventListener('click',()=>{if(!submitting){$('change-dialog').close();change=null; if(pending) status('Delivery remains unknown. Refresh, then reopen this record to retry the same request. Cancel did not roll back the change.',true);}});
   $('close-detail').addEventListener('click',()=>{$('detail-dialog').close();detailId++;$('detail-body').replaceChildren();});
-  $('detail-dialog').addEventListener('close',()=>{detailId++;$('detail-body').replaceChildren();});
+  $('detail-dialog').addEventListener('close',()=>{detailId++;cancelStaleReads();$('detail-body').replaceChildren();});
   $('results').addEventListener('click',event=>{
     const button=event.target.closest('[data-action]'); if(!button) return;
     const row=rows[Number(button.dataset.index)]; if(!row) return;
@@ -227,10 +311,15 @@
   $('next').addEventListener('click',()=>{if((page+1)*25<total){page++;load();}});
   $('refresh').addEventListener('click',load);
   $('signout').addEventListener('click',async()=>{purge('Signed out.');await db?.auth.signOut({scope:'local'});location.assign('/#home');});
-  db?.auth.onAuthStateChange((event,session)=>{
+  const authSubscription = db?.auth.onAuthStateChange((event,session)=>{
     if(event==='SIGNED_OUT') purge('Signed out. Sign in to your administrator account.');
-    else if(event==='SIGNED_IN'&&lastUserId&&session?.user?.id!==lastUserId) purge('Account changed. Refresh to verify administrator access.');
+    else if(lastUserId&&session?.user?.id&&lastUserId!==session.user.id) purge('Account changed. Refresh to verify administrator access.');
+    else if(lastUserId&&session?.access_token) {
+      try { if(JSON.parse(atob(session.access_token.split('.')[1].replaceAll('-','+').replaceAll('_','/'))).aal !== 'aal2') purge('Authenticator verification is required to access the admin console.'); } catch { lockWrites(); }
+    }
+    else if(session?.user?.id) lastUserId=session.user.id;
   });
+  window.addEventListener('unload',()=>authSubscription?.data?.subscription?.unsubscribe());
   window.addEventListener('pagehide',()=>purge('Session locked. Refresh to continue.'));
   window.addEventListener('pageshow',event=>{if(event.persisted) load();});
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!$('detail-dialog').open&&!$('change-dialog').open) load();});

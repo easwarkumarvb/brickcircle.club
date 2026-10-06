@@ -80,3 +80,82 @@ for(const enrolled of [false,true])test(`required authenticator flow ${enrolled?
 test('cancelled authenticator enrollment clears the setup key and removes only its new factor',async({page})=>{
   await setup(page,{mfa:true});await page.goto('/admin.html');await expect(page.locator('#mfa-secret')).toContainText('test-setup-secret');await page.locator('#cancel-mfa').click();await expect(page.locator('#mfa-dialog')).not.toBeVisible();await expect(page.locator('#mfa-secret')).toBeEmpty();await expect(page.locator('#mfa-qr')).not.toHaveAttribute('src');await expect.poll(()=>page.evaluate(()=>Boolean((window as any).__unenrolled))).toBe(true);await expect(page.locator('#dashboard')).toBeHidden();
 });
+
+async function reliabilitySetup(page:Page) {
+  const f=await setup(page);
+  await page.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'application/javascript',body:`
+    window.__auth={
+      getSession:async()=>{if(window.__mode==='hung-session')return new Promise(resolve=>window.__late=resolve);return {data:{session:{access_token:'test-token',user:{id:'${id}'}}}};},
+      getUser:async()=>{if(window.__mode==='hung-user')return new Promise(resolve=>window.__late=resolve);if(window.__mode==='outage')return {error:{status:503}};if(window.__mode==='revoked')return {error:{status:401,code:'session_not_found'}};return {data:{user:{id:'${id}'}}};},
+      onAuthStateChange(fn){window.__authEvent=fn;return {data:{subscription:{unsubscribe(){}}}};}
+    };window.supabase={createClient:()=>({auth:window.__auth})};` }));
+  await page.goto('/admin.html');await expect(page.locator('#dashboard')).toBeVisible();
+  await page.locator('[data-section="catalogue"]').click();await expect(page.getByRole('button',{name:'Manage visibility'})).toBeVisible();
+  return f;
+}
+for(const mode of ['hung-session','hung-user'])test(`${mode} deadline ignores late SDK completion and disables new writes`,async({page})=>{
+  const f=await reliabilitySetup(page);const before=f.requests.length;await page.clock.install();
+  await page.evaluate(mode=>(window as any).__mode=mode,mode);await page.locator('#refresh').click();
+  await expect.poll(()=>page.evaluate(()=>typeof (window as any).__late)).toBe('function');
+  await page.clock.fastForward(15001);await expect(page.locator('#status')).toContainText('Stale view');await expect(page.locator('#refresh')).toBeEnabled();
+  await expect(page.getByRole('button',{name:'Manage visibility'})).toBeDisabled();await expect(page.locator('#results')).toContainText(set.name);
+  await page.evaluate(()=>{(window as any).__mode='';(window as any).__late({data:{session:{access_token:'late'},user:{id:'12345678-1234-1234-1234-123456789012'}}});});
+  expect(f.requests.length).toBe(before);await page.locator('#refresh').click();await expect(page.getByRole('button',{name:'Manage visibility'})).toBeEnabled();
+});
+test('temporary auth outage retains same-account context but definitive revocation erases it',async({page})=>{
+  await reliabilitySetup(page);await page.evaluate(()=>(window as any).__mode='outage');await page.locator('#refresh').click();
+  await expect(page.locator('#status')).toContainText('Stale view');await expect(page.locator('#results')).toContainText(set.name);await expect(page.getByRole('button',{name:'Manage visibility'})).toBeDisabled();
+  await page.evaluate(()=>(window as any).__mode='revoked');await page.locator('#refresh').click();await expect(page.locator('#results')).toBeEmpty();await expect(page.locator('#dashboard')).toBeHidden();
+});
+for(const mode of ['hung-body','malformed'])test(`${mode} response fails safely without replacing authorized context`,async({page})=>{
+  await reliabilitySetup(page);await page.clock.install();
+  await page.evaluate(mode=>{const original=window.fetch;window.fetch=async(...args)=>{const response=await original(...args);response.json=()=>mode==='hung-body'?new Promise(resolve=>(window as any).__lateBody=resolve):Promise.reject(new SyntaxError('invalid'));return response;};},mode);
+  await page.locator('#refresh').click();
+  if(mode==='hung-body'){await expect.poll(()=>page.evaluate(()=>typeof (window as any).__lateBody)).toBe('function');await page.clock.fastForward(15001);}
+  await expect(page.locator('#status')).toContainText('Stale view');await expect(page.getByRole('button',{name:'Manage visibility'})).toBeDisabled();
+  if(mode==='hung-body')await page.evaluate(()=>(window as any).__lateBody({rows:[],total:0,generated_at:'2026-10-06T12:00:00Z'}));
+  await expect(page.locator('#results')).toContainText(set.name);
+});
+for(const event of ['SIGNED_OUT','TOKEN_REFRESHED'])test(`${event} while SDK request pending cannot restore private data`,async({page})=>{
+  const f=await reliabilitySetup(page);const before=f.requests.length;await page.evaluate(()=>(window as any).__mode='hung-user');await page.locator('#refresh').click();
+  await expect.poll(()=>page.evaluate(()=>typeof (window as any).__late)).toBe('function');
+  await page.evaluate(event=>{(window as any).__authEvent(event,{user:{id:'another-account'}});(window as any).__late({data:{user:{id:'12345678-1234-1234-1234-123456789012'}}});},event);
+  await expect(page.locator('#results')).toBeEmpty();await expect(page.locator('#dashboard')).toBeHidden();expect(f.requests.length).toBe(before);
+});
+test('write committed before body timeout retains envelope across cancel and explicit retry',async({page})=>{
+  const f=await setup(page);await page.goto('/admin.html');await page.locator('[data-section="catalogue"]').click();await page.getByRole('button',{name:'Manage visibility'}).click();
+  await page.clock.install();await page.evaluate(()=>{const original=window.fetch;let lost=false;window.fetch=async(...args)=>{const response=await original(...args);if(String((args[1] as RequestInit)?.body).includes('"mutate"')&&!lost){lost=true;response.json=()=>new Promise(resolve=>(window as any).__lateWrite=resolve);}return response;};});
+  await page.locator('#change-value').selectOption('hidden');await page.locator('#change-reason').fill('Remove duplicated discovery entry');await page.locator('#confirm-change').click();
+  await expect.poll(()=>page.evaluate(()=>typeof (window as any).__lateWrite)).toBe('function');await page.clock.fastForward(15001);await expect(page.locator('#change-status')).toContainText('Retry submits');
+  await page.locator('#cancel-change').click();await expect(page.locator('#status')).toContainText('did not roll back');await page.locator('#refresh').click();await expect(page.getByRole('button',{name:'Manage visibility'})).toBeEnabled();
+  await page.getByRole('button',{name:'Manage visibility'}).click();await expect(page.locator('#change-reason')).toBeDisabled();await page.locator('#confirm-change').click();await expect(page.locator('#change-dialog')).not.toBeVisible();
+  expect(f.writes()).toBe(1);const changes=f.requests.filter(r=>r.operation==='mutate');expect(changes).toHaveLength(2);expect(changes[0]).toEqual(changes[1]);
+  await page.evaluate(()=>(window as any).__lateWrite({revision:1,audit_id:'late'}));await expect(page.locator('#results')).toContainText('hidden');
+});
+test('hung delivery has a whole-operation deadline and late response is ignored',async({page})=>{
+  await reliabilitySetup(page);await page.clock.install();await page.evaluate(()=>{window.fetch=()=>new Promise(resolve=>(window as any).__lateFetch=resolve);});
+  await page.locator('#refresh').click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).__lateFetch)).toBe('function');await page.clock.fastForward(15001);
+  await expect(page.locator('#status')).toContainText('timed out');await expect(page.locator('#refresh')).toBeEnabled();
+  await page.evaluate(()=>(window as any).__lateFetch(new Response(JSON.stringify({rows:[],total:0,generated_at:'2026-10-06T12:00:00Z'}),{status:200})));
+  await expect(page.locator('#results')).toContainText(set.name);await expect(page.getByRole('button',{name:'Manage visibility'})).toBeDisabled();
+});
+test('navigation ignores a previous pending SDK result without revealing its view',async({page})=>{
+  const f=await reliabilitySetup(page);await page.evaluate(()=>(window as any).__mode='hung-user');await page.locator('#refresh').click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).__late)).toBe('function');
+  await page.evaluate(()=>(window as any).__mode='');await page.locator('[data-section="members"]').click();await expect(page.locator('#results')).toContainText('collector@example.test');
+  const before=f.requests.length;await page.evaluate(()=>(window as any).__late({data:{user:{id:'12345678-1234-1234-1234-123456789012'}}}));
+  await expect(page.locator('#results')).not.toContainText(set.name);expect(f.requests.length).toBe(before);
+});
+test('explicit denial erases content even when its body is malformed',async({page})=>{
+  await reliabilitySetup(page);await page.route('**/functions/v1/admin-dashboard',route=>route.fulfill({status:403,body:'{',contentType:'application/json'}));await page.locator('#refresh').click();
+  await expect(page.locator('#results')).toBeEmpty();await expect(page.locator('#dashboard')).toBeHidden();await expect(page.locator('#refresh')).toBeEnabled();
+});
+test('MFA downgrade immediately clears private data on token refresh',async({page})=>{
+  await reliabilitySetup(page);await page.evaluate(()=>(window as any).__authEvent('TOKEN_REFRESHED',{user:{id:'12345678-1234-1234-1234-123456789012'},access_token:`test.${btoa(JSON.stringify({aal:'aal1'}))}.signature`}));
+  await expect(page.locator('#results')).toBeEmpty();await expect(page.locator('#dashboard')).toBeHidden();await expect(page.locator('#status')).toContainText('Authenticator verification');
+});
+test('section navigation cancels a pending detail read and its late result',async({page})=>{
+  const f=await reliabilitySetup(page);await page.locator('[data-section="members"]').click();await expect(page.getByRole('button',{name:'View collector'})).toBeVisible();
+  await page.evaluate(()=>(window as any).__mode='hung-user');await page.getByRole('button',{name:'View collector'}).click();await expect.poll(()=>page.evaluate(()=>typeof (window as any).__late)).toBe('function');
+  await page.evaluate(()=>{(window as any).__mode='';(document.querySelector('[data-section="support"]') as HTMLButtonElement).click();});await expect(page.locator('#results')).toContainText('Please help');
+  const before=f.requests.length;await page.evaluate(()=>(window as any).__late({data:{user:{id:'12345678-1234-1234-1234-123456789012'}}}));await expect(page.locator('#detail-dialog')).not.toBeVisible();await expect(page.locator('#detail-body')).toBeEmpty();expect(f.requests.length).toBe(before);
+});

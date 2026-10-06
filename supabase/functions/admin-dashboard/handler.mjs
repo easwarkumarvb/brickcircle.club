@@ -9,7 +9,7 @@ export function createHandler(createClient, env) {
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'};
     if (origin && allowed.has(origin)) headers['Access-Control-Allow-Origin'] = origin;
-    const response = (status, body) => new Response(JSON.stringify(body), {status, headers});
+    const response = (status, body) => new Response(JSON.stringify(body?.error && !body.code ? {...body, code:({400:'validation',401:'unauthenticated',403:'forbidden',404:'not_found',409:'conflict'}[status] || 'unavailable')} : body), {status, headers});
     if (origin && !allowed.has(origin)) return response(403, {error: 'Origin not allowed.'});
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers});
     if (!['GET', 'POST'].includes(req.method)) return response(405, {error: 'Method not allowed.'});
@@ -23,7 +23,11 @@ export function createHandler(createClient, env) {
       const userClient = createClient(url, anon, {global: {headers: {Authorization: authorization}},
         auth: {persistSession: false, autoRefreshToken: false}});
       const {data: authData, error: authError} = await userClient.auth.getUser();
-      if (authError || !authData?.user) return response(401, {error: 'Your session expired. Sign in again.'});
+      if (authError) {
+        const invalid = [401,403].includes(authError.status) || ['bad_jwt','session_not_found','user_not_found'].includes(authError.code);
+        return invalid ? response(401, {error: 'Your session expired. Sign in again.'}) : response(503, {error: 'Authentication temporarily unavailable. Retry shortly.'});
+      }
+      if (!authData?.user) return response(401, {error: 'Your session expired. Sign in again.'});
       const {data: isExchangeAdmin, error: adminAccessError} = await userClient.rpc('is_exchange_admin');
       if (adminAccessError) return response(503, {error: 'Unable to verify administrator access.'});
       if (isExchangeAdmin !== true) return response(403, {error: 'Administrator access required.'});

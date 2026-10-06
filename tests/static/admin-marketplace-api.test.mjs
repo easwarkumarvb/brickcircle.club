@@ -24,7 +24,7 @@ test('untrusted origins and unsupported methods are rejected',async()=>{
 test('preflight permits only explicit origins and no wildcard',async()=>{
   const f=fixture();const r=await f.handler(new Request('https://example.com',{method:'OPTIONS',headers:{Origin:'https://www.brickcircle.club'}}));assert.equal(r.status,204);assert.equal(r.headers.get('Access-Control-Allow-Origin'),'https://www.brickcircle.club');assert.equal(f.calls.length,0);
 });
-for(const options of [{noUser:true},{authError:{message:'invalid'}}])test(`invalid Auth user is denied ${JSON.stringify(options)}`,async()=>{
+for(const options of [{noUser:true},{authError:{message:'invalid',status:401}}])test(`invalid Auth user is denied ${JSON.stringify(options)}`,async()=>{
   const f=fixture(options);assert.equal((await f.handler(f.request({operation:'read'}))).status,401);assert.equal(f.calls.some(c=>c.name),false);
 });
 test('ordinary member with forged metadata cannot access data or mutations',async()=>{
@@ -33,6 +33,10 @@ test('ordinary member with forged metadata cannot access data or mutations',asyn
 });
 test('authorization failure fails closed',async()=>{
   const f=fixture({accessError:{message:'unavailable'}});assert.equal((await f.handler(f.request({operation:'read'}))).status,503);assert.equal(f.calls.some(c=>c.name==='admin_marketplace_read'),false);
+});
+test('Auth transport failure is unavailable, not logout, and runs no RPC',async()=>{
+  const f=fixture({authError:{status:503,message:'upstream unavailable'}});
+  const r=await f.handler(f.request({operation:'read'}));assert.equal(r.status,503);assert.equal((await r.json()).code,'unavailable');assert.equal(f.calls.some(c=>c.name),false);
 });
 test('authorized read preserves user credentials and applies bounded pagination',async()=>{
   const f=fixture();const r=await f.handler(f.request({operation:'read',section:'members',page:2,query:'City'}));assert.equal(r.status,200);

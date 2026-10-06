@@ -31,7 +31,7 @@ assert.ok(strictAllowAt > accessRpcAt);
 assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY/);
 
 assert.doesNotMatch(client, /OWNER_USER_ID|user\.id\s*!==/);
-assert.match(client, /db\.auth\.getUser\(\)/);
+assert.match(client, /db\.auth\.getUser\(sessionData\.session\.access_token\)/);
 assert.match(client, /functions\/v1\/admin-dashboard/);
 
 console.log('admin dashboard canonical authorization contract passed');

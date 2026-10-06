@@ -26,9 +26,24 @@ Record lists are server-paginated at 25 rows with exact totals. Member collectio
 3. Publish `admin.html`, `admin-dashboard.js` and `admin-console.css` together. The frontend and Edge contract changed; use a coordinated release to avoid the previous dashboard briefly receiving the new response format.
 4. Open the console as the approved admin, enroll or verify an authenticator, and confirm all sections load. Check a reversible catalogue visibility edit and its audit entry, then restore it. Verify a normal collector receives no private data.
 
-This branch has only been applied/deployed to disposable staging. Production rollout requires the coordinated database, Edge and frontend release above. Authenticator recovery follows the existing Supabase account recovery process; this console does not offer a bypass or factor deletion.
+PR #120 records the original production rollout on 6 October 2026 (migration installed, Edge version 7 and frontend published). A read-only public GET of `/admin.html` independently confirmed the marketplace control-room frontend on that date. This is historical rollout evidence, not a fresh audit of production database, Edge or authenticated administrator state. The robustness changes on PR #124 are **not deployed** and still require the coordinated release above. Authenticator recovery follows the existing Supabase account recovery process; this console does not offer a bypass or factor deletion.
 
 ## Validation
+
+### Reliability contract
+
+Admin operations have a 15-second deadline from entry, including SDK verification,
+delivery and JSON parsing. Generation/account guards ignore abandoned results.
+An explicit denial, sign-out, account switch or MFA downgrade clears private content.
+Transient verification/service failures retain only an already authorized same-view
+snapshot, labeled stale with its last update. New writes stay locked until a fresh
+server-authorized list read; a retained uncertain write can only be retried explicitly
+using its original payload and request ID. Closing its dialog is not a rollback.
+Pending envelopes exist only in memory and are erased with the session.
+
+Supabase sources checked on 6 October 2026: [getUser](https://supabase.com/docs/reference/javascript/auth-getuser)
+and [automatic PostgREST retries](https://supabase.com/changelog/45071-automatic-postgrest-retries-for-transient-errors).
+The pinned SDK is not upgraded; admin writes remain POST requests with no automatic replay.
 
 `npm run test:security-contracts` includes the canonical authorization contract and injected Edge handler tests. `tests/isolated/admin-console.spec.ts` exercises mobile/desktop layouts, accessibility, denial, search/pagination, escaped content, support timelines, idempotent retry, logout clearing and both authenticator paths across Chromium, Firefox and WebKit.
 
