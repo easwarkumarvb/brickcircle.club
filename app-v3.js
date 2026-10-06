@@ -393,11 +393,11 @@ async function providerSettings(){
   try{const r=await fetch(`${SUPABASE_URL}/auth/v1/settings`,{headers:{apikey:SUPABASE_KEY}});if(r.ok)S.providers=(await r.json())?.external||S.providers}catch(_){ }
 }
 async function oauth(provider,button){
-  const original=button?.textContent||'';if(button){button.disabled=true;button.textContent=`Opening ${provider==='google'?'Google':provider}…`}
+  const original=button?Array.from(button.childNodes,node=>node.cloneNode(true)):[];if(button){button.disabled=true;button.textContent=`Opening ${provider==='google'?'Google':provider}…`}
   try{
     const {data,error}=await withTimeout(db.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true,...(provider==='google'?{queryParams:{prompt:'select_account'}}:{})}}),10000);
     if(error)throw error;if(!data?.url)throw new Error(`${provider==='google'?'Google':provider} sign-in is temporarily unavailable. Please try again.`);location.assign(data.url);
-  }catch(error){fail(error,`${provider} sign-in is unavailable.`);if(button){button.disabled=false;button.textContent=original}}
+  }catch(error){fail(error,`${provider} sign-in is unavailable.`);if(button){button.disabled=false;button.replaceChildren(...original)}}
 }
 document.addEventListener('click',event=>{const button=event.target.closest?.('[data-auth]');if(!button||button.closest('#bc-overlay'))return;event.preventDefault();event.stopImmediatePropagation();showAuth()},true);
 function showAuth(){

@@ -1,6 +1,21 @@
 import {test,expect} from './fixtures';
 import AxeBuilder from '@axe-core/playwright';
 
+test('failed Google sign-in restores the decorated action and permits retry',async({page})=>{
+  await page.goto('/v2.html?isolated=signed-out#home');
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
+  await page.evaluate(()=>{
+    (window as any).supabase.createClient().auth.signInWithOAuth=async()=>({error:{message:'Google temporarily unavailable'}});
+  });
+  const button=page.getByRole('button',{name:'Continue with Google',exact:true});
+  await button.click();
+  await expect(button).toBeEnabled();
+  await expect(button.locator('.bc-google-mark')).toBeVisible();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await button.click();
+  await expect(button).toBeEnabled();
+});
+
 for(const width of [320,390,1280])test(`collector sign-in remains accessible at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:700});
   await page.goto('/v2.html?isolated=signed-out#home');
