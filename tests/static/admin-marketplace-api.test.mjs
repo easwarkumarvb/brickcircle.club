@@ -62,3 +62,31 @@ test('oversized and malformed JSON are rejected without executing data RPC',asyn
     const r=await f.handler(new Request('https://example.com',{method:'POST',headers:{Authorization:'Bearer test','Content-Type':'application/json'},body}));assert.ok([400,413].includes(r.status));
   }assert.equal(f.calls.some(c=>c.name==='admin_marketplace_read'),false);
 });
+test('v2 uses a uniquely named RPC with explicit filters and detail pagination',async()=>{
+  const f=fixture();assert.equal((await f.handler(f.request({operation:'read',version:2,section:'support',filters:{status:'actionable',age:'older_7_days'},page:3}))).status,200);
+  assert.deepEqual(f.calls.at(-1),{name:'admin_marketplace_read_v2',args:{p_section:'support',p_query:'',p_page:3,p_id:null,p_filters:{status:'actionable',age:'older_7_days'},p_part:null}});
+  assert.equal((await f.handler(f.request({operation:'read',version:2,section:'member_detail',id:validID,part:'wishlist',page:5}))).status,200);
+  assert.equal(f.calls.at(-1).args.p_part,'wishlist');assert.equal(f.calls.at(-1).args.p_page,5);
+});
+for(const filters of [null,{constructor:'x'},{toString:'x'},JSON.parse('{"__proto__":"x"}'),{status:null},{status:'closed'},{age:7},{sql:'1=1'},[],{overdue:'true'}])test(`v2 rejects unsafe structured filters ${JSON.stringify(filters)}`,async()=>{
+  const f=fixture();assert.equal((await f.handler(f.request({operation:'read',version:2,section:'support',filters}))).status,400);assert.equal(f.calls.some(c=>c.name!=='is_exchange_admin'&&c.name),false);
+});
+test('v2 detail allowlists and old-client compatibility fail closed',async()=>{
+  for(const body of [{version:3,section:'support'},{section:'support',filters:{status:'open'}},{version:2,section:'member_detail',id:validID,part:'messages'},{version:2,section:'exchange_detail',id:validID,part:'messages'},{version:2,section:'support_detail',id:'not-a-uuid',part:'history'}]){
+    const f=fixture();assert.equal((await f.handler(f.request({operation:'read',...body}))).status,400);assert.equal(f.calls.some(c=>c.name!=='is_exchange_admin'&&c.name),false);
+  }
+});
+test('support detail and standalone audited notes use narrow RPCs',async()=>{
+  const f=fixture();assert.equal((await f.handler(f.request({operation:'read',version:2,section:'support_detail',id:validID,part:'events',page:2}))).status,200);
+  assert.deepEqual(f.calls.at(-1),{name:'admin_support_detail_v2',args:{p_id:validID,p_page:2,p_part:'events'}});
+  assert.equal((await f.handler(f.request({operation:'note',id:validID,reason:'An internal support note',request_id:validID}))).status,200);
+  assert.deepEqual(f.calls.at(-1),{name:'admin_support_note',args:{p_id:validID,p_note:'An internal support note',p_request:validID}});
+});
+for(const edit of [{id:'bad'},{id:[validID]},{reason:'short'},{reason:'x'.repeat(1001)},{request_id:'bad'},{request_id:[validID]}])test(`invalid standalone note rejected ${JSON.stringify(edit).slice(0,60)}`,async()=>{
+  const f=fixture();assert.equal((await f.handler(f.request({operation:'note',id:validID,reason:'Internal support note',request_id:validID,...edit}))).status,400);assert.equal(f.calls.some(c=>c.name==='admin_support_note'),false);
+});
+for(const options of [{allowed:false},{noUser:true},{authError:{status:401}},{dbError:{code:'PT403'}},{dbError:{code:'42501'}}])test(`new support actions retain authorization gates ${JSON.stringify(options)}`,async()=>{
+  const f=fixture(options);for(const body of [{operation:'note',id:validID,reason:'Internal support note',request_id:validID},{operation:'read',version:2,section:'support_detail',id:validID,part:'history'}]){
+    const r=await f.handler(f.request(body));assert.ok([401,403].includes(r.status));
+  }
+});
