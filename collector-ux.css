@@ -102,3 +102,35 @@ html.bc-collector .bc-set-card img{height:140px!important}
  html.bc-collector .bc-msg-chat{padding:12px!important}
 }
 @media(prefers-reduced-motion:reduce){html.bc-collector *,html.bc-collector *::before,html.bc-collector *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* Approved adult collector sign-in design; all decoration stays inside the dialog. */
+html.bc-collector .bc-auth-modal{width:min(100%,620px)!important;background:#fcf8ef!important;padding:0!important;border:1px solid #e8dfd1!important;border-radius:26px!important;overflow:auto!important;max-height:calc(100dvh - 32px)!important}
+.bc-auth-shell{position:relative;isolation:isolate;padding:38px 40px 30px;overflow:hidden;border-radius:inherit}
+.bc-auth-head{position:relative;text-align:center;display:block!important;margin-bottom:24px!important}
+html.bc-collector .bc-auth-head h2{font-size:clamp(28px,4vw,40px)!important;line-height:1.15;margin:0 0 10px!important;color:#17202d}
+.bc-auth-head .bc-close{position:absolute;right:-24px;top:-22px;width:44px;height:44px;background:#f3eadb!important;color:#17202d!important;border-radius:50%!important}
+.bc-auth-motto{font-size:19px;font-weight:850;color:#b91527;margin:0 0 12px}
+.bc-auth-motto span{color:#876000}
+.bc-auth-head .bc-muted{max-width:440px;margin:0 auto;font-size:15px;line-height:1.6}
+html.bc-collector .bc-auth-modal .bc-auth-provider{position:relative;display:flex;align-items:center;justify-content:center;gap:14px;min-height:56px!important;padding:12px 44px!important;background:#fff!important;border:1px solid #e5dccf!important;border-radius:16px!important;color:#17202d!important;font-weight:800;box-shadow:0 5px 14px #40331e12!important}
+.bc-google-mark{font:bold 26px Arial,sans-serif;background:conic-gradient(#4285f4 0 90deg,#34a853 90deg 180deg,#fbbc05 180deg 230deg,#ea4335 230deg 290deg,#4285f4 290deg);background-clip:text;-webkit-background-clip:text;color:transparent}
+.bc-auth-arrow{position:absolute;right:18px;font-size:23px;font-weight:400;color:#556171}
+.bc-auth-modal .bc-auth-sep{display:flex;align-items:center;gap:14px;color:#556171;margin:6px 0}
+.bc-auth-modal .bc-auth-sep::before,.bc-auth-modal .bc-auth-sep::after{content:"";height:1px;background:#ded5c8;flex:1}
+html.bc-collector .bc-auth-modal .bc-tabs{display:grid!important;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:#f2e8d8;border-radius:16px;margin:0}
+html.bc-collector .bc-auth-modal .bc-tab{min-height:48px;padding:10px 8px;background:transparent!important;border:0!important;border-radius:12px!important;color:#475362!important;font-weight:800;white-space:normal}
+html.bc-collector .bc-auth-modal .bc-tab.active{background:#fff!important;color:#17202d!important;box-shadow:0 3px 8px #40331e14,inset 0 -3px #c91c2c!important}
+html.bc-collector .bc-auth-modal .bc-input{min-height:48px;border:1px solid #d7ccbc!important;background:#fffdf8!important;border-radius:12px!important}
+.bc-auth-modal .bc-field label{font-weight:750;color:#475362}
+.bc-auth-modal .bc-consent{align-items:flex-start;font-size:13px;line-height:1.5}
+html.bc-collector .bc-auth-modal .bc-btn.primary{min-height:52px!important;border-radius:14px!important;font-size:16px}
+.bc-auth-trust{text-align:center;color:#475362;font-size:13px;line-height:1.5;margin:2px 18px}
+.bc-auth-legal{position:relative;z-index:1;color:#596372;font-size:11px;line-height:1.5;text-align:center}
+.bc-auth-legal a{text-decoration:underline;color:#0759a6}
+.bc-auth-bricks{position:absolute;z-index:-1;display:grid;grid-template-columns:repeat(2,32px);grid-template-rows:repeat(2,32px);pointer-events:none}
+.bc-auth-bricks.top{top:0;left:0}.bc-auth-bricks.bottom{bottom:0;right:0;transform:rotate(180deg)}
+.bc-auth-bricks i{display:block;position:relative;background:#c91c2c;border:1px solid #a91422;box-shadow:2px 3px 6px #17202d20}
+.bc-auth-bricks i::after{content:"";position:absolute;inset:6px;border-radius:50%;background:inherit;box-shadow:inset 1px 1px 2px #ffffff65,1px 2px 3px #17202d50}
+.bc-auth-bricks i:last-child{background:#ffd500;border-color:#d4ac00}
+.bc-auth-bricks.bottom i{background:#0759a6;border-color:#064b8b}.bc-auth-bricks.bottom i:last-child{background:#ffd500;border-color:#d4ac00}
+@media(max-width:600px){html.bc-collector .bc-auth-modal{max-height:calc(100dvh - 24px)!important;border-radius:22px!important}.bc-auth-shell{padding:30px 20px 24px}.bc-auth-head .bc-close{right:-12px;top:-22px}.bc-auth-head .bc-muted{font-size:14px}.bc-auth-head{padding-top:10px}.bc-auth-bricks{grid-template-columns:repeat(2,24px);grid-template-rows:repeat(2,24px)}.bc-auth-bricks i::after{inset:5px}.bc-auth-motto{font-size:17px}.bc-auth-trust{margin:2px 10px}.bc-auth-legal{font-size:11px}}
