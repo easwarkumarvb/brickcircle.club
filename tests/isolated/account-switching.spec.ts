@@ -2,8 +2,8 @@ import {test,expect} from './fixtures';
 import type {Page} from '@playwright/test';
 import fs from 'node:fs';
 
-async function member(page:Page){
-  await page.goto('/v2.html#profile');
+async function member(page:Page,mode=''){
+  await page.goto(`/v2.html${mode?'?isolated='+mode:''}#profile`);
   await expect(page.locator('[data-account-card]')).toContainText('collector@example.invalid');
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
   await page.evaluate(()=>{
@@ -95,6 +95,78 @@ test('an earlier password-login completion cannot reopen the retired account',as
   await page.evaluate(()=>(window as any).bcSwitchAccount());await blankEmail(page);
   await page.evaluate(()=>window.__bcIsolated.releaseLogin());
   await expect(page.locator('[data-nav="profile"]')).toHaveCount(0);await expect(page.locator('#bc-email-signin')).toBeVisible();
+});
+
+test('stale signup completion and its auth events cannot replace the lock or resurrect C after B',async({page})=>{
+  await member(page);await switchFromProfile(page);await blankEmail(page);
+  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated;s.accountC={...s.accountA,id:'00000000-0000-4000-8000-000000000009'};w.BC_SUPABASE.auth.signUp=()=>new Promise(resolve=>s.releaseSignup=()=>{const session={user:s.accountC};s.emitAuth('SIGNED_IN',session);resolve({data:{session},error:null})})});
+  await page.locator('[data-auth-tab="signup"]').click();const form=page.locator('#bc-email-signup');
+  await form.getByLabel('Collector name',{exact:true}).fill('Injected C');await form.getByLabel('Email',{exact:true}).fill('member-c@example.invalid');await form.getByLabel('Password',{exact:true}).fill('injected-password');await form.locator('[name="adult_confirmation"]').check();await form.locator('button[type="submit"]').click();
+  await page.evaluate(()=>{const w=window as any;w.__bcIsolated.logoutMode='error';w.bcSwitchAccount()});await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');
+  await page.evaluate(()=>window.__bcIsolated.releaseSignup());
+  await expect(page.locator('#bc-overlay')).toHaveCount(1);await expect(page.locator('#bc-logout-status')).toBeVisible();await expect(page.locator('#bc-email-signup')).toHaveCount(0);
+  await page.evaluate(()=>window.__bcIsolated.logoutMode='success');await page.locator('#bc-logout-retry').click();await blankEmail(page);
+  await page.getByLabel('Email',{exact:true}).fill('member-b@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();await page.locator('[data-nav="profile"]').click();
+  await page.evaluate(()=>{const s=window.__bcIsolated;s.emitAuth('SIGNED_IN',{user:s.accountC});s.emitAuth('TOKEN_REFRESHED',{user:s.accountA})});
+  await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');
+});
+
+for(const action of ['oauth','reset','recovery'])test(`stale ${action} completion cannot close or redirect the new email modal`,async({page})=>{
+  await member(page);
+  await page.evaluate(action=>{
+    const w=window as any,s=w.__bcIsolated,auth=w.BC_SUPABASE.auth;
+    if(action==='recovery'){auth.updateUser=()=>new Promise(resolve=>s.releaseAction=()=>resolve({error:null}));s.emitAuth('PASSWORD_RECOVERY',{user:s.accountA})}
+    else{w.bcAuth();auth[action==='oauth'?'signInWithOAuth':'resetPasswordForEmail']=()=>new Promise(resolve=>s.releaseAction=()=>resolve({data:{url:location.origin+'/should-not-navigate'},error:null}))}
+  },action);
+  if(action==='oauth')await page.locator('[data-oauth="google"]').click();
+  else if(action==='reset'){page.once('dialog',dialog=>dialog.accept('injected@example.invalid'));await page.getByRole('button',{name:'Forgot password?'}).click()}
+  else{await expect(page.locator('#bc-password-recovery')).toBeVisible();await page.locator('#bc-password-recovery [name="password"]').fill('injected-password');await page.locator('#bc-password-recovery [name="confirm"]').fill('injected-password');await page.locator('#bc-password-recovery button[type="submit"]').click()}
+  await page.evaluate(()=>(window as any).bcSwitchAccount());await blankEmail(page);
+  await page.evaluate(()=>window.__bcIsolated.releaseAction());await expect(page).toHaveURL(/#home$/);await expect(page.locator('#bc-email-signin')).toBeVisible();await expect(page.locator('#bc-password-recovery')).toHaveCount(0);
+});
+
+for(const mode of ['error','success'])test(`delayed private proposal and captured drawer/modal actions cannot replace logout UI (${mode})`,async({page})=>{
+  await member(page,'matched');
+  await page.evaluate(()=>{
+    const w=window as any,s=w.__bcIsolated,db=w.BC_SUPABASE,rpc=db.rpc.bind(db);
+    s.oldModal=document.querySelector<HTMLElement>('[data-edit-profile]')!.onclick;s.oldDrawer=document.querySelector<HTMLElement>('[data-open="notifications"]')!.onclick;
+    db.rpc=(name:string,args:any)=>name==='exchange_peer_reputation_summary'?Promise.resolve({data:null,error:null}):rpc(name,args);
+  });
+  await page.locator('[data-nav="matches"]').first().click();await expect(page.locator('[data-propose]')).toBeVisible();
+  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated,db=w.BC_SUPABASE,rpc=db.rpc.bind(db);db.rpc=(name:string,args:any)=>name==='exchange_peer_reputation_summary'?new Promise(resolve=>s.releaseProposal=()=>resolve({data:{},error:null})):rpc(name,args)});
+  await page.locator('[data-propose]').click();await expect.poll(()=>page.evaluate(()=>!!window.__bcIsolated.releaseProposal)).toBe(true);
+  await page.evaluate(mode=>{const w=window as any;w.__bcIsolated.logoutMode=mode;w.bcSwitchAccount()},mode);
+  if(mode==='error'){
+    await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');
+    await page.evaluate(()=>{const s=window.__bcIsolated;s.oldModal();s.oldDrawer();s.releaseProposal()});
+    await expect(page.locator('#bc-overlay')).toHaveCount(1);await expect(page.locator('#bc-logout-status')).toBeVisible();await expect(page.locator('#bc-profile-form,#bc-proposal,#bc-drawer-overlay')).toHaveCount(0);
+  }else{await blankEmail(page);await page.evaluate(()=>window.__bcIsolated.releaseProposal());await expect(page.locator('#bc-proposal')).toHaveCount(0);await expect(page.locator('#bc-email-signin')).toBeVisible()}
+});
+
+const pushSource=fs.readFileSync('web-push-v1.js','utf8');
+async function injectPush(page:Page,defer=false){
+  await page.evaluate(defer=>{
+    const w=window as any,s=w.__bcIsolated;s.unsubscribes=0;w.PushManager=function(){};
+    Object.defineProperty(w,'Notification',{configurable:true,value:{permission:'default'}});
+    const subscription={unsubscribe:async()=>{s.unsubscribes++;return true}};
+    Object.defineProperty(navigator,'serviceWorker',{configurable:true,value:{getRegistration:async()=>({pushManager:{getSubscription:()=>defer?new Promise(resolve=>s.releaseSubscription=()=>resolve(subscription)):Promise.resolve(subscription)}})}});
+  },defer);
+  await page.addScriptTag({content:pushSource});
+}
+test('old automatic push prompt is paused and local unsubscribe never waits for post-logout RLS deletion',async({page})=>{
+  await member(page);await page.clock.install();await injectPush(page);
+  await page.evaluate(()=>{const w=window as any;w.bcWebPush.consider(w.__bcIsolated.accountA,{meaningful:true});w.__bcIsolated.logoutMode='error'});
+  await switchFromProfile(page);await page.clock.fastForward(2000);await expect(page.locator('.bc-push-prompt')).toHaveCount(0);
+  await page.evaluate(()=>window.__bcIsolated.logoutMode='success');await page.locator('#bc-logout-retry').click();await blankEmail(page);
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.unsubscribes)).toBe(1);
+  expect(await page.evaluate(()=>window.__bcIsolated.queries.filter((q:any)=>q.table==='push_subscriptions'&&q.mode==='delete'))).toEqual([]);
+});
+test('delayed old browser subscription lookup cannot unsubscribe after the new account signs in',async({page})=>{
+  await member(page);await injectPush(page,true);await switchFromProfile(page);await blankEmail(page);
+  await expect.poll(()=>page.evaluate(()=>!!window.__bcIsolated.releaseSubscription)).toBe(true);
+  await page.getByLabel('Email',{exact:true}).fill('member-b@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();await page.locator('[data-nav="profile"]').click();
+  await page.evaluate(()=>window.__bcIsolated.releaseSubscription());expect(await page.evaluate(()=>window.__bcIsolated.unsubscribes)).toBe(0);
+  await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');
 });
 
 test('slow logout times out honestly; duplicates and late success cannot unlock login',async({page})=>{

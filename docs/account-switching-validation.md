@@ -16,11 +16,22 @@ Base: PR124 merge `f3275fa761e049098f279c0cb9c01552739d4478`.
 - Explicit logout invalidates auth workers and existing refresh/render generations
   immediately. It bypasses visibility/focus SIGNED_OUT recovery, blocks new resume
   reads, and suppresses delayed recovery and SIGNED_IN/TOKEN_REFRESHED work. The old
-  account is excluded from unsolicited events until an intentional password login
-  returns its successful session. Returning to the original email remains possible.
+  retired accounts are excluded from unsolicited events until an intentional current
+  password login/signup returns its successful session. Pending interactive auth
+  callbacks are gated until the current SDK result is confirmed; stale signup,
+  password, OAuth, recovery and reset completions cannot close the new overlay or
+  resurrect a retired identity. Returning to the original email remains possible.
 - Private state, caches, notification/thread subscriptions and session hints are
   cleared after marketplace logout confirmation. Ancillary push cleanup is best
   effort, bounded/non-blocking, device-scoped and guarded against a new login.
+  Beginning logout pauses old automatic push prompts without touching subscriptions.
+  After confirmed logout, browser PushManager unsubscribe does not wait for an RLS
+  deletion. The old server row is deliberately retained: existing send-web-push
+  delivery handling disables invalid endpoints on provider 404/410. No post-logout
+  authenticated deletion or new backend policy is assumed.
+- Delayed private proposal/reputation work checks the logout epoch and user before
+  opening UI. While locked, generic modal/drawer builders bind only detached markup;
+  they cannot replace, dismiss or render over the blocking logout overlay.
 - Admin purges immediately and locks authorization/read work while logging out.
   Only confirmed logout navigates to the fixed same-origin `/#signin` handoff.
   Boot consumes it as home plus direct email auth; retained profile routing cannot
