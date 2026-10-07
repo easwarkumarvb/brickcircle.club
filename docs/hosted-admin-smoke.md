@@ -55,6 +55,13 @@ repository files, command-line values, `.env` files, shell tracing or artifacts:
 
 After review and explicit execution approval, with **all** those variables injected:
 
+The local checkout must be the exact reviewed commit named by
+`BC_ADMIN_SMOKE_EXPECTED_HEAD_SHA`. CLI preflight compares `git rev-parse HEAD`
+against that SHA before creating clients or making requests; mismatch fails with
+a fixed safe error. The workflow also verifies its immutable checkout before
+credential exposure. This checks commit identity, not uncommitted changes;
+operators must additionally confirm a clean working tree before execution.
+
 ```sh
 node scripts/hosted-admin-smoke.mjs
 ```

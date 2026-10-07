@@ -4,10 +4,15 @@ import { randomUUID, createHmac } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
+import { execFileSync } from 'node:child_process';
 
 export const PROJECT = 'tteyypklldgwwicrgjzt';
 export const CONFIRMATION = 'RUN_OWNED_DISPOSABLE_ADMIN_SMOKE';
 const uuid = /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+export function assertCheckout(expected, actual) {
+  if (!/^[0-9a-f]{40}$/.test(expected) || actual !== expected)
+    throw new Error('Reviewed checkout required');
+}
 export function validateConfig(c) {
   assert.equal(c.url, `https://${PROJECT}.supabase.co`);
   assert.equal(c.confirmation, CONFIRMATION);
@@ -146,7 +151,10 @@ export async function runSmoke(config, { factory = createClient, transport = fet
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const report = await runSmoke(configFromEnv(process.env));
+    const config = configFromEnv(process.env);
+    const actualHead = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    assertCheckout(config.sha, actualHead); // before clients or network, including local runs
+    const report = await runSmoke(config);
     await mkdir('artifacts', { recursive: true });
     await writeFile('artifacts/hosted-admin-smoke.json', JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report)); if (!report.passed) process.exitCode = 1;

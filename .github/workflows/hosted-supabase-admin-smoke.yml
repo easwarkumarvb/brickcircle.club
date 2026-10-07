@@ -53,6 +53,10 @@ jobs:
         with:
           ref: ${{ needs.validate.outputs.sha }}
           persist-credentials: false
+      - name: Verify exact reviewed checkout before credential exposure
+        env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - uses: actions/setup-node@v4
         with:
           node-version: 22

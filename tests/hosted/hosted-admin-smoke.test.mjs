@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { PROJECT, CONFIRMATION, validateConfig, configFromEnv, guardedFetch, totp, runSmoke, assertDenied, mask } from '../../scripts/hosted-admin-smoke.mjs';
+import { PROJECT, CONFIRMATION, validateConfig, configFromEnv, guardedFetch, totp, runSmoke, assertDenied, mask, assertCheckout } from '../../scripts/hosted-admin-smoke.mjs';
 const id = '11111111-1111-4111-8111-111111111111';
 const config = () => ({ url: `https://${PROJECT}.supabase.co`, key: 'public-test-key', pr: '124', sha: 'a'.repeat(40),
   confirmation: CONFIRMATION, run: id, caseId: id, supportId: id, totpSecret: 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ',
@@ -18,6 +18,13 @@ test('exported runner refuses production before constructing clients or making r
   let calls=0;
   await assert.rejects(runSmoke({...config(),url:'https://nsxtromjdpdscknadxez.supabase.co'}, {factory:()=>{calls++;},transport:()=>{calls++;}}));
   assert.equal(calls,0);
+});
+test('CLI checkout guard rejects claimed SHA mismatch with a fixed safe error', () => {
+  assert.doesNotThrow(() => assertCheckout('a'.repeat(40), 'a'.repeat(40)));
+  for (const [expected, actual] of [['a'.repeat(40), 'b'.repeat(40)], ['main', 'main']])
+    assert.throws(() => assertCheckout(expected, actual), { message: 'Reviewed checkout required' });
+  const script=readFileSync('scripts/hosted-admin-smoke.mjs','utf8');
+  assert.ok(script.indexOf('assertCheckout(config.sha, actualHead)') < script.indexOf('await runSmoke(config)'));
 });
 test('transport refuses all foreign origins/path escapes and redirects', async () => {
   let calls=0; const fetcher=guardedFetch(config().url, async(_url,opts)=>{calls++;assert.equal(opts.redirect,'error');assert.ok(opts.signal);});
