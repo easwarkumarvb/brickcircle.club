@@ -1,0 +1,93 @@
+name: Hosted Supabase Admin Smoke
+on:
+  workflow_dispatch:
+    inputs:
+      expected_head_sha:
+        description: Exact reviewed PR 124 head (40 lowercase hex characters)
+        required: true
+        type: string
+      confirmation:
+        description: Type RUN_OWNED_DISPOSABLE_ADMIN_SMOKE
+        required: true
+        type: string
+permissions:
+  contents: read
+  pull-requests: read
+concurrency:
+  group: hosted-supabase-admin-smoke
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      sha: ${{ steps.selection.outputs.sha }}
+    steps:
+      - uses: actions/github-script@v7
+        id: selection
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_head_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const fail = () => { throw new Error('Reviewed default-branch PR 124 selection required'); };
+            const {data: repo} = await github.rest.repos.get(context.repo);
+            const ref = `refs/heads/${repo.default_branch}`;
+            if (context.ref !== ref || process.env.GITHUB_WORKFLOW_REF !==
+                `${context.repo.owner}/${context.repo.repo}/.github/workflows/hosted-supabase-admin-smoke.yml@${ref}`) fail();
+            if (process.env.CONFIRMATION !== 'RUN_OWNED_DISPOSABLE_ADMIN_SMOKE' ||
+                !/^[0-9a-f]{40}$/.test(process.env.EXPECTED_SHA)) fail();
+            const {data: pr} = await github.rest.pulls.get({...context.repo, pull_number: 124});
+            if (pr.state !== 'open' || pr.head.repo?.full_name !== repo.full_name ||
+                pr.base.repo?.full_name !== repo.full_name || pr.base.ref !== repo.default_branch ||
+                pr.head.ref !== 'codex/admin-robustness-architecture' || pr.head.sha !== process.env.EXPECTED_SHA) fail();
+            core.setOutput('sha', pr.head.sha);
+  smoke:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Configure required human reviewers and default-branch restrictions BEFORE use.
+    environment: hosted-supabase-staging
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Revalidate immutable selection before exposing credentials
+        uses: actions/github-script@v7
+        env:
+          EXPECTED_SHA: ${{ needs.validate.outputs.sha }}
+        with:
+          script: |
+            const {data: pr} = await github.rest.pulls.get({...context.repo, pull_number: 124});
+            if (pr.state !== 'open' || pr.head.repo?.full_name !== `${context.repo.owner}/${context.repo.repo}` ||
+                pr.head.ref !== 'codex/admin-robustness-architecture' || pr.head.sha !== process.env.EXPECTED_SHA)
+              throw new Error('PR selection changed; review again');
+      - name: Owned disposable authenticated admin smoke
+        run: node scripts/hosted-admin-smoke.mjs
+        env:
+          BC_ADMIN_SMOKE_CONFIRMATION: ${{ inputs.confirmation }}
+          BC_ADMIN_SMOKE_PR: '124'
+          BC_ADMIN_SMOKE_EXPECTED_HEAD_SHA: ${{ needs.validate.outputs.sha }}
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_ADMIN_SMOKE_MEMBER_EMAIL: ${{ secrets.BC_ADMIN_SMOKE_MEMBER_EMAIL }}
+          BC_ADMIN_SMOKE_MEMBER_PASSWORD: ${{ secrets.BC_ADMIN_SMOKE_MEMBER_PASSWORD }}
+          BC_ADMIN_SMOKE_ADMIN_EMAIL: ${{ secrets.BC_ADMIN_SMOKE_ADMIN_EMAIL }}
+          BC_ADMIN_SMOKE_ADMIN_PASSWORD: ${{ secrets.BC_ADMIN_SMOKE_ADMIN_PASSWORD }}
+          BC_ADMIN_SMOKE_ADMIN_TOTP_SECRET: ${{ secrets.BC_ADMIN_SMOKE_ADMIN_TOTP_SECRET }}
+          BC_ADMIN_SMOKE_RUN_ID: ${{ vars.BC_ADMIN_SMOKE_RUN_ID }}
+          BC_ADMIN_SMOKE_CASE_ID: ${{ vars.BC_ADMIN_SMOKE_CASE_ID }}
+          BC_ADMIN_SMOKE_SUPPORT_ID: ${{ vars.BC_ADMIN_SMOKE_SUPPORT_ID }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hosted-admin-smoke-${{ needs.validate.outputs.sha }}
+          path: artifacts/hosted-admin-smoke.json
+          if-no-files-found: ignore
+          retention-days: 7

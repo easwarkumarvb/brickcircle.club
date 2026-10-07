@@ -111,3 +111,39 @@ Beta Release Gate for that exact head, and physical-device checks where required
 Phase 1 gate results do not substitute for final-head CI. The PR remains draft;
 this worker did not push, deploy, merge, reset accounts, send collector messages,
 modify production or perform collector lifecycle/custody actions.
+
+## Parent-reported final-head gates and staging deployment — 7 October 2026
+
+Parent subsequently verified runtime head `09648753d5438564742f64a30e77df6590c91bff`:
+CI run `37576881882`, quality job `112647652242`, completed **SUCCESS**, including
+Firefox/WebKit functional and all three-browser visual/axe steps; Beta Release
+Gate run `37576881847` passed. Codex final source review reported no blocking
+issues. These supersede the outstanding final-head gate/review statement above
+for that runtime head, not any subsequent harness commit.
+
+Codex reported exact runtime-head `index.ts` + `handler.mjs` deployed exclusively
+to disposable `tteyypklldgwwicrgjzt`: `admin-dashboard` version 2 ACTIVE,
+code SHA `298d2ce0355b03a0f6c2cbd55d4633438215b45dae40a040138696f46ced6cc3`.
+`verify_jwt=false` retained custom handler authentication gates. Parent's actual
+missing-token and invalid-token HTTP probes both returned **401 unauthenticated**,
+no private payload and `Cache-Control: no-store`. This worker did not duplicate
+those probes or perform that deployment.
+
+The follow-up harness/workflow in `docs/hosted-admin-smoke.md` is prepared for
+review only. No privileged/credentialed hosted execution or dispatch occurred.
+Authenticated real-MFA staging execution, live staging UI suppression and
+physical-device evidence remain outstanding. Neither SQL claims nor injected
+harness regression tests substitute for real MFA login proof.
+
+Follow-up local validation (no hosted requests):
+- `node --test tests/hosted/hosted-admin-smoke.test.mjs` — 9 passed, zero failures/skips.
+- `node --check scripts/hosted-admin-smoke.mjs` — passed.
+- `npm run typecheck`, `npm run syntax-check`, `npm run release:check` — passed.
+- `git diff --check` — passed.
+
+The tests inject SDK/HTTP doubles and check guards, RFC TOTP calculation, masking,
+error-only denials including `summary`, account matching, API sequence, replay,
+401/403 revocation and failure sign-out. They do not establish hosted Auth behavior.
+Workflow source guard assertions passed; live workflow execution remains blocked
+by default-branch routing, environment provisioning and review. No unchanged
+90-browser/security-SQL suites were rerun, and runtime/backend files are unchanged.
