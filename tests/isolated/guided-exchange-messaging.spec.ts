@@ -65,6 +65,17 @@ for(const kind of ['case','direct'])test(`${kind} delivery retry after a committ
   await expect(input).toHaveValue('');await expect(page.locator('#bc-msg-chat')).toContainText('One delivery only');
   expect(await page.evaluate(kind=>{const s=(window as any).__bcThreeUser;return (kind==='case'?s.data.messages:s.data.directMessages).filter((m:any)=>m.body==='One delivery only').length},kind)).toBe(1);
 });
+test('collector inbox groups two exact cases into one row without losing case routing',async({page})=>{
+  await open(page,'easwar');
+  await page.evaluate(()=>{const s=(window as any).__bcThreeUser;s.data.exchanges.push({...s.data.exchanges[0],id:'guide-case-2',item_a:'item-b',item_b:'item-a',state:'ACCEPTED',state_version:2,created_at:'2026-10-06T12:00:00Z',updated_at:'2026-10-06T12:00:00Z'});s.persist();location.hash='#messages';});
+  await expect(page.locator('.bc-msg-row')).toHaveCount(1);
+  await expect(page.locator('.bc-msg-row')).toContainText('2 exchanges');
+  await page.locator('.bc-msg-row').click();
+  await expect(page.getByRole('region',{name:'Exchange cases with this collector'}).locator('[data-open-messages-case]')).toHaveCount(2);
+  await page.locator('[data-open-messages-case="guide-case-2"]').click();
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:guide-case-2');
+  await expect(page.locator('[data-open-exchange]')).toHaveAttribute('data-open-exchange','guide-case-2');
+});
 test('direct chat links to the exchange, and reconnect updates the guide without losing a draft',async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page,'easwar','PROPOSED',{},'messages/direct:'+B);
   await page.locator('[data-open-messages-case="guide-case"]').click();

@@ -1381,7 +1381,7 @@ async function loadMessageIndex(uid,token){
     group.messages.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||String(a.id).localeCompare(String(b.id)));
     const last=group.messages[group.messages.length-1]||null;
     group.last=last;
-    group.stamp=last?new Date(last.created_at).getTime():(group.case&&group.case.created_at?new Date(group.case.created_at).getTime():0);
+    group.stamp=last?new Date(last.created_at).getTime():(group.case?new Date(group.case.updated_at||group.case.created_at||0).getTime():0);
   });
   index.loadedAt=Date.now();
   const people=new Set();
@@ -1406,21 +1406,38 @@ function filteredConversationGroups(){
   const uid=S.user?.id;
   const index=uid?messageIndexByUid.get(uid):null;
   if(!index)return[];
-  const groups=[...index.direct.values(),...index.cases.values()];
-  const filtered=groups.filter(group=>{
-    if(messagesFilter==='unread')return conversationUnread(uid,group)>0;
-    if(messagesFilter==='exchanges')return group.kind==='case';
-    if(messagesFilter==='collectors')return group.kind==='direct';
-    return true;
-  });
-  return filtered.sort((a,b)=>b.stamp-a.stamp);
+  // Messages has one inbox entry per counterparty. Case identity remains on
+  // each case card in the thread; it is never inferred from whichever is newest.
+  const peers=new Map();
+  const add=(peerId,group)=>{
+    if(!peerId||peerId===uid)return;
+    if(!peers.has(peerId))peers.set(peerId,{kind:'peer',peerId,direct:null,cases:[],messages:[],stamp:0,unread:0});
+    const peer=peers.get(peerId);
+    if(group.kind==='case')peer.cases.push(group);else peer.direct=group;
+    peer.messages.push(...group.messages);
+    peer.stamp=Math.max(peer.stamp,group.stamp||0);
+    peer.unread+=conversationUnread(uid,group);
+  };
+  index.direct.forEach(group=>add(group.peerId,group));
+  index.cases.forEach(group=>{const e=group.case;if(e)add(otherId(e),group)});
+  let groups=[...peers.values()];
+  if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
+  if(messagesFilter==='exchanges')groups=groups.filter(group=>group.cases.length>0);
+  if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
+  return groups.sort((a,b)=>b.stamp-a.stamp);
 }
 function messagesFilterBarMarkup(){
   return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
 }
 function messageRow(group,uid,selected){
-  const unread=conversationUnread(uid,group);
+  const unread=group.kind==='peer'?group.unread:conversationUnread(uid,group);
   const unreadBadge=unread?`<span class="bc-msg-unread" title="Unread on this device" aria-label="${unread} unread on this device">${unread>9?'9+':unread}</span>`:'';
+  if(group.kind==='peer'){
+    const p=S.profiles[group.peerId]||{},latest=group.messages.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
+    const caseMessage=latest?.case_id||latest?.exchange_case_id;
+    const prefix=caseMessage?(group.cases.find(c=>c.caseId===caseMessage)?.case||null):null,snippet=latest?.body||'Start the conversation';
+    return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${latest?fmtDateTime(latest.created_at):''}</span></span><span class="bc-msg-row-preview">${prefix?`${esc(itemName(prefix.item_a))} ⇄ ${esc(itemName(prefix.item_b))} · `:''}${esc(snippet)}</span></span>${group.cases.length?pill(`${group.cases.length} exchange${group.cases.length===1?'':'s'}`,'gold'):pill('Collector','blue')}${unreadBadge}</button>`;
+  }
   if(group.kind==='direct'){
     const p=S.profiles[group.peerId]||{};
     return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.last?fmtDateTime(group.last.created_at):''}</span></span><span class="bc-msg-row-preview">${esc(group.last?.body||'Start the conversation')}</span></span>${pill('Direct','blue')}${unreadBadge}</button>`;
@@ -1431,9 +1448,10 @@ function messageRow(group,uid,selected){
   return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="case:${attr(group.caseId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.last?fmtDateTime(group.last.created_at):fmtDateTime(e.created_at)}</span></span><span class="bc-msg-row-preview">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}${group.last?` — ${esc(group.last.body)}`:''}</span></span>${pill(closed?`Closed · ${exchangeStageLabel(e)}`:exchangeStageLabel(e),closed?'':'gold')}${unreadBadge}</button>`;
 }
 function messagesListPaneMarkup(){
-  const uid=S.user?.id,groups=filteredConversationGroups(),selected=currentConversationKey();
+  const uid=S.user?.id,groups=filteredConversationGroups(),route=parseMessagesTarget();
+  const selected=route?.kind==='direct'?`peer:${route.peerId}`:route?.kind==='case'?`peer:${otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{})}`:'';
   const count=groups.length;
-  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} conversation${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
+  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
 }
 function reconcileMessageIndex(uid,kind,id){
   const index=messageIndex(uid);
@@ -1757,9 +1775,9 @@ async function reloadCaseView(id){
   if(routeName()==='exchange'&&routeId()===id)return renderExchangeDetail(id,S.renderToken);
 }
 function directExchangeLinks(peerId){
-  const cases=S.exchanges.filter(e=>[e.user_a,e.user_b].includes(S.user.id)&&[e.user_a,e.user_b].includes(peerId)&&!terminalCaseStates.has(e.state));
-  if(!cases.length)return '<p class="bc-small bc-direct-explanation">Use this chat to get acquainted. A proposal creates a separate conversation for that exchange.</p>';
-  return `<section class="bc-direct-exchange-links bc-card" aria-label="Exchanges with this collector"><b>Continue your exchange here</b><p>Meetup plans and confirmations belong in the exchange conversation.</p>${cases.map(e=>`<button type="button" class="bc-btn" data-open-messages-case="${attr(e.id)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}</button>`).join('')}</section>`;
+  const index=messageIndexByUid.get(S.user?.id),cases=[...(index?.cases.values()||[])].map(group=>group.case).filter(e=>e&&[e.user_a,e.user_b].includes(S.user.id)&&[e.user_a,e.user_b].includes(peerId)).sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+  if(!cases.length)return '<p class="bc-small bc-direct-explanation">Use this chat to get acquainted. A proposal creates a separate exchange case.</p>';
+  return `<section class="bc-direct-exchange-links bc-card" aria-label="Exchange cases with this collector"><b>Exchange cases with this collector</b><p>Each case keeps its own history, identity and next action.</p>${cases.map(e=>`<button type="button" class="bc-btn" data-open-messages-case="${attr(e.id)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}${terminalCaseStates.has(e.state)?' · History':''}</button>`).join('')}</section>`;
 }
 let threadSyncTimer=null;
 function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;}

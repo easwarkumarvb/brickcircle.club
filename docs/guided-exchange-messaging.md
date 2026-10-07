@@ -1,6 +1,6 @@
 # Guided exchange conversations
 
-Each canonical exchange has one participant-only conversation. Direct collector chat is for introductions. Its active-exchange links lead to the conversation that owns the meetup and confirmations. The exchange detail page remains available for the full history, peer issues, reviews and support.
+Messages is the collector-wise inbox: one row per counterparty, sorted by latest direct message, exchange message, or case activity. The row combines unread counts and shows the latest snippet. Opening it resumes direct chat; each exchange case remains a separately identified link in the chat header. Opening a case link loads that exact case conversation and its case-bound actions. Direct chat never chooses an arbitrary latest case. The exchange detail page remains available for the full history, peer issues, reviews and support.
 
 The guide derives its primary action from the current server record and signed-in participant. It shows either **Your turn**, **Waiting for partner**, or **Closed**. Messages never accept terms, confirm inspection or change custody.
 
