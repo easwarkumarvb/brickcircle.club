@@ -13,22 +13,39 @@
     catalogue: ['Set catalogue', 'Manage discovery visibility. Existing collections and exchanges remain available.'],
     exchanges: ['Exchange activity', 'Inspect current stages and the collector action timeline.'],
     support: ['Support desk', 'Triage collector requests and record internal support notes.'],
-    audit: ['Admin audit log', 'A permanent record of who changed what, when, and why.']
+    audit: ['Admin audit log', 'A permanent record of who changed what, when, and why.'],
+    collection: ['Collection items', 'Read-only collector-owned items.'],
+    wishlist: ['Wishlist items', 'Read-only collector wishlist entries.']
   };
   let section = 'overview', page = 0, query = '', rows = [], total = 0;
   let epoch = 0, loadId = 0, detailId = 0, change = null, pending = null, submitting = false;
   let mfaFactor = null, mfaNew = false, mfaBusy = false;
   let mfaGeneration = 0;
   let lastUserId = null;
+  let filters = {}, detailState = null;
+  const stages=['PROPOSED','DECLINED','WITHDRAWN','EXPIRED','ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING','HANDOFF_ISSUE','ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED','COMPLETED'];
+  const metrics={members:['members',{}],new_members:['members',{new:true}],owned_sets:['collection',{}],wanted_sets:['wishlist',{}],available_sets:['collection',{available:true}],exchanges:['exchanges',{}],completed:['exchanges',{stage:'COMPLETED'}],overdue:['exchanges',{overdue:true}],support_open:['support',{status:'actionable'}],catalogue_active:['catalogue',{visible:true}]};
+  let accessCertain = false, lastUpdated = null, renderedView = null;
+  const API_DEADLINE_MS = 15000;
   const requests = new Set();
+  class AdminError extends Error {
+    constructor(code, message) { super(message); this.code = code; }
+  }
+  function lockWrites() {
+    accessCertain = false;
+    if(!pending) $('confirm-change').disabled=true;
+    document.querySelectorAll('[data-action="catalogue"], [data-action="support"], [data-action="support_note"]').forEach(button => { button.disabled = true; });
+  }
+  function cancelStaleReads() { requests.forEach(request=>{if(!request.current()) request.cancel();}); }
   function status(message, error = false) { $('status').textContent = message; $('status').classList.toggle('error', error); }
   function purge(message) {
     epoch++; loadId++; detailId++;
     mfaGeneration++;
     const abandonedFactor=mfaNew&&!mfaBusy?mfaFactor:null; mfaFactor=null; mfaNew=false;
     if(abandonedFactor) db?.auth.mfa.unenroll({factorId:abandonedFactor}).catch(()=>{});
-    requests.forEach(controller => controller.abort()); requests.clear();
-    rows = []; total = 0; change = null; pending = null; query=''; page=0; lastUserId=null;
+    requests.forEach(request => request.cancel()); requests.clear();
+    accessCertain=false; lastUpdated=null; renderedView=null;
+    rows = []; total = 0; change = null; pending = null; query=''; page=0; lastUserId=null; filters={}; detailState=null;
     $('results').replaceChildren(); $('detail-body').replaceChildren();
     $('detail-dialog').close(); $('change-dialog').close();
     $('mfa-dialog').close(); $('mfa-qr').removeAttribute('src'); $('mfa-secret').textContent=''; $('mfa-code').value='';
@@ -37,39 +54,106 @@
     $('refresh').disabled = false;
     status(message, true);
   }
-  async function api(body) {
-    const currentEpoch = epoch;
-    const controller = new AbortController(); requests.add(controller);
-    try {
-      if (!db) throw new Error('Authentication could not load. Refresh the page.');
-      const {data: sessionData, error: sessionError} = await db.auth.getSession();
-      const {data: userData, error: userError} = await db.auth.getUser();
-      if (currentEpoch !== epoch) throw new DOMException('Stale request', 'AbortError');
-      if (sessionError || userError || !sessionData?.session?.access_token || !userData?.user) {
-        purge('Sign in to your approved administrator account.'); throw new Error('Administrator sign-in required.');
+  async function api(body, isCurrent = () => true) {
+    const currentEpoch = epoch, account = lastUserId;
+    const controller = new AbortController();
+    let active = true, timer, rejectCancellation;
+    const cancellation = new Promise((_, reject) => { rejectCancellation = reject; });
+    const request = {current:isCurrent, cancel() { active=false; controller.abort(); rejectCancellation(new DOMException('Stale request', 'AbortError')); }};
+    requests.add(request);
+    const check = () => {
+      if (!active || currentEpoch !== epoch || !isCurrent() || (account && account !== lastUserId))
+        throw new DOMException('Stale request', 'AbortError');
+    };
+    // One clock covers SDK calls, delivery and body parsing. Aborting fetch alone
+    // cannot bound an SDK promise, and abandoned promises must never change state.
+    timer = setTimeout(() => {
+      active=false; controller.abort();
+      rejectCancellation(new AdminError('timeout', 'Operation timed out. Delivery may be unknown.'));
+    }, API_DEADLINE_MS);
+    const wait = async promise => { const value = await Promise.race([promise, cancellation]); check(); return value; };
+    const authFailure = error => {
+      if (['session_not_found','refresh_token_not_found','refresh_token_already_used','bad_jwt','user_not_found'].includes(error?.code) || [401,403].includes(error?.status)) {
+        purge('Your session is no longer valid. Sign in again.');
+        throw new AdminError('unauthenticated', 'Administrator sign-in required.');
       }
+      throw new AdminError('unavailable', 'Authentication is temporarily unavailable. Refresh to verify access.');
+    };
+    try {
+      if (!db) throw new AdminError('unavailable', 'Authentication could not load. Refresh the page.');
+      const {data: sessionData, error: sessionError} = await wait(db.auth.getSession());
+      if (sessionError) authFailure(sessionError);
+      if (!sessionData?.session?.access_token) {
+        purge('Sign in to your approved administrator account.'); throw new AdminError('unauthenticated', 'Administrator sign-in required.');
+      }
+      if (lastUserId && sessionData.session.user?.id && lastUserId !== sessionData.session.user.id) {
+        purge('Account changed. Refresh to verify administrator access.'); throw new AdminError('unauthenticated', 'Account changed.');
+      }
+      if(sessionData.session.user?.id) lastUserId=sessionData.session.user.id;
+      const {data: userData, error: userError} = await wait(db.auth.getUser(sessionData.session.access_token));
+      if (userError) authFailure(userError);
+      if (!userData?.user) { purge('Sign in to your approved administrator account.'); throw new AdminError('unauthenticated', 'Administrator sign-in required.'); }
       if(lastUserId&&lastUserId!==userData.user.id) {
-        purge('Account changed. Refresh to verify administrator access.'); throw new Error('Account changed. Refresh to continue.');
+        purge('Account changed. Refresh to verify administrator access.'); throw new AdminError('unauthenticated', 'Account changed. Refresh to continue.');
       }
       lastUserId=userData.user.id;
-      const response = await fetch(`${SUPABASE_URL}/functions/v1/admin-dashboard`, {
+      const response = await wait(fetch(`${SUPABASE_URL}/functions/v1/admin-dashboard`, {
         method: 'POST', cache: 'no-store', signal: controller.signal,
         headers: {Authorization: `Bearer ${sessionData.session.access_token}`, apikey: SUPABASE_KEY, 'Content-Type':'application/json'},
         body: JSON.stringify(body)
-      });
-      const data = await response.json();
-      if (currentEpoch !== epoch) throw new DOMException('Stale request', 'AbortError');
+      }));
+      // An explicit denial is authoritative even if its response body is broken.
+      if ([401,403].includes(response.status)) {
+        // Release this operation before purge cancels the other requests. Read a
+        // denial body only for its message/MFA hint, never as authorized content.
+        requests.delete(request);
+        purge('Administrator access required. Sign in or verify your authenticator.');
+        const deniedEpoch=epoch, deniedLoadId=loadId;
+        let denial;
+        try { denial=await Promise.race([response.json(),cancellation]); } catch { /* denial still wins */ }
+        if(deniedEpoch!==epoch || deniedLoadId!==loadId) throw new DOMException('Stale request','AbortError');
+        if(denial?.code==='mfa_required') {
+          status('Authenticator verification is required to access the admin console.',true);
+          beginMFA();
+        } else status(denial?.error || 'Administrator access required.',true);
+        throw new AdminError(denial?.code || (response.status===401?'unauthenticated':'forbidden'), denial?.error || 'Administrator access required.');
+      }
+      let data;
+      try { data = await wait(response.json()); }
+      catch (error) {
+        if (error.code === 'timeout' || error.name === 'AbortError') throw error;
+        throw new AdminError('unavailable', 'Invalid response from the admin service. Refresh to retry.');
+      }
       if (!response.ok) {
         if (data.code === 'mfa_required') {
           purge('Authenticator verification is required to access the admin console.');
-          await beginMFA();
-          throw new Error('Enter your authenticator code to unlock the console.');
+          beginMFA();
+          throw new AdminError('mfa_required', 'Enter your authenticator code to unlock the console.');
         }
-        if ([401,403].includes(response.status)) purge(data.error || 'Administrator access required.');
-        throw new Error(data.error || 'Unable to load admin data. Try refreshing.');
+        throw new AdminError(data.code || ({401:'unauthenticated',403:'forbidden',409:'conflict',400:'validation',404:'not_found'}[response.status] || 'unavailable'), data.error || 'Unable to load admin data. Try refreshing.');
       }
+      if (!data || typeof data !== 'object' || Array.isArray(data) || (body.operation==='read' && !body.section.endsWith('_detail') && (!data.generated_at || (body.section==='overview' ? !data.summary : !Array.isArray(data.rows) || !Number.isInteger(data.total)))))
+        throw new AdminError('unavailable', 'Invalid response from the admin service. Refresh to retry.');
+      if(body.operation==='read'&&body.version===2&&body.section.endsWith('_detail')&&(!Array.isArray(data.rows)||!Number.isInteger(data.total)||data.total<0||!data.generated_at))
+        throw new AdminError('unavailable','Invalid detail response. Refresh to retry.');
+      if(body.operation==='read') {
+        const keys={members:['id'],catalogue:['set_number','name'],exchanges:['id','state'],support:['id','case_id','category','status'],audit:['action'],collection:['id','user_id','set_number'],wishlist:['id','user_id','set_number'],support_detail:body.part==='events'?['id','event_type']:['id','action','created_at'],member_detail:['id','set_number'],exchange_detail:['id','event_type']}[body.section] || [];
+        if(typeof data.generated_at!=='string'||!Number.isFinite(Date.parse(data.generated_at))||
+          (body.section==='overview'?(!data.summary||typeof data.summary!=='object'||Array.isArray(data.summary)):
+            (!Number.isInteger(data.total)||data.total<0||!Array.isArray(data.rows)||data.rows.length>25||data.rows.some(row=>!row||typeof row!=='object'||Array.isArray(row)||keys.some(key=>typeof row[key]!=='string')))))
+          throw new AdminError('unavailable','Invalid record response. Refresh to retry.');
+        const header={member_detail:'member',exchange_detail:'exchange',support_detail:'request'}[body.section];
+        if(header&&(!data[header]||typeof data[header]!=='object'||Array.isArray(data[header])||typeof data[header].id!=='string'))
+          throw new AdminError('unavailable','Invalid record details. Refresh to retry.');
+      }
+      if(['mutate','note'].includes(body.operation) && (!Number.isInteger(data.revision) || typeof data.audit_id!=='string'))
+        throw new AdminError('unavailable', 'Change response could not be verified. Delivery may be unknown.');
       return data;
-    } finally { requests.delete(controller); }
+    } catch (error) {
+      if (currentEpoch===epoch && isCurrent() && error.name!=='AbortError') lockWrites();
+      if (error instanceof AdminError || error.name==='AbortError') throw error;
+      throw new AdminError('unavailable', 'Admin service unavailable. Refresh to verify access.');
+    } finally { active=false; clearTimeout(timer); requests.delete(request); }
   }
   function badge(value) { const label = String(value ?? 'Unknown').replaceAll('_',' '); return `<span class="badge ${['visible','resolved','COMPLETED'].includes(value)?'good':['open','hidden'].includes(value)?'warn':''}">${esc(label)}</span>`; }
   async function beginMFA() {
@@ -120,7 +204,8 @@
   }
   function renderOverview(data) {
     const labels = {members:'Registered collectors', new_members:'New in 7 days', owned_sets:'Collection items', wanted_sets:'Wishlist items', available_sets:'Available to exchange', exchanges:'Total exchanges', completed:'Completed exchanges', overdue:'Returns past due', support_open:'Support to action', catalogue_active:'Visible catalogue sets'};
-    $('results').innerHTML = `<div class="metrics">${Object.entries(labels).map(([key,label])=>`<div class="metric"><span class="metric-label">${label}</span><strong>${number(data.summary?.[key])}</strong></div>`).join('')}</div><div class="panels"><section class="panel"><h2>Exchange stages</h2>${(data.states || []).map(row=>`<div class="bar-row"><span>${esc(row.state.replaceAll('_',' '))}</span><strong>${number(row.count)}</strong></div>`).join('') || '<p>No exchanges yet.</p>'}</section><section class="panel"><h2>Top collector cities</h2>${(data.cities || []).map(row=>`<div class="bar-row"><span>${esc(row.city)}</span><strong>${number(row.members)}</strong></div>`).join('') || '<p>No members yet.</p>'}</section></div>`;
+    const count=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?number(value):'Unavailable';
+    $('results').innerHTML = `<div class="metrics">${Object.entries(labels).map(([key,label])=>`<button type="button" class="metric" data-metric="${key}" ${count(data.summary?.[key])==='Unavailable'?'disabled':''}><span class="metric-label">${label}</span><strong>${count(data.summary?.[key])}</strong></button>`).join('')}</div><div class="panels"><section class="panel"><h2>Exchange stages</h2>${Array.isArray(data.states)?data.states.map(row=>`<button type="button" class="bar-row" data-stage="${esc(row.state)}"><span>${esc(row.state.replaceAll('_',' '))}</span><strong>${count(row.count)}</strong></button>`).join('') || '<p>No exchanges yet.</p>':'<p>Unavailable</p>'}</section><section class="panel"><h2>Top collector cities</h2>${Array.isArray(data.cities)?data.cities.map(row=>`<div class="bar-row"><span>${esc(row.city)}</span><strong>${count(row.members)}</strong></div>`).join('') || '<p>No members yet.</p>':'<p>Unavailable</p>'}</section></div>`;
   }
   function renderRows() {
     const action = (name, index, text) => `<button type="button" data-action="${name}" data-index="${index}">${text}</button>`;
@@ -136,7 +221,10 @@
       cells = rows.map((r,i)=>[`<strong>${esc(r.id)}</strong><small>${esc(date(r.created_at))}</small>`,`${esc(r.member_a || 'Collector')}<small>↔ ${esc(r.member_b || 'Collector')}</small>`,badge(r.state),esc(date(r.return_due_at)),action('exchange',i,'View timeline')]);
     } else if (section === 'support') {
       labels = ['Request','Collector note','Status','Received','Actions'];
-      cells = rows.map((r,i)=>[`<strong>${esc(r.category.replaceAll('_',' '))}</strong><small>Case ${esc(r.case_id)}</small>`,esc(r.note || 'No note provided'),badge(r.status),esc(date(r.created_at)),`${action('support',i,'Manage request')} ${action('support_exchange',i,'View exchange')}`]);
+      cells = rows.map((r,i)=>[`<strong>${esc(r.category.replaceAll('_',' '))}</strong><small>Case ${esc(r.case_id)}</small>`,esc(r.note || 'No note provided'),badge(r.status),esc(date(r.created_at)),`${action('support_detail',i,'View request')} ${action('support',i,'Manage request')} ${action('support_exchange',i,'View exchange')}`]);
+    } else if(section==='collection'||section==='wishlist') {
+      labels=['Set','Collector','Activity','Actions'];
+      cells=rows.map((r,i)=>[`${esc(r.name || r.set_number)}<small>${esc(r.set_number)}</small>`,esc(r.display_name || 'Collector'),section==='collection'?`${esc(r.condition)} · ${esc(r.completeness)} · ${r.available_for_exchange?'Available':'Not available'}`:`Priority ${esc(r.priority)}`,action('member',i,'View collector')]);
     } else {
       labels = ['Change','Reason / note','Before → after','Actor / time'];
       cells = rows.map(r=>[`<strong>${esc(r.action.replaceAll('_',' '))}</strong><small>${esc(r.entity_id)} · revision ${number(r.revision)}</small>`,esc(r.reason),`${esc(r.before_value?.value)} → ${esc(r.after_value?.value)}`,`${esc(r.actor_id)}<small>${esc(date(r.created_at))}</small>`]);
@@ -145,15 +233,29 @@
   }
   async function load() {
     const id = ++loadId;
-    $('refresh').disabled = true; $('dashboard').hidden = true;
-    $('results').replaceChildren(); rows = [];
+    const previousRows=rows, previousTotal=total;
+    detailId++;
+    if($('detail-dialog').open) $('detail-dialog').close();
+    $('detail-body').replaceChildren();
+    cancelStaleReads();
+    const view = JSON.stringify([section,page,query,filters]);
+    lockWrites();
+    $('refresh').disabled = true;
+    if (view !== renderedView) { $('dashboard').hidden = true; $('results').replaceChildren(); rows = []; lastUpdated=null; }
     $('page-title').textContent = sections[section][0]; $('page-description').textContent = sections[section][1];
     document.querySelectorAll('[data-section]').forEach(button=>{if(button.dataset.section===section) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');});
     status('Loading current marketplace data…');
+    const structured=['support','exchanges'].includes(section);
+    $('record-filters').hidden=!structured&&!Object.keys(filters).length;
+    $('structured-filters').hidden=!structured;
+    const options=section==='support'?['open','in_progress','resolved','actionable']:stages;
+    $('record-status').innerHTML=`<option value="">Any status / stage</option>${options.map(value=>`<option value="${value}">${esc(value.replaceAll('_',' '))}</option>`).join('')}`;
+    $('record-status').value=filters[section==='support'?'status':'stage'] || '';
+    $('record-age').hidden=section!=='support'; document.querySelector('label[for="record-age"]').hidden=section!=='support'; $('record-age').value=filters.age || '';
+    $('filter-summary').textContent=Object.entries(filters).map(([key,value])=>`${key.replaceAll('_',' ')}: ${String(value).replaceAll('_',' ')}`).join(' · ') || 'All records';
     try {
-      const data = await api({operation:'read', section, query, page});
+      const data = await api({operation:'read', version:2, section, query, page, filters}, () => id === loadId);
       if (id !== loadId) return;
-      $('navigation').hidden = false; $('dashboard').hidden = false; $('access-actions').hidden = true;
       $('search-form').hidden = section === 'overview'; $('pagination').hidden = section === 'overview';
       $('search-hint').textContent = {members:'Name, email, city or country',catalogue:'Set number, name or theme',exchanges:'Exchange ID, collector ID or stage',support:'Request ID, exchange ID, category or status (open, in_progress, resolved)',audit:'Record ID, action or administrator ID'}[section] || '';
       if (section === 'overview') renderOverview(data);
@@ -162,75 +264,119 @@
         $('previous').disabled = page === 0; $('next').disabled = (page+1)*25 >= total;
         $('page-count').textContent = `${total ? page*25+1 : 0}–${Math.min((page+1)*25,total)} of ${number(total)} records`;
       }
+      accessCertain=true; lastUpdated=data.generated_at; renderedView=view;
+      if(change&&!submitting) $('confirm-change').disabled=false;
+      $('navigation').hidden = false; $('dashboard').hidden = false; $('access-actions').hidden = true;
       status(`Updated ${date(data.generated_at)}. Private administrator view.`);
     } catch (error) {
-      if (id === loadId && error.name !== 'AbortError') status(error.message, true);
+      if (id === loadId && error.name !== 'AbortError') {
+        lockWrites();if(view===renderedView){rows=previousRows;total=previousTotal;}
+        status(`${error.message}${lastUpdated ? ` Stale view — last updated ${date(lastUpdated)}. New changes are disabled until a successful refresh.` : ''}`, true);
+      }
     } finally { if (id === loadId) $('refresh').disabled = false; }
   }
   function fields(object) { return `<div class="detail-list">${Object.entries(object).map(([key,value])=>`<div><small>${esc(key.replaceAll('_',' '))}</small><strong>${esc(value ?? '—')}</strong></div>`).join('')}</div>`; }
   async function detail(kind, row) {
     const id = ++detailId;
-    $('detail-title').textContent = kind === 'member' ? 'Collector details' : 'Exchange timeline';
-    $('detail-body').textContent = 'Loading record…'; $('detail-dialog').showModal();
+    cancelStaleReads();
+    if(!detailState || detailState.kind!==kind || detailState.row!==row) detailState={kind,row,page:0,part:kind==='member'?'collection':kind==='support'?'history':null};
+    const state=detailState;
+    $('detail-title').textContent = kind === 'member' ? 'Collector details' : kind==='support'?'Support request details':'Exchange timeline';
+    $('detail-body').textContent = 'Loading record…'; if(!$('detail-dialog').open) $('detail-dialog').showModal();
     try {
-      const data = await api({operation:'read', section:kind==='member'?'member_detail':'exchange_detail', id:kind==='member'?row.id:(row.case_id || row.id)});
+      const data = await api({operation:'read', version:2, section:kind==='member'?'member_detail':kind==='support'?'support_detail':'exchange_detail', id:kind==='member'?(row.user_id || row.id):kind==='support'?row.id:(row.case_id || row.id), page:state.page, ...(state.part?{part:state.part}:{})}, () => id === detailId);
       if (id !== detailId) return;
       if (kind === 'member') {
         if (!data.member) { $('detail-body').textContent='Collector no longer exists.'; return; }
-        $('detail-body').innerHTML = `${fields(data.member)}<h3>Collection (${number(data.collection_total)})</h3><p class="muted">Showing up to 100 most recent items.</p>${(data.collection||[]).map(r=>`<div class="detail-item"><strong>${esc(r.name || r.set_number)}</strong> · ${esc(r.set_number)}<br>${esc(r.condition)} · ${esc(r.completeness)} · ${r.available_for_exchange?'Available':'Not available'}</div>`).join('') || '<p>No collection items.</p>'}<h3>Wishlist (${number(data.wishlist_total)})</h3><p class="muted">Showing up to 100 most recent items.</p>${(data.wishlist||[]).map(r=>`<div class="detail-item">${esc(r.name || r.set_number)} · ${esc(r.set_number)} · priority ${esc(r.priority)}</div>`).join('') || '<p>No wishlist items.</p>'}`;
+        $('detail-body').innerHTML = `${fields(data.member)}<div class="pagination"><button type="button" data-part="collection" aria-pressed="${state.part==='collection'}">Collection (${number(data.collection_total)})</button><button type="button" data-part="wishlist" aria-pressed="${state.part==='wishlist'}">Wishlist (${number(data.wishlist_total)})</button></div><h3>${state.part==='collection'?'Collection':'Wishlist'}</h3>${(data.rows||[]).map(r=>`<div class="detail-item"><strong>${esc(r.name || r.set_number)}</strong> · ${esc(r.set_number)}<br>${state.part==='collection'?`${esc(r.condition)} · ${esc(r.completeness)} · ${r.available_for_exchange?'Available':'Not available'}`:`Priority ${esc(r.priority)}`}</div>`).join('') || '<p>No items.</p>'}`;
+      } else if(kind==='support') {
+        if(!data.request) throw new AdminError('not_found','Support request not found.');
+        state.row=data.request;
+        $('detail-body').innerHTML=`${fields(data.request)}<p class="muted">Resolved means internal support triage only. It does not resolve a peer issue, change an exchange or send a message.</p><div class="pagination"><button type="button" data-action="support" ${accessCertain?'':'disabled'}>Change triage status</button><button type="button" data-action="support_note" ${accessCertain?'':'disabled'}>Add internal note</button></div><h3>Linked exchange</h3>${data.exchange?fields(data.exchange):'<p>Exchange unavailable.</p>'}<div class="pagination"><button type="button" data-part="history" aria-pressed="${state.part==='history'}">Admin note / status history</button><button type="button" data-part="events" aria-pressed="${state.part==='events'}">Collector action timeline</button></div>${(data.rows||[]).map(r=>state.part==='history'?`<div class="detail-item"><strong>${esc(r.action.replaceAll('_',' '))}</strong><p>${esc(r.reason)}</p>${r.action==='support_triage'?`<p>${esc(r.before_value?.value)} → ${esc(r.after_value?.value)}</p>`:''}<small>${esc(date(r.created_at))} · ${esc(r.actor_id)}</small></div>`:`<div class="detail-item"><strong>${esc(r.event_type)}</strong> · version ${number(r.state_version)}<br>${esc(r.previous_state || 'Start')} → ${esc(r.resulting_state)}<br>${esc(date(r.created_at))} · ${esc(r.actor_user_id || 'System')}</div>`).join('') || '<p>No history yet.</p>'}`;
       } else {
         if (!data.exchange) { $('detail-body').textContent='Exchange no longer exists.'; return; }
-        $('detail-body').innerHTML = `${fields(data.exchange)}<h3>Collector action timeline</h3><p class="muted">Latest 100 events. Agreements, handoffs and returns are controlled by the collectors.</p>${(data.events||[]).map(r=>`<div class="detail-item"><strong>${esc(r.event_type)}</strong> · version ${number(r.state_version)}<br>${esc(r.previous_state || 'Start')} → ${esc(r.resulting_state)}<br>${esc(date(r.created_at))} · ${esc(r.actor_user_id || 'System')}</div>`).join('') || '<p>No events yet.</p>'}`;
+        $('detail-body').innerHTML = `${fields(data.exchange)}<h3>Collector action timeline</h3><p class="muted">Agreements, handoffs and returns are controlled by the collectors.</p>${(data.rows||[]).map(r=>`<div class="detail-item"><strong>${esc(r.event_type)}</strong> · version ${number(r.state_version)}<br>${esc(r.previous_state || 'Start')} → ${esc(r.resulting_state)}<br>${esc(date(r.created_at))} · ${esc(r.actor_user_id || 'System')}</div>`).join('') || '<p>No events yet.</p>'}`;
       }
+      $('detail-body').insertAdjacentHTML('beforeend',`<div class="pagination"><p>${data.total?state.page*25+1:0}–${Math.min((state.page+1)*25,data.total)} of ${number(data.total)} records</p><div><button type="button" data-detail-page="-1" ${state.page===0?'disabled':''}>Previous records</button><button type="button" data-detail-page="1" ${(state.page+1)*25>=data.total?'disabled':''}>Next records</button></div></div>`);
+      if(state.focusSelector) { $('detail-body').querySelector(state.focusSelector)?.focus();delete state.focusSelector; }
     } catch (error) { if (id === detailId && error.name !== 'AbortError') $('detail-body').textContent = error.message; }
   }
   function edit(entity, row) {
-    change = {entity, id:entity==='catalogue'?row.set_number:row.id, revision:row.revision}; pending = null;
+    const target = entity==='catalogue'?row.set_number:row.id;
+    if (!accessCertain || (pending && (pending.entity!==entity || pending.id!==target))) { status('Refresh to verify access and retry or review the outstanding change first.',true); return; }
+    change = {entity, id:target, revision:row.revision};
     const choices = entity==='catalogue' ? [['visible','Visible in Find Sets'],['hidden','Hidden from Find Sets']] : [['open','Open'],['in_progress','In progress'],['resolved','Resolved']];
     $('change-value').innerHTML = choices.map(([value,label])=>`<option value="${value}">${label}</option>`).join('');
     $('change-value').value = entity==='catalogue'?(row.catalog_active?'visible':'hidden'):row.status;
     $('change-description').textContent = entity==='catalogue'?`${row.name} (${row.set_number}). Change whether this set appears in discovery.`:`Support request ${row.id}. Triage status is internal and does not change the exchange or resolve a collector-reported issue.`;
     $('change-title').textContent = entity==='catalogue'?'Manage catalogue visibility':'Triage support request';
-    $('change-reason').value=''; $('change-status').textContent='';
-    $('change-reason').disabled=false; $('change-value').disabled=false; $('confirm-change').disabled=false;
+    const note=entity==='support_note';
+    $('change-value').hidden=note; $('change-value').required=!note; document.querySelector('label[for="change-value"]').hidden=note;
+    if(note) {$('change-title').textContent='Append internal support note';$('change-description').textContent=`Support request ${row.id}. This append-only note does not change triage status, modify the exchange or send a message.`;}
+    $('change-reason').value=pending?.reason || ''; $('change-status').textContent=pending?'Delivery is unknown. Retry submits the same recorded request safely.':'';
+    if(pending&&!note) $('change-value').value=pending.value;
+    $('change-reason').disabled=Boolean(pending); $('change-value').disabled=Boolean(pending); $('confirm-change').disabled=false;
     $('change-dialog').showModal();
   }
   $('change-form').addEventListener('submit', async event => {
-    event.preventDefault(); if (!change || submitting) return;
-    if (!pending) pending = {operation:'mutate', ...change, value:$('change-value').value, reason:$('change-reason').value.trim(), request_id:crypto.randomUUID()};
+    event.preventDefault(); if (!change || submitting || (!pending && !accessCertain)) return;
+    if (!pending) pending = change.entity==='support_note'?{operation:'note',entity:'support_note',id:change.id,reason:$('change-reason').value.trim(),request_id:crypto.randomUUID()}:{operation:'mutate', ...change, value:$('change-value').value, reason:$('change-reason').value.trim(), request_id:crypto.randomUUID()};
     if (pending.reason.length < 10) { $('change-status').textContent='Provide a reason of at least 10 characters.'; pending=null; return; }
     const attempted = pending;
     submitting=true; $('confirm-change').disabled=true; $('change-value').disabled=true; $('change-reason').disabled=true; $('cancel-change').disabled=true;
     $('change-status').textContent='Recording change…'; $('change-status').classList.remove('error');
     try {
-      await api(attempted); $('change-dialog').close(); pending=null; change=null; await load();
+      await api(attempted); if(pending!==attempted) return; $('change-dialog').close(); pending=null; change=null; await load();
     } catch (error) {
-      if (error.name !== 'AbortError') { $('change-status').textContent=`${error.message} Retry submits the same recorded request safely. For a conflict, cancel and refresh first.`; $('change-status').classList.add('error'); }
-    } finally { submitting=false; $('confirm-change').disabled=false; $('cancel-change').disabled=false; }
+      if (pending===attempted && error.name !== 'AbortError') {
+        const rejected=['conflict','validation','not_found'].includes(error.code);
+        $('change-status').textContent=`${error.message} ${rejected?'Cancel and refresh to review the record before another change.':'Retry submits the same recorded request safely. Cancel does not roll back a delivered change.'}`;
+        $('change-status').classList.add('error');
+        if(rejected) pending=null;
+      }
+    } finally { submitting=false; $('confirm-change').disabled=!pending&&!accessCertain; $('cancel-change').disabled=false; }
   });
   $('change-dialog').addEventListener('cancel', event=>{if(submitting) event.preventDefault();});
-  $('cancel-change').addEventListener('click',()=>{if(!submitting){$('change-dialog').close();change=null;pending=null;}});
+  $('change-dialog').addEventListener('close',()=>{if(pending&&!submitting){change=null;status('Delivery remains unknown. Refresh, then reopen this record to retry the same request. Closing the dialog did not roll back the change.',true);}});
+   $('cancel-change').addEventListener('click',()=>{if(!submitting){$('change-dialog').close();change=null; if(pending) status('Delivery remains unknown. Refresh, then reopen this record to retry the same request. Cancel did not roll back the change.',true);}});
   $('close-detail').addEventListener('click',()=>{$('detail-dialog').close();detailId++;$('detail-body').replaceChildren();});
-  $('detail-dialog').addEventListener('close',()=>{detailId++;$('detail-body').replaceChildren();});
+  $('detail-dialog').addEventListener('close',()=>{detailId++;detailState=null;cancelStaleReads();$('detail-body').replaceChildren();});
+  $('detail-body').addEventListener('click',event=>{
+    const action=event.target.closest('[data-action]');if(action&&detailState){edit(action.dataset.action,detailState.row);return;}
+    const button=event.target.closest('[data-part],[data-detail-page]');if(!button || !detailState) return;
+    detailState.focusSelector=button.dataset.part?`[data-part="${button.dataset.part}"]`:`[data-detail-page="${button.dataset.detailPage}"]`;
+    if(button.dataset.part) {detailState.part=button.dataset.part;detailState.page=0;} else detailState.page+=Number(button.dataset.detailPage);
+    detail(detailState.kind,detailState.row);
+  });
   $('results').addEventListener('click',event=>{
+    const metric=event.target.closest('[data-metric],[data-stage]');
+    if(metric){const target=metric.dataset.metric?metrics[metric.dataset.metric]:['exchanges',{stage:metric.dataset.stage}];if(!target)return;[section,filters]=target;page=0;query='';$('search').value='';load();return;}
     const button=event.target.closest('[data-action]'); if(!button) return;
     const row=rows[Number(button.dataset.index)]; if(!row) return;
     const action=button.dataset.action;
-    if(action==='member'||action==='exchange'||action==='support_exchange') detail(action==='member'?'member':'exchange',row);
+    if(action==='member'||action==='exchange'||action==='support_exchange'||action==='support_detail') detail(action==='member'?'member':action==='support_detail'?'support':'exchange',row);
     else edit(action,row);
   });
   document.querySelectorAll('[data-section]').forEach(button=>button.addEventListener('click',()=>{
-    section=button.dataset.section;page=0;query='';$('search').value='';load();
+    section=button.dataset.section;page=0;query='';filters={};$('search').value='';load();
   }));
+  $('record-status').addEventListener('change',()=>{const key=section==='support'?'status':'stage';if($('record-status').value) filters={...filters,[key]:$('record-status').value};else {filters={...filters};delete filters[key];}page=0;load();});
+  $('record-age').addEventListener('change',()=>{filters={...filters};if($('record-age').value)filters.age=$('record-age').value;else delete filters.age;page=0;load();});
+  $('clear-filters').addEventListener('click',()=>{filters={};page=0;load();});
   $('search-form').addEventListener('submit',event=>{event.preventDefault();query=$('search').value.trim();page=0;load();});
   $('previous').addEventListener('click',()=>{if(page>0){page--;load();}});
   $('next').addEventListener('click',()=>{if((page+1)*25<total){page++;load();}});
   $('refresh').addEventListener('click',load);
   $('signout').addEventListener('click',async()=>{purge('Signed out.');await db?.auth.signOut({scope:'local'});location.assign('/#home');});
-  db?.auth.onAuthStateChange((event,session)=>{
+  const authSubscription = db?.auth.onAuthStateChange((event,session)=>{
     if(event==='SIGNED_OUT') purge('Signed out. Sign in to your administrator account.');
-    else if(event==='SIGNED_IN'&&lastUserId&&session?.user?.id!==lastUserId) purge('Account changed. Refresh to verify administrator access.');
+    else if(lastUserId&&session?.user?.id&&lastUserId!==session.user.id) purge('Account changed. Refresh to verify administrator access.');
+    else if(lastUserId&&session?.access_token) {
+      try { if(JSON.parse(atob(session.access_token.split('.')[1].replaceAll('-','+').replaceAll('_','/'))).aal !== 'aal2') purge('Authenticator verification is required to access the admin console.'); } catch { lockWrites(); }
+    }
+    else if(session?.user?.id) lastUserId=session.user.id;
   });
+  window.addEventListener('unload',()=>authSubscription?.data?.subscription?.unsubscribe());
   window.addEventListener('pagehide',()=>purge('Session locked. Refresh to continue.'));
   window.addEventListener('pageshow',event=>{if(event.persisted) load();});
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&!$('detail-dialog').open&&!$('change-dialog').open) load();});

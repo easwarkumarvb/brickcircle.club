@@ -31,7 +31,7 @@ assert.ok(strictAllowAt > accessRpcAt);
 assert.doesNotMatch(edge, /SUPABASE_SERVICE_ROLE_KEY/);
 
 assert.doesNotMatch(client, /OWNER_USER_ID|user\.id\s*!==/);
-assert.match(client, /db\.auth\.getUser\(\)/);
+assert.match(client, /db\.auth\.getUser\(sessionData\.session\.access_token\)/);
 assert.match(client, /functions\/v1\/admin-dashboard/);
 
 console.log('admin dashboard canonical authorization contract passed');
@@ -46,3 +46,20 @@ assert.doesNotMatch(adminSql, /update public\.exchange_cases/);
 assert.match(adminSql, /preserve_admin_catalogue_visibility/);
 assert.match(adminSql, /before insert or update on public\.lego_sets/);
 assert.match(adminSql, /new\.catalog_active:=false/);
+const inspection=fs.readFileSync('supabase/migrations/20261006090341_admin_record_inspection_v2.sql','utf8');
+const support=fs.readFileSync('supabase/migrations/20261006090654_admin_support_desk.sql','utf8');
+for(const source of [inspection,support]){
+  assert.match(source,/perform private\.assert_marketplace_admin\(\)/);
+  assert.match(source,/security definer set search_path=''/);
+  assert.match(source,/from public,anon,authenticated,service_role/);
+  assert.match(source,/to authenticated/);
+  assert.doesNotMatch(source,/update public\.(exchange_cases|exchange_case_support_requests)|insert into public\.(notifications|messages)/i);
+}
+assert.doesNotMatch(inspection,/create(?: or replace)? function public\.admin_marketplace_read\(/);
+assert.match(inspection,/order by state_version desc,created_at desc,id limit 25/);
+assert.match(inspection,/order by created_at desc,id limit 25/);
+assert.match(support,/v_replay\.action<>'support_note'/);
+assert.match(support,/v_replay\.reason<>btrim\(p_note\)/);
+assert.match(support,/pg_advisory_xact_lock/);
+assert.doesNotMatch(support,/update private\.marketplace_admin_revisions/);
+assert.match(fs.readFileSync('supabase/tests/admin_robustness_v2.sql','utf8'),/set local role authenticated/);

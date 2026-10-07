@@ -4,9 +4,9 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow,noarchive"><meta name="theme-color" content="#17191c">
   <title>Marketplace Admin · BrickCircle</title>
-  <link rel="stylesheet" href="/admin-console.css?v=20261005-admin-r1">
+  <link rel="stylesheet" href="/admin-console.css?v=20261006-admin-robustness-r2">
   <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
-  <script defer src="/admin-dashboard.js?v=20261005-admin-r1"></script>
+  <script defer src="/admin-dashboard.js?v=20261006-admin-robustness-r2"></script>
 </head>
 <body>
   <a class="skip" href="#content">Skip to content</a>
@@ -28,6 +28,7 @@
       <div id="access-actions" hidden><a class="button primary" href="/#home">Sign in on BrickCircle</a></div>
       <section id="dashboard" hidden aria-label="Marketplace data">
         <form id="search-form" class="search-bar" hidden><label for="search">Search records</label><div><input id="search" type="search" maxlength="100" autocomplete="off" placeholder="Search"><button type="submit">Search</button></div><p id="search-hint"></p></form>
+        <div id="record-filters" class="search-bar" hidden><div id="structured-filters" hidden><label for="record-status">Status / stage</label><select id="record-status"></select><label for="record-age">Request age</label><select id="record-age"><option value="">Any age</option><option value="older_7_days">Older than 7 days</option><option value="older_30_days">Older than 30 days</option></select></div><p id="filter-summary"></p><button type="button" id="clear-filters">Clear filters</button></div>
         <div id="results"></div>
         <div id="pagination" class="pagination" hidden><p id="page-count"></p><div><button id="previous" type="button">Previous</button><button id="next" type="button">Next</button></div></div>
       </section>

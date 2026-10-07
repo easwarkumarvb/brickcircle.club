@@ -1,5 +1,6 @@
 // Dependency injection keeps the same authentication boundary testable in Node and Deno.
 export function createHandler(createClient, env) {
+  const isUUID=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
   const allowed = new Set(['https://brickcircle.club', 'https://www.brickcircle.club',
     ...(env('ADMIN_ALLOWED_ORIGINS') || '').split(',').map(s => s.trim()).filter(Boolean)]);
   return async function handle(req) {
@@ -9,7 +10,7 @@ export function createHandler(createClient, env) {
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'};
     if (origin && allowed.has(origin)) headers['Access-Control-Allow-Origin'] = origin;
-    const response = (status, body) => new Response(JSON.stringify(body), {status, headers});
+    const response = (status, body) => new Response(JSON.stringify(body?.error && !body.code ? {...body, code:({400:'validation',401:'unauthenticated',403:'forbidden',404:'not_found',409:'conflict'}[status] || 'unavailable')} : body), {status, headers});
     if (origin && !allowed.has(origin)) return response(403, {error: 'Origin not allowed.'});
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers});
     if (!['GET', 'POST'].includes(req.method)) return response(405, {error: 'Method not allowed.'});
@@ -23,7 +24,11 @@ export function createHandler(createClient, env) {
       const userClient = createClient(url, anon, {global: {headers: {Authorization: authorization}},
         auth: {persistSession: false, autoRefreshToken: false}});
       const {data: authData, error: authError} = await userClient.auth.getUser();
-      if (authError || !authData?.user) return response(401, {error: 'Your session expired. Sign in again.'});
+      if (authError) {
+        const invalid = [401,403].includes(authError.status) || ['bad_jwt','session_not_found','user_not_found'].includes(authError.code);
+        return invalid ? response(401, {error: 'Your session expired. Sign in again.'}) : response(503, {error: 'Authentication temporarily unavailable. Retry shortly.'});
+      }
+      if (!authData?.user) return response(401, {error: 'Your session expired. Sign in again.'});
       const {data: isExchangeAdmin, error: adminAccessError} = await userClient.rpc('is_exchange_admin');
       if (adminAccessError) return response(503, {error: 'Unable to verify administrator access.'});
       if (isExchangeAdmin !== true) return response(403, {error: 'Administrator access required.'});
@@ -39,20 +44,35 @@ export function createHandler(createClient, env) {
       }
       let result;
       if (body.operation === 'read') {
-        const sections = ['overview', 'members', 'catalogue', 'exchanges', 'support', 'audit', 'member_detail', 'exchange_detail'];
+        const sections = ['overview', 'members', 'catalogue', 'exchanges', 'support', 'audit', 'member_detail', 'exchange_detail', ...(body.version===2?['collection','wishlist','support_detail']:[])];
         const section = body.section ?? 'overview';
         const page = body.page ?? 0;
         const query = body.query ?? '';
         if (!sections.includes(section) || !Number.isInteger(page) || page < 0 || page > 100000 ||
           typeof query !== 'string' || query.length > 100 ||
-          (section.endsWith('_detail') && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.id ?? '')))
+          (section.endsWith('_detail') && !isUUID(body.id)))
           return response(400, {error: 'Invalid search or record ID.'});
-        result = await userClient.rpc('admin_marketplace_read', {p_section: section, p_query: query, p_page: page, p_id: body.id ?? null});
+        if (body.version!==undefined && body.version!==2) return response(400,{error:'Unsupported contract version.'});
+        if(body.version===2) {
+          const filters=body.filters===undefined?{}:body.filters;
+          const fields={support:{status:['open','in_progress','resolved','actionable'],age:['older_7_days','older_30_days']},exchanges:{stage:['PROPOSED','DECLINED','WITHDRAWN','EXPIRED','ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING','HANDOFF_ISSUE','ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED','COMPLETED'],overdue:'boolean'},members:{new:'boolean'},catalogue:{visible:'boolean'},collection:{available:'boolean'}}[section] || {};
+          if(!filters || typeof filters!=='object' || Array.isArray(filters) || Object.entries(filters).some(([key,value])=>!Object.hasOwn(fields,key) || (fields[key]==='boolean'?typeof value!=='boolean':!fields[key].includes(value))) ||
+            (section==='member_detail'?!['collection','wishlist'].includes(body.part):section==='support_detail'?!['history','events'].includes(body.part):body.part!==undefined))
+            return response(400,{error:'Invalid structured filters or detail part.'});
+          result=section==='support_detail'?await userClient.rpc('admin_support_detail_v2',{p_id:body.id,p_page:page,p_part:body.part}):await userClient.rpc('admin_marketplace_read_v2',{p_section:section,p_query:query,p_page:page,p_id:body.id??null,p_filters:filters,p_part:body.part??null});
+        } else {
+          if(body.filters!==undefined || body.part!==undefined) return response(400,{error:'Structured fields require contract version 2.'});
+          result = await userClient.rpc('admin_marketplace_read', {p_section: section, p_query: query, p_page: page, p_id: body.id ?? null});
+        }
+      } else if(body.operation==='note') {
+        if(!isUUID(body.id) || !isUUID(body.request_id) || typeof body.reason!=='string' || body.reason.trim().length<10 || body.reason.trim().length>1000)
+          return response(400,{error:'Invalid note. Include 10–1000 characters.'});
+        result=await userClient.rpc('admin_support_note',{p_id:body.id,p_note:body.reason,p_request:body.request_id});
       } else if (body.operation === 'mutate') {
         if (!['catalogue', 'support'].includes(body.entity) || typeof body.id !== 'string' || body.id.length > 100 ||
           !Number.isInteger(body.revision) || body.revision < 0 || typeof body.reason !== 'string' ||
           body.reason.trim().length < 10 || body.reason.trim().length > 1000 ||
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.request_id ?? '') ||
+          !isUUID(body.request_id) ||
           !(body.entity === 'catalogue' ? ['visible', 'hidden'] : ['open', 'in_progress', 'resolved']).includes(body.value))
           return response(400, {error: 'Invalid change. Include a reason of 10–1000 characters.'});
         result = await userClient.rpc('admin_marketplace_mutate', {p_entity: body.entity, p_id: body.id,
