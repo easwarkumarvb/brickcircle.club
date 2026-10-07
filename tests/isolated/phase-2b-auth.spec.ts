@@ -40,7 +40,7 @@ test('email account creation uses the canonical client and onboarding metadata',
   await form.evaluate((element:HTMLFormElement)=>element.requestSubmit());
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.authCalls.some((call:any)=>call.method==='signUp'))).toBe(true);
   const call=await page.evaluate(()=>window.__bcIsolated.authCalls.find((entry:any)=>entry.method==='signUp'));
-  expect(call.credentials).toMatchObject({email:'beta@example.invalid',options:{data:{full_name:'Beta Collector',adult_confirmation_version:'2026-09-11',adult_attestation:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'},emailRedirectTo:'http://127.0.0.1:4173/v2.html'}});
+  expect(call.credentials).toMatchObject({email:'beta@example.invalid',options:{data:{full_name:'Beta Collector',adult_confirmation_version:'2026-09-11',adult_attestation:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'},emailRedirectTo:`${new URL(page.url()).origin}/v2.html`}});
 });
 
 test('Google OAuth keeps the callback on the BrickCircle loopback origin',async({page})=>{
@@ -51,7 +51,7 @@ test('Google OAuth keeps the callback on the BrickCircle loopback origin',async(
   expect(options).toMatchObject({
     provider:'google',
     options:{
-      redirectTo:'http://127.0.0.1:4173/v2.html',
+      redirectTo:`${new URL(page.url()).origin}/v2.html`,
       skipBrowserRedirect:true,
       queryParams:{prompt:'select_account'}
     }
@@ -74,9 +74,10 @@ test('spurious resume-window sign-out recovers the still-valid session',async({p
   await expect(page.locator('[data-signout]')).toBeVisible();
 });
 
-test('signed-in members can see and use the top-level Log out control',async({page})=>{
+test('signed-in members can see and use Sign out from the compact Account menu',async({page})=>{
   await page.goto('/v2.html#home');
-  const logout=page.getByRole('button',{name:'Log out'});
+  await page.getByLabel('Account menu').click();
+  const logout=page.getByRole('button',{name:'Sign out'});
   await expect(logout).toBeVisible();
   await logout.click();
   await expect(page.locator('[data-auth]').first()).toBeVisible();

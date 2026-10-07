@@ -3,6 +3,8 @@
   const SUPABASE_URL = 'https://nsxtromjdpdscknadxez.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
   const db = window.supabase?.createClient?.(SUPABASE_URL, SUPABASE_KEY);
+  const localLogout = db && window.bcCreateLocalLogout(db.auth);
+  let logoutLocked = false;
   const $ = id => document.getElementById(id);
   const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[ch]));
   const number = value => Number(value || 0).toLocaleString();
@@ -55,6 +57,7 @@
     status(message, true);
   }
   async function api(body, isCurrent = () => true) {
+    if(logoutLocked) throw new AdminError('unauthenticated','Sign out is not confirmed. Retry or reload to verify your session.');
     const currentEpoch = epoch, account = lastUserId;
     const controller = new AbortController();
     let active = true, timer, rejectCancellation;
@@ -232,6 +235,7 @@
     $('results').innerHTML = table(labels,cells);
   }
   async function load() {
+    if(logoutLocked)return;
     const id = ++loadId;
     const previousRows=rows, previousTotal=total;
     detailId++;
@@ -367,8 +371,25 @@
   $('previous').addEventListener('click',()=>{if(page>0){page--;load();}});
   $('next').addEventListener('click',()=>{if((page+1)*25<total){page++;load();}});
   $('refresh').addEventListener('click',load);
-  $('signout').addEventListener('click',async()=>{purge('Signed out.');await db?.auth.signOut({scope:'local'});location.assign('/#home');});
+  async function logout(switchAccount=false){
+    if(localLogout?.pending)return;
+    logoutLocked=true;purge('Confirming sign out on this device…');
+    $('signout').disabled=true;$('switch-account').disabled=true;$('refresh').disabled=true;
+    $('marketplace-signin').hidden=true;
+    try{
+      if(!localLogout)throw new Error('Authentication is unavailable.');
+      await localLogout.run();
+      location.assign(switchAccount?'/#signin':'/#home');
+    }catch(_){
+      status(localLogout?.pending?'Sign out is taking longer than expected and is not confirmed. Wait, then retry or reload to verify.':'Sign out failed and is not confirmed. Retry or reload to verify your session.',true);
+      $('signout').disabled=false;$('switch-account').disabled=false;
+    }
+  }
+  $('signout').addEventListener('click',()=>logout());
+  $('switch-account').addEventListener('click',()=>logout(true));
+  $('marketplace-signin').addEventListener('click',event=>{event.preventDefault();logout(true)});
   const authSubscription = db?.auth.onAuthStateChange((event,session)=>{
+    if(logoutLocked)return;
     if(event==='SIGNED_OUT') purge('Signed out. Sign in to your administrator account.');
     else if(lastUserId&&session?.user?.id&&lastUserId!==session.user.id) purge('Account changed. Refresh to verify administrator access.');
     else if(lastUserId&&session?.access_token) {

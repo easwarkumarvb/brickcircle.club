@@ -71,16 +71,18 @@ function consider(user,{meaningful=false}={}){
   promptedUser=user.id;
   setTimeout(()=>{if(!document.querySelector('.bc-modal-overlay,.bc-drawer-overlay,.bc-match-login-notice'))open(user,{automatic:true})},1800);
 }
-async function signOut(user){
+async function signOut(user,isCurrent=()=>true){
   if(!user?.id||!supported())return;
   try{
     const worker=await navigator.serviceWorker.getRegistration('/'),subscription=await worker?.pushManager.getSubscription();
+    if(!isCurrent())return;
     if(worker&&subscription){
       await window.BC_SUPABASE.from('push_subscriptions').delete().eq('user_id',user.id).eq('endpoint',subscription.endpoint);
+      if(!isCurrent())return;
       await subscription.unsubscribe();
     }
   }catch(_){ }
-  promptedUser='';close();
+  if(isCurrent()){promptedUser='';close()}
 }
 window.bcWebPush={consider,open,signOut,supported};
 })();

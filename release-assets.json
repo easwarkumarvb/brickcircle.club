@@ -1,5 +1,5 @@
 {
-  "release": "20261006-afol-auth-polish-r1",
+  "release": "20261007-account-switch-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -16,6 +16,7 @@
     "/locations-v3.js",
     "/web-push-config.js",
     "/app-v3.js",
+    "/local-account-logout.js",
     "/zen-ux-v1.js",
     "/assets/brickcircle-logo.png"
   ]
