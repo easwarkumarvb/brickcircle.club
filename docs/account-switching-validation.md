@@ -13,10 +13,17 @@ Base: PR124 merge `f3275fa761e049098f279c0cb9c01552739d4478`.
 - A 10-second deadline does **not** cancel the SDK operation. No duplicate logout
   or retry can run while it remains pending. Late completion does not automatically
   unlock login; a fresh explicit local retry must confirm success.
+- Password login/signup do not acquire the pinned SDK's logout lock. Logout first
+  drains all pre-existing tracked interactive SDK operations, then performs the
+  final local signOut within the same 10-second deadline. This orders any SDK
+  `_saveSession` before the final removal, not merely before a UI epoch check.
+  A timed-out drain stays locked; late settlement does not start an automatic
+  logout. Explicit retry must confirm the final local logout before any new login.
+  OAuth/reset/recovery SDK promises remain tracked even if their UI timeout fires.
 - Explicit logout invalidates auth workers and existing refresh/render generations
   immediately. It bypasses visibility/focus SIGNED_OUT recovery, blocks new resume
-  reads, and suppresses delayed recovery and SIGNED_IN/TOKEN_REFRESHED work. The old
-  retired accounts are excluded from unsolicited events until an intentional current
+  reads, and suppresses delayed recovery and SIGNED_IN/TOKEN_REFRESHED work. Retired
+  accounts are excluded from unsolicited events until an intentional current
   password login/signup returns its successful session. Pending interactive auth
   callbacks are gated until the current SDK result is confirmed; stale signup,
   password, OAuth, recovery and reset completions cannot close the new overlay or
@@ -51,6 +58,10 @@ Checked installed/pinned supabase-js **2.57.4**, auth-js **2.71.1**, current
 removing the session, ignores auth API 401/403/404 as already-invalid sessions, and
 removes local storage/emits SIGNED_OUT before returning `error: null` for local scope.
 The app follows that SDK contract rather than inventing a global retry.
+`signUp` (lines 489–556) and `signInWithPassword` (566–623) await their request,
+then `_saveSession` and subscriber notification without `_acquireLock`;
+`signOut` (1856–1862) alone acquires that lock. Therefore a UI-only stale-result
+guard cannot protect persisted SDK storage. The pre-logout drain is required.
 Changelog entries include 2.65.1 moving SIGNED_OUT to session removal, 2.64.3 avoiding
 premature removal, and 2.64.2 ignoring signout 403s. No SDK upgrade is part of this PR.
 
@@ -64,4 +75,24 @@ admin-denied switch/failure. Existing auth, Realtime, admin and MFA suites are a
 included in the final stable-tree run. Static contracts and helper unit regressions
 cover local-only SDK semantics, malformed results, timeout handling and release pins.
 
-Final commands/results are recorded below after the stable-tree run.
+### Prior exact-head CI (before the SDK-storage barrier fix)
+
+Runtime `00050778826d214f7dec7db7f0e6aa40f2a525ca` passed
+[CI 37610195531](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/37610195531)
+and [Beta Gate 37610195649](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/37610195649).
+CI's quality job passed release/type/syntax/static/security checks, isolated
+Chromium/Firefox/WebKit functional suites (including normal auth and admin MFA),
+and visual/accessibility checks. Beta Gate: **14 successful jobs, 2 intentionally
+skipped jobs** (dependency audit and marketplace load). Run log bodies were not
+available through the current GitHub CLI credentials, so no unverified browser
+pass/flaky totals are claimed for those prior runs.
+
+The subsequent source review found the concrete SDK storage race above. Those
+green runs do **not** validate the new barrier. New regressions overwrite the
+mock's actual current SDK session before returning delayed password/signup data,
+assert storage-write → final-local-logout order, cover timeout/explicit retry,
+then log in B and exercise refresh/focus. A fresh retired-account `getUser` result
+is also forced back through confirmed local logout rather than repopulating data.
+
+Current targeted results will be recorded after the stable post-fix run. No merge
+or production deployment has been performed.

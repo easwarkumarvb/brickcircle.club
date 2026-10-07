@@ -249,10 +249,11 @@ let refreshGeneration=0;
 let authEpoch=0,logoutEpoch=0,logoutLocked=false,explicitLogout=false,switchAuth=false;
 const retiredAccounts=new Set(),authOperations=new Set();
 const localLogout=window.bcCreateLocalLogout(db.auth);
-function beginAuthOperation(){const operation={epoch:logoutEpoch};authOperations.add(operation);return operation}
+function beginAuthOperation(){let resolve;const settled=new Promise(done=>{resolve=done}),operation={epoch:logoutEpoch,settled,resolve};authOperations.add(operation);return operation}
+function endAuthOperation(operation){authOperations.delete(operation);operation.resolve()}
+async function trackedAuthCall(work){const operation=beginAuthOperation();try{return await work()}finally{endAuthOperation(operation)}}
 function authOperationCurrent(operation){return operation.epoch===logoutEpoch&&!logoutLocked}
 function finishAuthOperation(operation,data){
-  authOperations.delete(operation);
   if(!authOperationCurrent(operation)){if(data?.session?.user)retiredAccounts.add(data.session.user.id);return false}
   if(data?.session?.user){retiredAccounts.delete(data.session.user.id);explicitLogout=false;handleAuthChange('SIGNED_IN',data.session,true)}
   return true;
@@ -424,7 +425,7 @@ async function oauth(provider,button){
   const epoch=logoutEpoch;if(logoutLocked)return;
   const original=button?Array.from(button.childNodes,node=>node.cloneNode(true)):[],label=button?.querySelector('[data-auth-label]');clearAuthError(button?.closest('.bc-auth-modal'),'provider');if(button){button.disabled=true;button.setAttribute('aria-busy','true');if(label)label.textContent=`Opening ${provider==='google'?'Google':provider}…`;else button.textContent=`Opening ${provider==='google'?'Google':provider}…`}
   try{
-    const {data,error}=await withTimeout(db.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true,...(provider==='google'?{queryParams:{prompt:'select_account'}}:{})}}),10000);
+    const {data,error}=await withTimeout(trackedAuthCall(()=>db.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true,...(provider==='google'?{queryParams:{prompt:'select_account'}}:{})}})),10000);
     if(epoch!==logoutEpoch||logoutLocked)return;if(error)throw error;if(!data?.url)throw new Error(`${provider==='google'?'Google':provider} sign-in is temporarily unavailable. Please try again.`);location.assign(data.url);
   }catch(error){if(epoch!==logoutEpoch||logoutLocked)return;authError(button?.closest('.bc-auth-modal'),'provider',error,`${provider} sign-in is unavailable.`);if(button){button.disabled=false;button.removeAttribute('aria-busy');button.replaceChildren(...original)}}
 }
@@ -472,22 +473,22 @@ function renderEmailAuth(mode,o=document){
     clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Signing in…';
     try{const {data,error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});if(error)throw error;if(!finishAuthOperation(operation,data))return;switchAuth=false;closeOverlay()}
     catch(error){if(authOperationCurrent(operation))authError(host,'email',error,'Could not sign in. Please try again.')}
-    finally{authOperations.delete(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Sign in'}
+    finally{endAuthOperation(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Sign in'}
   };
-  $('[data-forgot]',host)?.addEventListener('click',async()=>{const epoch=logoutEpoch;if(logoutLocked)return;const email=prompt('Enter your BrickCircle email');if(!email)return;try{const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/v2.html#profile`});if(epoch===logoutEpoch&&!logoutLocked)toast(error?error.message:'Password reset email sent.')}catch(error){if(epoch===logoutEpoch&&!logoutLocked)authError(host,'email',error,'Could not request a password reset.')}});
+  $('[data-forgot]',host)?.addEventListener('click',async()=>{const epoch=logoutEpoch;if(logoutLocked)return;const email=prompt('Enter your BrickCircle email');if(!email)return;try{const {error}=await trackedAuthCall(()=>db.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/v2.html#profile`}));if(epoch===logoutEpoch&&!logoutLocked)toast(error?error.message:'Password reset email sent.')}catch(error){if(epoch===logoutEpoch&&!logoutLocked)authError(host,'email',error,'Could not request a password reset.')}});
   const signup=$('#bc-email-signup',host);if(signup)signup.onsubmit=async e=>{
     e.preventDefault();if(logoutLocked||btnBusy(signup))return;const f=new FormData(signup);if(f.get('adult_confirmation')!=='on')return toast('Please confirm that you are at least 18 years old.');
     const operation=beginAuthOperation(),btn=$('button[type="submit"]',signup);clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Creating account…';
     try{const {data,error}=await db.auth.signUp({email:String(f.get('email')),password:String(f.get('password')),options:{data:{full_name:String(f.get('name')),adult_confirmation_version:ADULT_CONFIRMATION_VERSION,adult_attestation:ADULT_ATTESTATION},emailRedirectTo:`${location.origin}/v2.html`}});if(error)throw error;if(!finishAuthOperation(operation,data))return;closeOverlay();toast(data.session?'Account created.':'Account created — check your email to confirm.')}
     catch(error){if(authOperationCurrent(operation))authError(host,'email',error,'Could not create your account. Please try again.')}
-    finally{authOperations.delete(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Create account'}
+    finally{endAuthOperation(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Create account'}
   };
 }
 function btnBusy(form){return !!$('button[type="submit"]',form)?.disabled}
 function showPasswordRecovery(){
   if($('#bc-password-recovery'))return;
   const o=modal(`<div class="bc-modal-head"><div><h2>Set new password</h2><p class="bc-muted">Choose a new password for your BrickCircle account.</p></div></div><form class="bc-form" id="bc-password-recovery"><div class="bc-field"><label>New password</label><input class="bc-input" name="password" type="password" autocomplete="new-password" minlength="6" required></div><div class="bc-field"><label>Confirm password</label><input class="bc-input" name="confirm" type="password" autocomplete="new-password" minlength="6" required></div><button class="bc-btn primary" type="submit">Save new password</button></form>`);
-  const form=$('#bc-password-recovery',o);form.onsubmit=async e=>{e.preventDefault();const epoch=logoutEpoch;if(logoutLocked||btnBusy(form))return;const f=new FormData(form),password=String(f.get('password')||''),confirmPassword=String(f.get('confirm')||''),btn=$('button[type="submit"]',form);if(password.length<6)return toast('Password must be at least 6 characters.');if(password!==confirmPassword)return toast('Passwords do not match.');btn.disabled=true;btn.textContent='Saving…';try{const {error}=await withTimeout(db.auth.updateUser({password}),10000);if(epoch!==logoutEpoch||logoutLocked)return;if(error)throw error;closeOverlay();cleanRecoveryUrl();await refreshCore();if(epoch!==logoutEpoch||logoutLocked)return;shell();navigate('profile');toast('Password updated. You are still signed in.')}catch(error){if(epoch!==logoutEpoch||logoutLocked)return;fail(error,'Could not update your password. Please try again.');btn.disabled=false;btn.textContent='Save new password'}};
+  const form=$('#bc-password-recovery',o);form.onsubmit=async e=>{e.preventDefault();const epoch=logoutEpoch;if(logoutLocked||btnBusy(form))return;const f=new FormData(form),password=String(f.get('password')||''),confirmPassword=String(f.get('confirm')||''),btn=$('button[type="submit"]',form);if(password.length<6)return toast('Password must be at least 6 characters.');if(password!==confirmPassword)return toast('Passwords do not match.');btn.disabled=true;btn.textContent='Saving…';try{const {error}=await withTimeout(trackedAuthCall(()=>db.auth.updateUser({password})),10000);if(epoch!==logoutEpoch||logoutLocked)return;if(error)throw error;closeOverlay();cleanRecoveryUrl();await refreshCore();if(epoch!==logoutEpoch||logoutLocked)return;shell();navigate('profile');toast('Password updated. You are still signed in.')}catch(error){if(epoch!==logoutEpoch||logoutLocked)return;fail(error,'Could not update your password. Please try again.');btn.disabled=false;btn.textContent='Save new password'}};
   $('[name="password"]',form)?.focus();
 }
 async function claimReferralAndProvider(){
@@ -520,6 +521,7 @@ async function refreshCore(){
   const generation=++refreshGeneration;
   const auth=await settledTimeout(db.auth.getUser()),authError=auth.error||null,user=auth.data?.user||null;
   if(generation!==refreshGeneration)return;
+  if(retiredAccounts.has(user?.id)){await signOut(true);return}
   if(authError){
     if(missingAuthSession(authError)){clearProtectedState();S.refreshWarning='';return}
     const status=Number(authError.status||0);
@@ -1308,7 +1310,8 @@ async function signOut(useAnother=false){
   if(!o.bcAuthCleanup)prepareAuthOverlay(o);
   const retry=$('#bc-logout-retry',o),status=$('#bc-logout-status',o);retry.disabled=true;
   try{
-    await localLogout.run();
+    const pendingAuth=[...authOperations].map(operation=>operation.settled);
+    await localLogout.run(()=>Promise.all(pendingAuth));
     stopNotificationRealtime();clearNotificationPresentation();stopThreadSync();
     // Ancillary cleanup must neither delay authentication nor revoke other devices.
     withTimeout(Promise.resolve().then(()=>window.bcWebPush?.signOut(user,()=>explicitLogout&&!S.user)),2000).catch(()=>{});

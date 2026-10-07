@@ -11,7 +11,7 @@ async function member(page:Page,mode=''){
     s.accountA={id:s.profile.id,email:s.profile.email,created_at:s.profile.created_at,app_metadata:{provider:'email'}};
     s.accountB={...s.accountA,id:'00000000-0000-4000-8000-000000000008',email:'member-b@example.invalid'};
     s.current=s.accountA;s.logoutMode='success';s.logoutCalls=[];s.sessionReads=0;s.recoveries=0;
-    db.auth.getSession=async()=>{s.sessionReads++;return {data:{session:{user:s.current}}}};
+    db.auth.getSession=async()=>{s.sessionReads++;return {data:{session:s.loggedOut?null:{user:s.current}}}};
     db.auth.refreshSession=async()=>{s.recoveries++;return {data:{session:{user:s.accountA}}}};
     db.auth.getUser=async()=>({data:{user:s.loggedOut?null:s.current},error:null});
     db.auth.signOut=async(options:any)=>{
@@ -88,27 +88,35 @@ for(const mode of ['error','throw'])test(`${mode} logout stays locked and only e
   expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toEqual([{scope:'local'},{scope:'local'}]);
 });
 
-test('an earlier password-login completion cannot reopen the retired account',async({page})=>{
+test('delayed password SDK session overwrite settles before the final local logout and B login',async({page})=>{
   await member(page);await switchFromProfile(page);await blankEmail(page);
-  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated;w.BC_SUPABASE.auth.signInWithPassword=()=>new Promise(resolve=>s.releaseLogin=()=>resolve({data:{session:{user:s.accountA}},error:null}))});
+  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated,auth=w.BC_SUPABASE.auth,login=auth.signInWithPassword;s.sdkOrder=[];auth.signInWithPassword=()=>new Promise(resolve=>s.releaseLogin=()=>{s.current=s.accountA;s.loggedOut=false;s.sdkOrder.push('save:A');s.emitAuth('SIGNED_IN',{user:s.accountA});auth.signInWithPassword=login;resolve({data:{session:{user:s.accountA}},error:null})});const logout=auth.signOut;auth.signOut=async(options:any)=>{s.sdkOrder.push('logout:local');return logout(options)}});
   await page.getByLabel('Email',{exact:true}).fill('collector@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();
-  await page.evaluate(()=>(window as any).bcSwitchAccount());await blankEmail(page);
+  await page.evaluate(()=>{(window as any).bcSwitchAccount()});await expect(page.locator('#bc-logout-status')).toContainText('Confirming');
+  expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toHaveLength(1);
+  await expect(page.locator('#bc-email-signin')).toHaveCount(0);
   await page.evaluate(()=>window.__bcIsolated.releaseLogin());
-  await expect(page.locator('[data-nav="profile"]')).toHaveCount(0);await expect(page.locator('#bc-email-signin')).toBeVisible();
+  await blankEmail(page);expect(await page.evaluate(()=>window.__bcIsolated.sdkOrder)).toEqual(['save:A','logout:local']);
+  expect(await page.evaluate(()=>window.__bcIsolated.loggedOut)).toBe(true);
+  await page.getByLabel('Email',{exact:true}).fill('member-b@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();await page.locator('[data-nav="profile"]').click();
+  await page.evaluate(()=>{const w=window as any;w.dispatchEvent(new Event('focus'));w.bcV3Refresh()});
+  await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');expect(await page.evaluate(()=>window.__bcIsolated.current.email)).toBe('member-b@example.invalid');
 });
 
 test('stale signup completion and its auth events cannot replace the lock or resurrect C after B',async({page})=>{
   await member(page);await switchFromProfile(page);await blankEmail(page);
-  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated;s.accountC={...s.accountA,id:'00000000-0000-4000-8000-000000000009'};w.BC_SUPABASE.auth.signUp=()=>new Promise(resolve=>s.releaseSignup=()=>{const session={user:s.accountC};s.emitAuth('SIGNED_IN',session);resolve({data:{session},error:null})})});
+  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated;s.accountC={...s.accountA,id:'00000000-0000-4000-8000-000000000009'};s.sdkOrder=[];w.BC_SUPABASE.auth.signUp=()=>new Promise(resolve=>s.releaseSignup=()=>{const session={user:s.accountC};s.current=s.accountC;s.loggedOut=false;s.sdkOrder.push('save:C');s.emitAuth('SIGNED_IN',session);resolve({data:{session},error:null})});const logout=w.BC_SUPABASE.auth.signOut;w.BC_SUPABASE.auth.signOut=async(options:any)=>{s.sdkOrder.push('logout:local');return logout(options)}});
   await page.locator('[data-auth-tab="signup"]').click();const form=page.locator('#bc-email-signup');
   await form.getByLabel('Collector name',{exact:true}).fill('Injected C');await form.getByLabel('Email',{exact:true}).fill('member-c@example.invalid');await form.getByLabel('Password',{exact:true}).fill('injected-password');await form.locator('[name="adult_confirmation"]').check();await form.locator('button[type="submit"]').click();
-  await page.evaluate(()=>{const w=window as any;w.__bcIsolated.logoutMode='error';w.bcSwitchAccount()});await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');
+  await page.evaluate(()=>{const w=window as any;w.__bcIsolated.logoutMode='error';w.bcSwitchAccount()});await expect(page.locator('#bc-logout-status')).toContainText('Confirming');expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toHaveLength(1);
   await page.evaluate(()=>window.__bcIsolated.releaseSignup());
+  await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');expect(await page.evaluate(()=>window.__bcIsolated.sdkOrder)).toEqual(['save:C','logout:local']);
   await expect(page.locator('#bc-overlay')).toHaveCount(1);await expect(page.locator('#bc-logout-status')).toBeVisible();await expect(page.locator('#bc-email-signup')).toHaveCount(0);
   await page.evaluate(()=>window.__bcIsolated.logoutMode='success');await page.locator('#bc-logout-retry').click();await blankEmail(page);
   await page.getByLabel('Email',{exact:true}).fill('member-b@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();await page.locator('[data-nav="profile"]').click();
   await page.evaluate(()=>{const s=window.__bcIsolated;s.emitAuth('SIGNED_IN',{user:s.accountC});s.emitAuth('TOKEN_REFRESHED',{user:s.accountA})});
-  await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');
+  await page.evaluate(()=>{const w=window as any;w.dispatchEvent(new Event('focus'));w.bcV3Refresh()});
+  await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');expect(await page.evaluate(()=>window.__bcIsolated.current.email)).toBe('member-b@example.invalid');
 });
 
 for(const action of ['oauth','reset','recovery'])test(`stale ${action} completion cannot close or redirect the new email modal`,async({page})=>{
@@ -121,8 +129,8 @@ for(const action of ['oauth','reset','recovery'])test(`stale ${action} completio
   if(action==='oauth')await page.locator('[data-oauth="google"]').click();
   else if(action==='reset'){page.once('dialog',dialog=>dialog.accept('injected@example.invalid'));await page.getByRole('button',{name:'Forgot password?'}).click()}
   else{await expect(page.locator('#bc-password-recovery')).toBeVisible();await page.locator('#bc-password-recovery [name="password"]').fill('injected-password');await page.locator('#bc-password-recovery [name="confirm"]').fill('injected-password');await page.locator('#bc-password-recovery button[type="submit"]').click()}
-  await page.evaluate(()=>(window as any).bcSwitchAccount());await blankEmail(page);
-  await page.evaluate(()=>window.__bcIsolated.releaseAction());await expect(page).toHaveURL(/#home$/);await expect(page.locator('#bc-email-signin')).toBeVisible();await expect(page.locator('#bc-password-recovery')).toHaveCount(0);
+  await page.evaluate(()=>{(window as any).bcSwitchAccount()});await expect(page.locator('#bc-logout-status')).toContainText('Confirming');
+  await page.evaluate(()=>window.__bcIsolated.releaseAction());await blankEmail(page);await expect(page).toHaveURL(/#home$/);await expect(page.locator('#bc-password-recovery')).toHaveCount(0);
 });
 
 for(const mode of ['error','success'])test(`delayed private proposal and captured drawer/modal actions cannot replace logout UI (${mode})`,async({page})=>{
@@ -181,6 +189,32 @@ test('slow logout times out honestly; duplicates and late success cannot unlock 
   await expect(page.locator('#bc-email-signin')).toHaveCount(0);
   await page.evaluate(()=>window.__bcIsolated.logoutMode='success');await page.locator('#bc-logout-retry').click();await blankEmail(page);
   expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toEqual([{scope:'local'},{scope:'local'}]);
+});
+
+for(const kind of ['signin','signup'])test(`pending ${kind} SDK storage write times out locked; only settled-write + explicit final logout admits B`,async({page})=>{
+  await member(page);await page.clock.install();
+  await page.evaluate(kind=>{const w=window as any,s=w.__bcIsolated,auth=w.BC_SUPABASE.auth,method=kind==='signin'?'signInWithPassword':'signUp',original=auth[method];w.bcAuth();auth[method]=()=>new Promise(resolve=>s.releaseSdkWrite=()=>{s.current=s.accountA;s.loggedOut=false;auth[method]=original;s.emitAuth('SIGNED_IN',{user:s.accountA});resolve({data:{session:{user:s.accountA}},error:null})})},kind);
+  if(kind==='signup')await page.locator('[data-auth-tab="signup"]').click();
+  const form=page.locator(`#bc-email-${kind}`);if(kind==='signup'){await form.getByLabel('Collector name',{exact:true}).fill('Injected A');await form.locator('[name="adult_confirmation"]').check()}
+  await form.getByLabel('Email',{exact:true}).fill('collector@example.invalid');await form.getByLabel('Password',{exact:true}).fill('injected-password');await form.locator('button[type="submit"]').click();
+  await page.evaluate(()=>{(window as any).bcSwitchAccount()});await page.clock.fastForward(10_100);
+  await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');await expect(page.locator('#bc-email-signin')).toHaveCount(0);
+  await page.locator('#bc-logout-retry').click();expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toEqual([]);
+  await page.evaluate(()=>window.__bcIsolated.releaseSdkWrite());await page.clock.fastForward(1000);
+  expect(await page.evaluate(()=>window.__bcIsolated.loggedOut)).toBe(false);expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toEqual([]);
+  await expect(page.locator('#bc-logout-status')).toBeVisible();
+  await page.locator('#bc-logout-retry').click();await blankEmail(page);
+  expect(await page.evaluate(()=>window.__bcIsolated.logoutCalls)).toEqual([{scope:'local'}]);expect(await page.evaluate(()=>window.__bcIsolated.loggedOut)).toBe(true);
+  await page.getByLabel('Email',{exact:true}).fill('member-b@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();await page.clock.fastForward(100);await page.locator('[data-nav="profile"]').click();
+  await page.evaluate(()=>{const w=window as any;w.dispatchEvent(new Event('focus'));w.bcV3Refresh()});await page.clock.fastForward(100);
+  await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');
+});
+
+test('a retired account returned by fresh SDK getUser cannot populate the new member shell',async({page})=>{
+  await member(page);await switchFromProfile(page);await blankEmail(page);
+  await page.getByLabel('Email',{exact:true}).fill('member-b@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();await page.locator('[data-nav="profile"]').click();await expect(page.locator('[data-account-card]')).toContainText('member-b@example.invalid');
+  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated;s.current=s.accountA;s.loggedOut=false;w.bcV3Refresh()});
+  await blankEmail(page);await expect(page.locator('[data-account-card]')).toHaveCount(0);expect(await page.evaluate(()=>window.__bcIsolated.loggedOut)).toBe(true);
 });
 
 test('scheduled resume recovery and delayed signed-in worker cannot resurrect A',async({page})=>{

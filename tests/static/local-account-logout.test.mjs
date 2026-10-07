@@ -22,8 +22,26 @@ test('returned errors, thrown failures, and missing results never become success
 });
 test('timeout stays pending; no duplicate or implicit late-success continuation',async()=>{
   let resolve,calls=0;const {logout,timers}=create(()=>{calls++;return new Promise(done=>resolve=done)});
-  const result=logout.run();await Promise.resolve();
+  const result=logout.run();await new Promise(done=>setImmediate(done));
   [...timers.values()][0]();await assert.rejects(result,/not confirmed/);
   assert.equal(logout.pending,true);await assert.rejects(logout.run(),/still pending/);assert.equal(calls,1);
   resolve({error:null});await new Promise(done=>setImmediate(done));assert.equal(logout.pending,false);assert.equal(timers.size,0);
+});
+
+test('SDK session writes drain before local logout, and timeout never runs a late automatic logout',async()=>{
+  let finish,session='A',calls=0;
+  const {logout,timers}=create(async()=>{calls++;assert.equal(session,'OLD_WRITE');session=null;return {error:null}});
+  const writes=new Promise(done=>finish=()=>{session='OLD_WRITE';done()});
+  const result=logout.run(()=>writes);await new Promise(done=>setImmediate(done));assert.equal(calls,0);assert.equal(logout.pending,true);
+  [...timers.values()][0]();await assert.rejects(result,/not confirmed/);await assert.rejects(logout.run(),/still pending/);
+  finish();await new Promise(done=>setImmediate(done));assert.equal(calls,0);assert.equal(session,'OLD_WRITE');assert.equal(logout.pending,false);
+  await logout.run(()=>writes);assert.equal(calls,1);assert.equal(session,null);
+});
+
+test('settled interactive storage overwrite is cleared before successful logout confirmation',async()=>{
+  let finish,session=null;const order=[];
+  const {logout}=create(async()=>{order.push('logout:local');session=null;return {error:null}});
+  const writes=new Promise(done=>finish=()=>{session='A';order.push('save:A');done()});
+  const result=logout.run(()=>writes);await new Promise(done=>setImmediate(done));assert.deepEqual(order,[]);
+  finish();await result;assert.deepEqual(order,['save:A','logout:local']);assert.equal(session,null);
 });
