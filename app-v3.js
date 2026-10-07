@@ -2058,9 +2058,18 @@ function setupPWA(){
 async function boot(){
   const signinIntent=location.hash==='#signin',epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
   if(signinIntent)history.replaceState({},'',location.pathname+location.search+'#home');
-  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();
+  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(!signinIntent&&parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();
   const sessionResult=await settledTimeout(db.auth.getSession(),8000);if(!current())return;
   S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';
+  // Consume the fixed admin handoff before any retained-account hydration or UI.
+  // Mark boot complete so the confirmed logout's next interactive login can run.
+  if(signinIntent){
+    S.booted=true;pendingAuthChange=null;
+    if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();
+    if(S.user||sessionResult.error)await signOut(true);
+    else{explicitLogout=true;shell();await renderRoute();switchAuth=true;showAuth();$('#bc-email-signin [name="email"]')?.focus()}
+    return;
+  }
   if(S.user)await syncProviderAvatar();if(!current())return;
   if(S.user)await refreshCore();if(!current())return;
   S.booted=true;shell();await renderRoute();if(!current())return;
@@ -2071,7 +2080,6 @@ async function boot(){
   }
   if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();
   if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
-  if(signinIntent){if(S.user)await signOut(true);else{switchAuth=true;showAuth();$('#bc-email-signin [name="email"]')?.focus()}}
 }
 function handleAuthChange(event,session,confirmedInteractive=false){
   if(!confirmedInteractive&&['SIGNED_IN','TOKEN_REFRESHED'].includes(event)&&authOperations.size){

@@ -221,11 +221,12 @@ test('scheduled resume recovery and delayed signed-in worker cannot resurrect A'
   await member(page);await page.clock.install();
   await page.evaluate(()=>{const w=window as any;w.dispatchEvent(new Event('focus'));w.__bcIsolated.emitAuth('SIGNED_OUT',null)});
   await switchFromProfile(page);await blankEmail(page);
+  const readsAfterLogout=await page.evaluate(()=>window.__bcIsolated.sessionReads);
   await page.evaluate(()=>{const s=window.__bcIsolated;s.emitAuth('SIGNED_IN',{user:s.accountA});s.emitAuth('TOKEN_REFRESHED',{user:s.accountA});window.dispatchEvent(new Event('focus'))});
   await page.clock.fastForward(2000);
   await expect(page.locator('#bc-email-signin')).toBeVisible();await expect(page.locator('[data-nav="profile"]')).toHaveCount(0);
   expect(await page.evaluate(()=>window.__bcIsolated.recoveries)).toBe(0);
-  expect(await page.evaluate(()=>window.__bcIsolated.sessionReads)).toBe(1); // focus before logout only
+  expect(await page.evaluate(()=>window.__bcIsolated.sessionReads)).toBe(readsAfterLogout); // no post-logout recovery reads
 });
 
 test('old profile reads and an already-awaiting SIGNED_IN worker are suppressed after switching',async({page})=>{
@@ -247,6 +248,59 @@ test('old profile reads and an already-awaiting SIGNED_IN worker are suppressed 
 });
 
 const mock=fs.readFileSync('tests/isolated/fixtures/supabase-browser-mock.js','utf8');
+for(const mode of ['retained-slow','retained-error','session-error','session-timeout','anonymous'])test(`#signin boot ${mode} never hydrates or renders the old account before confirmed local logout`,async({page})=>{
+  if(mode==='session-timeout')await page.clock.install();
+  await page.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'application/javascript',body:mock+`
+    const db=window.supabase.createClient(),s=window.__bcIsolated,mode=${JSON.stringify(mode)};
+    s.bootCalls=[];s.bootLogoutCalls=[];s.bootConfirmed=false;s.oldWriteUI=false;
+    const record=value=>{if(!s.bootConfirmed)s.bootCalls.push(value)};
+    const from=db.from.bind(db),rpc=db.rpc.bind(db),getUser=db.auth.getUser;
+    db.from=(table)=>{record('from:'+table);return from(table)};
+    db.rpc=(name,args)=>{record('rpc:'+name);return rpc(name,args)};
+    db.auth.getUser=()=>{record('getUser');return getUser()};
+    db.auth.getSession=async()=>{
+      s.bootSessionStarted=true;
+      if(mode==='session-timeout')return new Promise(()=>{});
+      if(mode==='session-error')return {data:{session:null},error:{message:'Injected session read failure'}};
+      return {data:{session:mode==='anonymous'?null:{user:{id:s.profile.id,email:s.profile.email}}},error:null};
+    };
+    db.auth.signOut=async options=>{
+      s.bootLogoutCalls.push(options);
+      if(mode==='retained-error'||mode==='session-error'||mode==='session-timeout')await new Promise(resolve=>s.releaseBootLogout=()=>resolve());
+      if(mode==='retained-error'&&!s.retryBootLogout)return {error:{message:'Injected local logout failure'}};
+      if(mode==='retained-slow')await new Promise(resolve=>s.releaseBootLogout=()=>resolve());
+      s.bootConfirmed=true;s.setSignedOut(true);s.emitAuth('SIGNED_OUT',null);return {error:null};
+    };
+    const observe=()=>{if(!s.bootConfirmed&&document.querySelector('[data-nav="profile"],[data-account-card],[data-edit-profile],[data-add-set],[data-exchangeable]'))s.oldWriteUI=true};
+    new MutationObserver(observe).observe(document,{subtree:true,childList:true});
+  `}));
+  await page.goto('/#signin');
+  if(mode==='session-timeout'){await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.bootSessionStarted)).toBe(true);await page.clock.fastForward(8100)}
+  const noOldWork=async()=>{
+    expect(await page.evaluate(()=>window.__bcIsolated.bootCalls)).toEqual([]);
+    expect(await page.evaluate(()=>window.__bcIsolated.oldWriteUI)).toBe(false);
+    await expect(page.locator('[data-nav="profile"],[data-account-card],[data-edit-profile]')).toHaveCount(0);
+  };
+  if(mode==='anonymous'){await blankEmail(page);expect(await page.evaluate(()=>window.__bcIsolated.bootLogoutCalls)).toEqual([]);await noOldWork();return}
+  await expect(page.locator('#bc-logout-status')).toContainText('Confirming');await noOldWork();
+  await expect(page.locator('#bc-email-signin')).toHaveCount(0);
+  await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));window.bcV3Refresh();(window as any).bcAuth()});await noOldWork();
+  await page.evaluate(()=>window.__bcIsolated.releaseBootLogout());
+  if(mode==='retained-error'){
+    await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');await noOldWork();
+    await expect(page.locator('#bc-email-signin')).toHaveCount(0);
+    await page.evaluate(()=>window.__bcIsolated.retryBootLogout=true);await page.locator('#bc-logout-retry').click();
+    await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.bootLogoutCalls.length)).toBe(2);
+    await page.evaluate(()=>window.__bcIsolated.releaseBootLogout());
+  }
+  await blankEmail(page);await noOldWork();
+  expect(await page.evaluate(()=>window.__bcIsolated.bootLogoutCalls)).toEqual(Array(mode==='retained-error'?2:1).fill({scope:'local'}));
+  await expect(page).toHaveURL(/\/#home$/);
+  await page.getByLabel('Email',{exact:true}).fill('collector@example.invalid');await page.getByLabel('Password',{exact:true}).fill('injected-password');await page.locator('#bc-email-signin button[type="submit"]').click();
+  if(mode==='session-timeout')await page.clock.fastForward(100);
+  await page.locator('[data-nav="profile"]').click();await expect(page.locator('[data-account-card]')).toContainText('collector@example.invalid');
+});
+
 async function admin(page:Page,mode='success'){
   await page.route('https://cdn.jsdelivr.net/**',route=>route.fulfill({contentType:'application/javascript',body:mock+`
     const db=window.supabase.createClient(),s=window.__bcIsolated;
