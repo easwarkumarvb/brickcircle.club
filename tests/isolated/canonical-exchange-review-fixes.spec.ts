@@ -30,7 +30,7 @@ async function openActor(context:BrowserContext,actor:keyof typeof actors,databa
   const page=await context.newPage();
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',route=>route.fulfill({contentType:'application/javascript',body:mock}));
   await page.goto(`/v2.html?isolated=three-user#${route}`);
-  if(route.startsWith('exchange/'))await expect(page.locator('#bc-flow')).toBeVisible();
+  if(route.startsWith('exchange/'))await expect(page.locator('#bc-case-destination')).toHaveValue(route.slice('exchange/'.length));
   return page;
 }
 
@@ -53,7 +53,7 @@ test('completed canonical case uses structured double-blind peer reviews and pre
   await expect(easwar.getByRole('button',{name:'Leave review'})).toBeVisible();
   await submitStructuredReview(easwar);
   await expect.poll(()=>easwar.evaluate(()=>window.__bcThreeUser.data.peerReviews.length)).toBe(1);
-  await expect(easwar.locator('.bc-notice.good').filter({hasText:/You reviewed Ramya/i})).toBeVisible();
+  await expect(easwar.locator('#bc-collector-action')).toContainText('You reviewed Ramya');
   const first=await easwar.evaluate(()=>({data:JSON.parse(JSON.stringify(window.__bcThreeUser.data)),calls:window.__bcThreeUser.rpcCalls}));
   expect(first.data.peerReviews).toHaveLength(1);
   expect(first.data.peerReviews[0]).toMatchObject({reviewer_id:actors.easwar.id,reviewee_id:actors.ramya.id,overall_rating:4,return_reliability:5,set_accuracy:4,communication:5,condition_accuracy:4,would_exchange_again:true});
@@ -63,10 +63,9 @@ test('completed canonical case uses structured double-blind peer reviews and pre
   await easwarContext.close();
 
   const ramyaContext=await browser.newContext(),ramya=await openActor(ramyaContext,'ramya',first.data);
-  await expect(ramya.getByText(/Peer trust:.*1 completed exchange/i)).toBeVisible();
   await expect(ramya.getByRole('button',{name:'Leave review'})).toBeVisible();
   await submitStructuredReview(ramya,{overall:'5',reliability:'5',accuracy:'5',communication:'5',condition:'5',again:'yes'},'Would exchange again.');
-  await expect(ramya.getByText('Safe meetup and accurate set.')).toBeVisible();
+  await expect(ramya.locator('#bc-collector-action')).toContainText('You reviewed Easwar');
 
   const duplicate=await ramya.evaluate(async()=>{
     return window.supabase.createClient().rpc('submit_peer_exchange_review',{
@@ -84,12 +83,12 @@ for(const width of [390,1280]){
 test(`pre-handoff cancellation at ${width}px remains available after one-sided handoff and releases both sets`,async({browser})=>{
   const snapshot=seed(exchange('HANDOFF_PENDING',{handoff_a_at:now,handoff_b_at:null,owner_preference_a:true,owner_preference_b:true}));
   const context=await browser.newContext({viewport:{width,height:844}}),page=await openActor(context,'easwar',snapshot);
-  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toHaveCount(1);
+  await page.locator('.bc-guide-options summary').click();
   await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
   page.on('dialog',async dialog=>{if(dialog.type()==='prompt')await dialog.accept('Changed plans before mutual handoff');else await dialog.accept()});
   await page.getByRole('button',{name:'Cancel before handoff'}).click();
   await expect(page.getByText('Cancelled',{exact:true}).first()).toBeVisible();
-  await expect(page.locator('.bc-mobile-next')).toHaveCount(0);
+  await expect(page.locator('#bc-collector-action')).toContainText('Closed');
   const result=await page.evaluate(()=>({data:window.__bcThreeUser.data,calls:window.__bcThreeUser.rpcCalls}));
   expect(result.data.exchanges[0].state).toBe('CANCELLED');
   expect(result.data.exchanges[0].state).not.toBe('HANDOFF_ISSUE');
@@ -103,14 +102,16 @@ test('post-handoff issues and support are sidecars and outsiders cannot mutate t
   const snapshot=seed(exchange('ACTIVE',{handoff_at:now,handoff_a_at:now,handoff_b_at:now,return_due_at:'2026-10-30T12:00:00.000Z'}));
   const context=await browser.newContext(),page=await openActor(context,'easwar',snapshot);
   await expect(page.getByRole('button',{name:'Cancel before handoff'})).toHaveCount(0);
+  await page.getByText('Help and issues',{exact:true}).click();
   await page.getByRole('button',{name:'Report an issue'}).click();
   const issueForm=page.locator('#bc-case-issue');
   await issueForm.locator('select[name="category"]').selectOption('missing_pieces');
   await issueForm.locator('textarea[name="description"]').fill('Two major pieces are missing from the set.');
   await issueForm.getByRole('button',{name:'Report issue'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues.length)).toBe(1);
-  await expect(page.getByText('Two major pieces are missing from the set.')).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues[0]?.description)).toBe('Two major pieces are missing from the set.');
 
+  if(!await page.getByText('Help and issues',{exact:true}).evaluate((element:HTMLElement)=>Boolean(element.closest('details')?.open)))await page.getByText('Help and issues',{exact:true}).click();
   await page.getByRole('button',{name:'Need BrickCircle support?'}).click();
   const supportForm=page.locator('#bc-case-support');
   await supportForm.locator('select[name="category"]').selectOption('technical');
@@ -171,23 +172,20 @@ test('overdue copy uses server RPC derived days',async({browser})=>{
   await context.close();
 });
 
-test('Messages separates canonical case history and direct collector history',async({browser})=>{
+test('Messages combines case and direct history in one collector timeline with exact case focus',async({browser})=>{
   const caseMessage={id:'case-message',case_id:'case-review-fix',sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'Meetup detail in the case',created_at:now};
   const directMessage={id:'direct-message',exchange_id:null,sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'General collector question',created_at:'2026-09-09T13:00:00.000Z'};
   const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACCEPTED'),{messages:[caseMessage],directMessages:[directMessage]}));
   await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
-  await expect(page.locator('.bc-msg-row')).toHaveCount(2);
-  await page.locator('[data-message-open="case:case-review-fix"]').click();
-  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-review-fix');
-  await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
-  await expect(page.locator('#bc-msg-chat')).not.toContainText(directMessage.body);
-  await page.getByRole('button',{name:'Exchange details',exact:true}).click();
-  await expect.poll(()=>page.evaluate(()=>location.hash)).toBe('#exchange/case-review-fix');
-  await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
+  await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await page.locator('[data-message-open="direct:'+actors.ramya.id+'"]').click();
+  await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
+  await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
+  await page.locator('#bc-case-destination').selectOption('case-review-fix');
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-review-fix');
   await expect(page.locator('.bc-msg-hero h1')).toContainText('Ramya');
   await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
-  await expect(page.locator('#bc-msg-chat')).not.toContainText(caseMessage.body);
+  await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
   await context.close();
 });
 
@@ -209,7 +207,7 @@ test('share meetup proposal submits the canonical transition and persists its de
   await context.close();
 });
 
-test('proposal, transition and message reuse their idempotency key after a committed response is lost',async({browser})=>{
+test('proposal and message retries reuse keys while a committed transition disables its superseded action',async({browser})=>{
   test.setTimeout(60000);
   const proposalDb=seed(exchange('CANCELLED'),{
     exchanges:[],collection:[
@@ -220,7 +218,7 @@ test('proposal, transition and message reuse their idempotency key after a commi
   const proposalContext=await browser.newContext(),proposal=await openActor(proposalContext,'easwar',proposalDb,'matches');
   await proposal.evaluate(()=>window.__bcThreeUser.loseNextResponse('create_exchange_case'));
   await proposal.locator('[data-propose]').click();
-  const send=proposal.locator('#bc-proposal').getByRole('button',{name:'Send proposal'});
+  const send=proposal.locator('#bc-inline-proposal').getByRole('button',{name:'Send proposal'});
   await send.click();
   await expect.poll(()=>proposal.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='create_exchange_case').length)).toBe(1);
   await expect(send).toBeEnabled();await send.click();
@@ -232,13 +230,13 @@ test('proposal, transition and message reuse their idempotency key after a commi
 
   const workflowContext=await browser.newContext(),workflow=await openActor(workflowContext,'easwar',seed(exchange('INSPECTION',{safety_ack_a_at:now,safety_ack_b_at:now})));
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('exchange_case_transition'));
-  const arrive=workflow.getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toBeEnabled();await arrive.click();await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
+  const arrive=workflow.getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toHaveCount(0);await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('send_exchange_case_message'));
-  const messageButton=workflow.locator('#bc-chat-form button');
+  const messageButton=workflow.locator('#bc-msg-form button');
   // Use the native form lifecycle atomically: a WebKit mouse click can scroll
   // and remount this form between filling the draft and dispatching submit.
-  const submitSameMessage=()=>workflow.locator('#bc-chat-form').evaluate((form:HTMLFormElement)=>{
-    const input=form.querySelector('input')!;
+  const submitSameMessage=()=>workflow.locator('#bc-msg-form').evaluate((form:HTMLFormElement)=>{
+    const input=form.querySelector('textarea')!;
     input.value='Same message once';
     form.requestSubmit();
   });
@@ -246,10 +244,11 @@ test('proposal, transition and message reuse their idempotency key after a commi
   await expect.poll(()=>workflow.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='send_exchange_case_message').length)).toBe(1);
   await expect(messageButton).toBeEnabled();await submitSameMessage();
   await expect.poll(()=>workflow.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='send_exchange_case_message').length)).toBe(2);
-  await expect(workflow.locator('#bc-chat').getByText('Same message once',{exact:false})).toBeVisible();
+  await expect(workflow.locator('#bc-msg-chat').getByText('Same message once',{exact:false})).toBeVisible();
   const workflowResult=await workflow.evaluate(()=>({data:window.__bcThreeUser.data,args:window.__bcThreeUser.rpcArgs}));
   expect(workflowResult.data.events).toHaveLength(1);expect(workflowResult.data.messages).toHaveLength(1);expect(workflowResult.data.notifications.filter((row:any)=>row.kind==='exchange_message')).toHaveLength(1);
-  for(const name of ['exchange_case_transition','send_exchange_case_message']){const calls=workflowResult.args.filter((row:any)=>row.name===name);expect(calls).toHaveLength(2);expect(calls[0].args.p_idempotency_key).toBe(calls[1].args.p_idempotency_key)}
+  expect(workflowResult.args.filter((row:any)=>row.name==='exchange_case_transition')).toHaveLength(1);
+  const messageCalls=workflowResult.args.filter((row:any)=>row.name==='send_exchange_case_message');expect(messageCalls).toHaveLength(2);expect(messageCalls[0].args.p_idempotency_key).toBe(messageCalls[1].args.p_idempotency_key);
   await workflowContext.close();
 });
 

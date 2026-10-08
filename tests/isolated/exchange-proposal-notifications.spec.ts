@@ -9,8 +9,8 @@ test('stored unread proposal appears on login and opens the exact request',async
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveText('1');
 
   await notice.getByRole('button',{name:'View proposal'}).click();
-  await expect(page).toHaveURL(/#exchange\/proposal-request-1$/);
-  await expect(page.locator('#bc-flow')).toContainText('Proposal pending');
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:proposal-request-1');
+  await expect(page.locator('#bc-collector-action')).toContainText('Proposal pending');
   await expect(page.locator('main')).toContainText('Ramya');
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveCount(0);
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.notifications[0].read_at)).not.toBeNull();
@@ -98,8 +98,8 @@ test('online recipient receives a live badge and clean proposal notification',as
   await expect(notification).toContainText('New exchange proposal');
   await expect(notification).toContainText('View proposal');
   await notification.click();
-  await expect(page).toHaveURL(/#exchange\/live-request-1$/);
-  await expect(page.locator('#bc-flow')).toContainText('Proposal pending');
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:live-request-1');
+  await expect(page.locator('#bc-collector-action')).toContainText('Proposal pending');
 });
 
 test('existing reciprocal-match login notice still appears when no proposal is unread',async({page})=>{

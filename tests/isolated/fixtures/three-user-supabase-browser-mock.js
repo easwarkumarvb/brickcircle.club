@@ -91,7 +91,7 @@ function visibleRows(table,query){
 }
 function chain(table){
   const query={filters:[],ins:[],mode:'select',patch:null,selected:false,
-    select(){query.selected=true;return query},eq(key,value){query.filters.push([key,value]);return query},in(key,values){query.ins.push([key,values]);return query},or(){return query},order(){return query},limit(){return query},range(){return query},is(key,value){query.filters.push([key,value]);return query},
+    select(){query.selected=true;return query},eq(key,value){query.filters.push([key,value]);return query},in(key,values){query.ins.push([key,values]);return query},or(value){query.orFilter=value;return query},order(key,options){if(key==='created_at')query.descending=options?.ascending===false;return query},limit(value){query.limitValue=value;return query},range(){return query},is(key,value){query.filters.push([key,value]);return query},
     update(patch){query.mode='update';query.patch=patch;return query},delete(){query.mode='delete';return query},
     upsert(patch){const profile=data.profiles.find(row=>row.id===patch.id);if(profile)Object.assign(profile,patch);else data.profiles.push({...patch,created_at:NOW});persist();return Promise.resolve({data:[patch],error:null})},
     insert(value){
@@ -108,6 +108,11 @@ function chain(table){
     then(resolve){
       const matches=row=>query.filters.every(([key,value])=>row[key]===value)&&query.ins.every(([key,values])=>values.includes(row[key]));
       let result=visibleRows(table,query);
+      if(query.mode==='select'&&query.limitValue&&['messages','exchange_case_messages','exchange_cases'].includes(table)){
+        const earlier=query.orFilter?.match(/created_at\.lt\.([^,)]+)/)?.[1],tie=query.orFilter?.match(/id\.lt\.([^,)]+)/)?.[1];
+        if(earlier)result=result.filter(row=>row.created_at<earlier||(row.created_at===earlier&&String(row.id)<tie));
+        result=result.sort((a,b)=>(query.descending?String(b.created_at).localeCompare(String(a.created_at)):String(a.created_at).localeCompare(String(b.created_at)))||String(b.id).localeCompare(String(a.id))).slice(0,query.limitValue);
+      }
       if(query.mode==='update'){
         const source=table==='collection_items'?data.collection:table==='wishlists'?data.wishlist:table==='notifications'?data.notifications:table==='profiles'?data.profiles:[];
         const changed=source.filter(matches);changed.forEach(row=>Object.assign(row,query.patch));persist();result=query.selected?changed.map(row=>({...row})):null;
