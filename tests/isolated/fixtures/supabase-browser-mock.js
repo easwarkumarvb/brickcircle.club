@@ -44,4 +44,6 @@ const passwordSignIn=db.auth.signInWithPassword;
 db.auth.signInWithPassword=async credentials=>{const result=await passwordSignIn(credentials);return {...result,data:{session:{user},user}}};
 db.auth.verifyOtp=async credentials=>{state.authCalls.push({method:'verifyOtp',credentials});signedOut=false;emitAuth(credentials.type==='recovery'?'PASSWORD_RECOVERY':'SIGNED_IN',{user});return {data:{session:{user},user},error:null}};
 db.auth.resend=async credentials=>{state.authCalls.push({method:'resend',credentials});return {data:{},error:null}};
+// Public initialization models the pinned SDK's successful PKCE URL transition.
+db.auth.initialize=async()=>{state.authCalls.push({method:'initialize'});const url=new URL(location.href);if(url.searchParams.has('code')){url.searchParams.delete('code');history.replaceState({},'',url.pathname+url.search+url.hash);signedOut=false;emitAuth('SIGNED_IN',{user})}return {error:null}};
 })();

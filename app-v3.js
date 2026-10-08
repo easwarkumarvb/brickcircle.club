@@ -12,6 +12,9 @@ async function resilientAuthLock(name,acquireTimeout,fn){
   catch(error){if(error?.name!=='AbortError')throw error;console.warn('BrickCircle recovered a stalled cross-tab auth lock.');return fn()}
   finally{clearTimeout(timer)}
 }
+// Capture callback intent before the SDK's constructor initialization can consume
+// its URL. This remains in memory only and is never analytics/log context.
+const initialAuthUrl=new URL(location.href);
 const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,lock:resilientAuthLock}});
 if(!db){document.body.innerHTML='<main style="padding:30px;font-family:system-ui">BrickCircle could not start. Please refresh. If the problem continues, email <a href="mailto:support@brickcircle.club">support@brickcircle.club</a>.</main>';return;}
 window.BC_SUPABASE=db;
@@ -366,7 +369,7 @@ function clearQueryParam(name){
   try{const u=new URL(location.href);u.searchParams.delete(name);const query=u.searchParams.toString();history.replaceState({},'',u.pathname+(query?'?'+query:'')+(u.hash||'#home'))}catch(_){ }
 }
 function cleanOAuthQuery(){
-  try{const u=new URL(location.href);['oauth','code','token_hash','type','error','error_code','error_description'].forEach(name=>u.searchParams.delete(name));const query=u.searchParams.toString();history.replaceState({},'',u.pathname+(query?'?'+query:'')+(u.hash||'#home'))}catch(_){ }
+  try{const u=new URL(location.href);['oauth','code','token_hash','type','error','error_code','error_description'].forEach(name=>u.searchParams.delete(name));const fragment=new URLSearchParams(u.hash.slice(1)),credentialHash=['access_token','refresh_token','provider_token','provider_refresh_token','error','error_code','error_description'].some(name=>fragment.has(name)),query=u.searchParams.toString();history.replaceState({},'',u.pathname+(query?'?'+query:'')+(credentialHash?'#home':u.hash||'#home'))}catch(_){ }
 }
 function cleanRecoveryUrl(){
   try{
@@ -464,7 +467,7 @@ function showAuth(){
   const google=S.providers.google!==false,apple=!!S.providers.apple;
   const o=modal(`<div class="bc-auth-shell"><div class="bc-auth-bricks top" aria-hidden="true"><i></i><i></i><i></i></div><div class="bc-auth-bricks bottom" aria-hidden="true"><i></i><i></i><i></i></div><div class="bc-modal-head bc-auth-head"><div><h2>Join BrickCircle</h2><p class="bc-auth-motto"><span>Buy Less.</span> Build More.</p><p class="bc-muted">Sign in to connect with local collectors, track your collection, and exchange iconic sets.</p></div><button class="bc-close" type="button" aria-label="Close sign-in" data-close>×</button></div><div class="bc-form"><button class="bc-auth-provider google" data-oauth="google" ${google?'':'disabled'}><svg class="bc-google-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path fill="#4285f4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z"/><path fill="#34a853" d="M24 44c5.5 0 10.1-1.8 13.5-4.5l-6.6-5.1c-1.8 1.2-4.1 1.9-6.9 1.9-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z"/><path fill="#fbbc05" d="M12.6 27.9a12 12 0 0 1 0-7.8v-5.3H5.8a20 20 0 0 0 0 18.4Z"/><path fill="#ea4335" d="M24 11.7c3 0 5.6 1 7.7 3l5.8-5.8A19.3 19.3 0 0 0 24 4 20 20 0 0 0 5.8 14.8l6.8 5.3c1.6-4.8 6.1-8.4 11.4-8.4Z"/></svg><span data-auth-label>Continue with Google</span><span class="bc-auth-arrow" aria-hidden="true">→</span></button>${apple?'<button class="bc-auth-provider apple" data-oauth="apple">Continue with Apple</button>':''}<p id="bc-auth-provider-error" class="bc-auth-error" data-auth-error="provider" role="alert" hidden></p><div class="bc-auth-sep">or use email</div><div class="bc-tabs"><button class="bc-tab active" data-auth-tab="signin" aria-pressed="true">Sign in</button><button class="bc-tab" data-auth-tab="signup" aria-pressed="false">Create account</button></div><div id="bc-auth-email"></div><p class="bc-auth-trust">Built for adult LEGO fans. Safe, local, collector-first.</p><div class="bc-small bc-auth-legal">By continuing, you agree to our <a href="/terms.html">Terms of Use</a> and acknowledge our <a href="/privacy.html">Privacy Policy</a>. Meet in safe public places and inspect sets before exchanging.</div></div></div>`);
   $('.bc-modal',o).classList.add('bc-auth-modal');
-  $('.bc-auth-head .bc-muted',o).textContent='Sign in to exchange LEGO sets with local collectors.';
+  $('.bc-auth-head .bc-muted',o).textContent='Exchange LEGO sets locally.';
   if(switchAuth)$('.bc-auth-head .bc-muted',o).textContent='Signed out on this device. Sign in with another email, or choose a Google account.';
   prepareAuthOverlay(o);
   const resume=document.createElement('button');resume.type='button';resume.className='bc-btn ghost bc-auth-code-entry';resume.textContent='I have a verification code';resume.dataset.haveCode='';$('#bc-auth-email',o).after(resume);resume.onclick=()=>renderVerificationEntry(o);
@@ -2121,7 +2124,25 @@ async function boot(){
   const signinIntent=location.hash==='#signin',verifyIntent=location.hash==='#verify',epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
   if(signinIntent)history.replaceState({},'',location.pathname+location.search+'#home');
   captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(!signinIntent&&parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();
-  const callback=new URLSearchParams(location.search),tokenHash=callback.get('token_hash'),callbackType=callback.get('type');
+  const callback=new URLSearchParams(initialAuthUrl.search),tokenHash=callback.get('token_hash'),callbackType=callback.get('type'),initialFragment=new URLSearchParams(initialAuthUrl.hash.slice(1)),sdkCallback=callback.has('code')||callback.has('error')||initialFragment.has('access_token')||initialFragment.has('error');
+  let callbackSession=null;
+  if(sdkCallback&&!tokenHash){
+    try{
+      callbackSession=await withTimeout(trackedAuthCall(async()=>{
+        // Public initialize() reuses initializePromise; it does not exchange the
+        // code twice. getSession() alone deliberately hides initialization errors.
+        const initialized=await db.auth.initialize();if(initialized.error)throw {code:'invalid_link'};
+        // In the pinned SDK a successful PKCE exchange consumes ?code. A missing
+        // verifier/unsupported callback leaves it untouched and may retain B.
+        if(callback.has('code')&&new URLSearchParams(location.search).has('code'))throw {code:'unsupported_link'};
+        const session=await db.auth.getSession(),checked=await db.auth.getUser(),user=checked.data?.user;
+        if(session.error||checked.error||!session.data?.session||!user?.email_confirmed_at||user.id!==session.data.session.user?.id)throw {code:'invalid_link'};
+        return session.data.session;
+      },true),10000);
+      if(!current())return;
+      if(initialFragment.get('type')==='recovery'||pendingAuthChange?.[0]==='PASSWORD_RECOVERY')pendingAuthChange=['PASSWORD_RECOVERY',callbackSession];
+    }catch(_){confirmationLinkFailed=true;cleanOAuthQuery();S.booted=true;pendingAuthChange=null;await signOut(true);return}
+  }
   if(tokenHash){
     cleanOAuthQuery();
     try{
@@ -2133,7 +2154,7 @@ async function boot(){
       if(!current())return;pendingAuthChange=[callbackType==='recovery'?'PASSWORD_RECOVERY':'SIGNED_IN',result.data.session];
     }catch(_){confirmationLinkFailed=true;S.booted=true;pendingAuthChange=null;await signOut(true);return}
   }
-  const sessionResult=await settledTimeout(db.auth.getSession(),8000);if(!current())return;
+  const sessionResult=callbackSession?{data:{session:callbackSession},error:null}:await settledTimeout(db.auth.getSession(),8000);if(!current())return;
   S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';
   // Consume the fixed admin handoff before any retained-account hydration or UI.
   // Mark boot complete so the confirmed logout's next interactive login can run.

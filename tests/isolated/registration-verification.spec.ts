@@ -33,6 +33,7 @@ async function verify(page:Page,code='01234567'){await page.getByLabel('Verifica
 for(const width of [320,390,1280])test(`signup retains premium accessible verification at ${width}px and confirms before onboarding`,async({page})=>{
   await page.setViewportSize({width,height:844});await setup(page);await signup(page);
   await expect(page.locator('.bc-auth-modal')).toContainText(email);await expect(page.getByLabel('Verification code',{exact:true})).toBeFocused();
+  expect(await page.locator('[data-have-code]').evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
   await expect(page.getByLabel('Verification code',{exact:true})).toHaveAttribute('type','text');await expect(page.getByLabel('Verification code',{exact:true})).toHaveAttribute('inputmode','numeric');await expect(page.getByLabel('Verification code',{exact:true})).toHaveAttribute('autocomplete','one-time-code');
   await expect(page.locator('[data-nav="profile"],#bc-onboard')).toHaveCount(0);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.evaluate(()=>{window.__bcIsolated.profile=null});await verify(page,'0 123 4567');
