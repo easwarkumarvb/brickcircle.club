@@ -153,6 +153,32 @@ test('uncertain delivery stays bound to original case and body after switching d
   await expect(input).toHaveValue('');
   expect(await page.evaluate(()=>{const messages=(window as any).__bcThreeUser.data.messages;return messages.filter((m:any)=>m.body==='First case uncertainty'||m.body==='Second case message').map((m:any)=>[m.case_id,m.body])})).toEqual([['guide-case','First case uncertainty'],['second-case','Second case message']]);
 });
+test('same-peer case switch removes stale meetup form and late completion preserves new case form and draft',async({page})=>{
+  await open(page,'easwar','ACCEPTED',{},'messages/case:guide-case',db=>{
+    db.exchanges.push({...db.exchanges[0],id:'second-case',state:'ACTIVE',handoff_at:stamp});
+  });
+  const message=page.locator('#bc-msg-form textarea');await message.fill('Case A draft');
+  await page.locator('[data-thread-case-action="propose_meetup"]').click();
+  const meetup=page.locator('#bc-case-meetup');await meetup.locator('[name="venue"]').fill('Public Library');await meetup.locator('[name="when"]').fill('2026-12-01T12:00');
+  await page.locator('#bc-case-destination').selectOption('guide-case');
+  await expect(meetup.locator('[name="venue"]')).toHaveValue('Public Library');
+  await page.evaluate(()=>{(window as any).__detachedMeetup=document.querySelector('#bc-case-meetup');const db=(window as any).BC_SUPABASE,original=db.rpc;db.rpc=(name:string,args:any)=>name==='exchange_case_transition'?new Promise(resolve=>{(window as any).__releaseMeetup=()=>original(name,args).then(resolve)}):original(name,args)});
+  await meetup.evaluate((form:HTMLFormElement)=>form.requestSubmit());
+  await expect(meetup.locator('button[type="submit"]')).toBeDisabled();
+  await page.locator('#bc-case-destination').selectOption('second-case');
+  await expect(meetup).toHaveCount(0);
+  await expect(message).toHaveValue('');await message.fill('Case B draft');
+  await page.getByText('Help and issues',{exact:true}).click();await page.locator('[data-thread-case-action="request_support"]').click();
+  const support=page.locator('#bc-case-support');await support.locator('[name="note"]').fill('Case B support draft');
+  await page.evaluate(()=>{(window as any).__detachedMeetup.requestSubmit()});
+  await page.evaluate(()=>(window as any).__releaseMeetup());
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges.find((e:any)=>e.id==='guide-case').state)).toBe('MEETUP_PLANNING');
+  await expect(support.locator('[name="note"]')).toHaveValue('Case B support draft');
+  await expect(message).toHaveValue('Case B draft');
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:second-case');
+  await page.locator('#bc-case-destination').selectOption('guide-case');
+  await expect(support).toHaveCount(0);await expect(message).toHaveValue('Case A draft');
+});
 test('case focus retains separate drafts and mobile width when switching in one collector thread',async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page);
   const input=page.locator('#bc-msg-form textarea');await input.fill('Draft for first case');
