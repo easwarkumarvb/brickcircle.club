@@ -34,7 +34,7 @@ jobs:
       - name: Install Chromium for regression suite
         run: npx playwright install --with-deps chromium
       - name: Guided conversation reconnect stability
-        run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts --project=chromium --grep "direct chat links" --retries=0 --repeat-each=3
+        run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts --project=chromium --grep "collector case selector focuses exact case, and reconnect preserves draft" --retries=0 --repeat-each=3
       - name: Chromium isolated functional suite
         run: npm run test:isolated:chromium
       - name: Upload Chromium admin screenshots
