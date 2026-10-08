@@ -85,3 +85,6 @@
 .bc-guide-actions summary:focus-visible,.bc-guide-checks summary:focus-visible,.bc-guide-journey summary:focus-visible{outline:3px solid #2257a6;outline-offset:3px}
 @media(max-width:760px){.bc-conversation-guide{padding:15px}.bc-guide-actions{display:grid;grid-template-columns:1fr}.bc-guide-actions>.bc-btn{width:100%}.bc-guide-meetup{font-size:14px}}
 .bc-account-menu{position:relative}.bc-account-menu summary{cursor:pointer;min-height:44px;display:flex;align-items:center;padding:8px;font-size:13px;font-weight:700;white-space:nowrap}.bc-account-menu>div{position:absolute;right:0;top:100%;min-width:190px;display:grid;gap:6px;padding:10px;background:#111827;border:1px solid #ffffff24;border-radius:12px;box-shadow:0 12px 24px #0005}.bc-account-menu button{min-height:44px;border:1px solid #ffffff24;border-radius:8px;background:transparent;color:#fff;padding:8px;text-align:left;white-space:nowrap}.bc-account-menu summary:focus-visible{outline:3px solid var(--bc-gold);border-radius:8px}
+.bc-verification-email{overflow-wrap:anywhere}
+#bc-email-verify [data-verification-status]:empty{display:none}
+#bc-email-verify .bc-field small{line-height:1.5}

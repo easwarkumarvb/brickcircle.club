@@ -12,6 +12,9 @@ async function resilientAuthLock(name,acquireTimeout,fn){
   catch(error){if(error?.name!=='AbortError')throw error;console.warn('BrickCircle recovered a stalled cross-tab auth lock.');return fn()}
   finally{clearTimeout(timer)}
 }
+// Capture callback intent before the SDK's constructor initialization can consume
+// its URL. This remains in memory only and is never analytics/log context.
+const initialAuthUrl=new URL(location.href);
 const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,lock:resilientAuthLock}});
 if(!db){document.body.innerHTML='<main style="padding:30px;font-family:system-ui">BrickCircle could not start. Please refresh. If the problem continues, email <a href="mailto:support@brickcircle.club">support@brickcircle.club</a>.</main>';return;}
 window.BC_SUPABASE=db;
@@ -248,10 +251,17 @@ let notificationRealtimeGeneration=0;
 let refreshGeneration=0;
 let authEpoch=0,logoutEpoch=0,logoutLocked=false,explicitLogout=false,switchAuth=false;
 const retiredAccounts=new Set(),authOperations=new Set();
+let verificationFlight=null,verificationGeneration=0,confirmationLinkFailed=false;
+const pendingEmailKey='bc_pending_verification';
+function pendingVerification(){try{const p=JSON.parse(sessionStorage.getItem(pendingEmailKey)||'null');if(p&&typeof p.email==='string'&&p.email.length<=254&&Number.isFinite(p.expires)&&p.expires>Date.now()&&p.expires<=Date.now()+3600000&&Number.isFinite(p.resendAt))return p}catch(_){}clearPendingVerification();return null}
+function clearPendingVerification(){try{sessionStorage.removeItem(pendingEmailKey)}catch(_){}}
+function savePendingVerification(email,resendAt=0){try{sessionStorage.setItem(pendingEmailKey,JSON.stringify({email,resendAt,expires:Date.now()+3600000}))}catch(_){}}
+function abandonVerification(){if(!verificationFlight||verificationFlight.abandoned)return false;verificationFlight.abandoned=true;signOut(true);return true}
 const localLogout=window.bcCreateLocalLogout(db.auth);
 function beginAuthOperation(){let resolve;const settled=new Promise(done=>{resolve=done}),operation={epoch:logoutEpoch,settled,resolve};authOperations.add(operation);return operation}
 function endAuthOperation(operation){authOperations.delete(operation);operation.resolve()}
-async function trackedAuthCall(work){const operation=beginAuthOperation();try{return await work()}finally{endAuthOperation(operation)}}
+async function trackedAuthCall(work,verifying=false){const operation=beginAuthOperation();operation.verifying=verifying;try{return await work()}finally{endAuthOperation(operation)}}
+function verificationPending(){return verificationFlight||[...authOperations].some(operation=>operation.verifying)}
 function authOperationCurrent(operation){return operation.epoch===logoutEpoch&&!logoutLocked}
 function finishAuthOperation(operation,data){
   if(!authOperationCurrent(operation)){if(data?.session?.user)retiredAccounts.add(data.session.user.id);return false}
@@ -264,7 +274,7 @@ function rememberRoute(){const hash=location.hash||'#home';if(hash&&hash!=='#hom
 function isResumeWindow(){const now=Date.now();return document.hidden||now-lastHiddenAt<6000||now-lastVisibleAt<2500}
 async function recoverSession(){
   const epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked&&!explicitLogout;
-  if(!current())return null;
+  if(!current()||verificationPending())return null;
   try{const session=await db.auth.getSession();if(!current())return null;if(session?.data?.session?.user)return session.data.session}catch(_){}
   if(!current())return null;
   try{const refreshed=await db.auth.refreshSession?.();if(current()&&refreshed?.data?.session?.user)return refreshed.data.session}catch(_){}
@@ -311,7 +321,7 @@ function modal(html,wide=false){
   });
   applyA11y(o);controls()[0]?.focus();announceRender(o);return o;
 }
-function closeOverlay(){if(logoutLocked)return;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();if(opener?.isConnected)opener.focus()}
+function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();if(opener?.isConnected)opener.focus()}
 function drawer(html){
   if(logoutLocked){const detached=document.createElement('div');detached.innerHTML=`<aside class="bc-drawer">${html}</aside>`;return detached}
   document.getElementById('bc-drawer-overlay')?.remove();const o=document.createElement('div');o.className='bc-drawer-overlay';o.id='bc-drawer-overlay';o.innerHTML=`<aside class="bc-drawer">${html}</aside>`;document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)o.remove()});applyA11y(o);announceRender(o);return o;
@@ -359,7 +369,7 @@ function clearQueryParam(name){
   try{const u=new URL(location.href);u.searchParams.delete(name);const query=u.searchParams.toString();history.replaceState({},'',u.pathname+(query?'?'+query:'')+(u.hash||'#home'))}catch(_){ }
 }
 function cleanOAuthQuery(){
-  try{const u=new URL(location.href);['oauth','code','error','error_code','error_description'].forEach(name=>u.searchParams.delete(name));const query=u.searchParams.toString();history.replaceState({},'',u.pathname+(query?'?'+query:'')+(u.hash||'#home'))}catch(_){ }
+  try{const u=new URL(location.href);['oauth','code','token_hash','type','error','error_code','error_description'].forEach(name=>u.searchParams.delete(name));const fragment=new URLSearchParams(u.hash.slice(1)),credentialHash=['access_token','refresh_token','provider_token','provider_refresh_token','error','error_code','error_description'].some(name=>fragment.has(name)),query=u.searchParams.toString();history.replaceState({},'',u.pathname+(query?'?'+query:'')+(credentialHash?'#home':u.hash||'#home'))}catch(_){ }
 }
 function cleanRecoveryUrl(){
   try{
@@ -422,6 +432,7 @@ async function providerSettings(){
   try{const r=await fetch(`${SUPABASE_URL}/auth/v1/settings`,{headers:{apikey:SUPABASE_KEY}});if(r.ok)S.providers=(await r.json())?.external||S.providers}catch(_){ }
 }
 async function oauth(provider,button){
+  if(abandonVerification())return;
   const epoch=logoutEpoch;if(logoutLocked)return;
   const original=button?Array.from(button.childNodes,node=>node.cloneNode(true)):[],label=button?.querySelector('[data-auth-label]');clearAuthError(button?.closest('.bc-auth-modal'),'provider');if(button){button.disabled=true;button.setAttribute('aria-busy','true');if(label)label.textContent=`Opening ${provider==='google'?'Google':provider}…`;else button.textContent=`Opening ${provider==='google'?'Google':provider}…`}
   try{
@@ -452,15 +463,19 @@ function prepareAuthOverlay(o){
 }
 document.addEventListener('click',event=>{const button=event.target.closest?.('[data-auth]');if(!button||button.closest('#bc-overlay'))return;event.preventDefault();event.stopImmediatePropagation();showAuth()},true);
 function showAuth(){
-  if(logoutLocked)return;
+  if(logoutLocked||abandonVerification())return;
   const google=S.providers.google!==false,apple=!!S.providers.apple;
   const o=modal(`<div class="bc-auth-shell"><div class="bc-auth-bricks top" aria-hidden="true"><i></i><i></i><i></i></div><div class="bc-auth-bricks bottom" aria-hidden="true"><i></i><i></i><i></i></div><div class="bc-modal-head bc-auth-head"><div><h2>Join BrickCircle</h2><p class="bc-auth-motto"><span>Buy Less.</span> Build More.</p><p class="bc-muted">Sign in to connect with local collectors, track your collection, and exchange iconic sets.</p></div><button class="bc-close" type="button" aria-label="Close sign-in" data-close>×</button></div><div class="bc-form"><button class="bc-auth-provider google" data-oauth="google" ${google?'':'disabled'}><svg class="bc-google-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path fill="#4285f4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z"/><path fill="#34a853" d="M24 44c5.5 0 10.1-1.8 13.5-4.5l-6.6-5.1c-1.8 1.2-4.1 1.9-6.9 1.9-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z"/><path fill="#fbbc05" d="M12.6 27.9a12 12 0 0 1 0-7.8v-5.3H5.8a20 20 0 0 0 0 18.4Z"/><path fill="#ea4335" d="M24 11.7c3 0 5.6 1 7.7 3l5.8-5.8A19.3 19.3 0 0 0 24 4 20 20 0 0 0 5.8 14.8l6.8 5.3c1.6-4.8 6.1-8.4 11.4-8.4Z"/></svg><span data-auth-label>Continue with Google</span><span class="bc-auth-arrow" aria-hidden="true">→</span></button>${apple?'<button class="bc-auth-provider apple" data-oauth="apple">Continue with Apple</button>':''}<p id="bc-auth-provider-error" class="bc-auth-error" data-auth-error="provider" role="alert" hidden></p><div class="bc-auth-sep">or use email</div><div class="bc-tabs"><button class="bc-tab active" data-auth-tab="signin" aria-pressed="true">Sign in</button><button class="bc-tab" data-auth-tab="signup" aria-pressed="false">Create account</button></div><div id="bc-auth-email"></div><p class="bc-auth-trust">Built for adult LEGO fans. Safe, local, collector-first.</p><div class="bc-small bc-auth-legal">By continuing, you agree to our <a href="/terms.html">Terms of Use</a> and acknowledge our <a href="/privacy.html">Privacy Policy</a>. Meet in safe public places and inspect sets before exchanging.</div></div></div>`);
   $('.bc-modal',o).classList.add('bc-auth-modal');
+  $('.bc-auth-head .bc-muted',o).textContent='Exchange LEGO sets locally.';
   if(switchAuth)$('.bc-auth-head .bc-muted',o).textContent='Signed out on this device. Sign in with another email, or choose a Google account.';
   prepareAuthOverlay(o);
-  $('[data-close]',o).onclick=closeOverlay;$$('[data-oauth]',o).forEach(b=>b.onclick=()=>oauth(b.dataset.oauth,b));$$('[data-auth-tab]',o).forEach(b=>b.onclick=()=>{const mode=b.dataset.authTab;$$('[data-auth-tab]',o).forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-pressed',String(x===b))});renderEmailAuth(mode,o)});renderEmailAuth('signin',o);track('auth_opened');
+  const resume=document.createElement('button');resume.type='button';resume.className='bc-btn ghost bc-auth-code-entry';resume.textContent='I have a verification code';resume.dataset.haveCode='';$('#bc-auth-email',o).after(resume);resume.onclick=()=>renderVerificationEntry(o);
+  $('[data-close]',o).onclick=closeOverlay;$$('[data-oauth]',o).forEach(b=>b.onclick=()=>oauth(b.dataset.oauth,b));$$('[data-auth-tab]',o).forEach(b=>b.onclick=()=>{const mode=b.dataset.authTab;$$('[data-auth-tab]',o).forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-pressed',String(x===b))});renderEmailAuth(mode,o)});const pending=pendingVerification();if(pending)renderVerification(pending.email,o,pending.resendAt);else renderEmailAuth('signin',o);track('auth_opened');
+  if(confirmationLinkFailed){confirmationLinkFailed=false;const notice=document.createElement('p');notice.className='bc-auth-error';notice.setAttribute('role','alert');notice.textContent='This confirmation link is invalid or expired. Use “I have a verification code” to enter your email and request a new code.';$('#bc-auth-email',o).before(notice)}
 }
 function renderEmailAuth(mode,o=document){
+  if(logoutLocked||abandonVerification())return;verificationGeneration++;
   const host=$('#bc-auth-email',o);if(!host)return;
   host.innerHTML=`<form class="bc-form" id="bc-email-${mode}">${mode==='signup'?authField('name','Collector name',mode):''}${authField('email','Email',mode)}${authField('password','Password',mode)}${mode==='signup'?`<label class="bc-consent"><input name="adult_confirmation" type="checkbox" required><span>${esc(ADULT_ATTESTATION)}</span></label>`:''}<p id="bc-auth-email-error" class="bc-auth-error" data-auth-error="email" role="alert" hidden></p><button class="bc-btn primary bc-auth-submit" type="submit">${authAction(mode==='signin'?'Sign in':'Create account')}</button>${mode==='signin'?'<button class="bc-btn ghost" type="button" data-forgot>Forgot password?</button>':''}</form>`;
   applyA11y(host);
@@ -471,20 +486,69 @@ function renderEmailAuth(mode,o=document){
     e.preventDefault();if(logoutLocked||btnBusy(signin))return;
     const operation=beginAuthOperation(),f=new FormData(signin),btn=$('button[type="submit"]',signin);
     clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Signing in…';
-    try{const {data,error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});if(error)throw error;if(!finishAuthOperation(operation,data))return;switchAuth=false;closeOverlay()}
-    catch(error){if(authOperationCurrent(operation))authError(host,'email',error,'Could not sign in. Please try again.')}
+    try{const {data,error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});if(error)throw error;if(!finishAuthOperation(operation,data))return;clearPendingVerification();switchAuth=false;closeOverlay()}
+    catch(error){if(authOperationCurrent(operation)&&signin.isConnected){if(error?.code==='email_not_confirmed')renderVerification(String(f.get('email')),o);else authError(host,'email',error,'Could not sign in. Please try again.')}}
     finally{endAuthOperation(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Sign in'}
   };
   $('[data-forgot]',host)?.addEventListener('click',async()=>{const epoch=logoutEpoch;if(logoutLocked)return;const email=prompt('Enter your BrickCircle email');if(!email)return;try{const {error}=await trackedAuthCall(()=>db.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/v2.html#profile`}));if(epoch===logoutEpoch&&!logoutLocked)toast(error?error.message:'Password reset email sent.')}catch(error){if(epoch===logoutEpoch&&!logoutLocked)authError(host,'email',error,'Could not request a password reset.')}});
   const signup=$('#bc-email-signup',host);if(signup)signup.onsubmit=async e=>{
     e.preventDefault();if(logoutLocked||btnBusy(signup))return;const f=new FormData(signup);if(f.get('adult_confirmation')!=='on')return toast('Please confirm that you are at least 18 years old.');
     const operation=beginAuthOperation(),btn=$('button[type="submit"]',signup);clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Creating account…';
-    try{const {data,error}=await db.auth.signUp({email:String(f.get('email')),password:String(f.get('password')),options:{data:{full_name:String(f.get('name')),adult_confirmation_version:ADULT_CONFIRMATION_VERSION,adult_attestation:ADULT_ATTESTATION},emailRedirectTo:`${location.origin}/v2.html`}});if(error)throw error;if(!finishAuthOperation(operation,data))return;closeOverlay();toast(data.session?'Account created.':'Account created — check your email to confirm.')}
+    try{const {data,error}=await db.auth.signUp({email:String(f.get('email')),password:String(f.get('password')),options:{data:{full_name:String(f.get('name')),adult_confirmation_version:ADULT_CONFIRMATION_VERSION,adult_attestation:ADULT_ATTESTATION},emailRedirectTo:`${location.origin}/v2.html`}});if(error)throw error;if(!authOperationCurrent(operation)||!signup.isConnected)return;if(!data.session){renderVerification(String(f.get('email')),o,Date.now()+60000);return}if(!finishAuthOperation(operation,data))return;clearPendingVerification();closeOverlay();toast('Account created.')}
     catch(error){if(authOperationCurrent(operation))authError(host,'email',error,'Could not create your account. Please try again.')}
     finally{endAuthOperation(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Create account'}
   };
 }
 function btnBusy(form){return !!$('button[type="submit"]',form)?.disabled}
+function verificationError(host,error){
+  const code=error?.code,status=error?.status;
+  const message=code==='otp_expired'?'This code is invalid or expired. Retry or request a new code.':status===429||/rate_limit/.test(code||'')?'Too many attempts. Please wait before retrying.':code==='invalid_code'?'This code is invalid. Check the email and retry.':'Could not verify your email. Check your connection and retry.';
+  const region=$('[data-verification-error]',host);region.textContent=message;region.hidden=false;
+}
+function retryAfterSeconds(error){const raw=error?.retryAfter??error?.retry_after??error?.headers?.get?.('retry-after');if(raw==null)return 60;const seconds=Number(raw);return Number.isFinite(seconds)?Math.max(60,seconds):Math.max(60,(Date.parse(raw)-Date.now())/1000||60)}
+function renderVerificationEntry(o){
+  if(logoutLocked||abandonVerification())return;verificationGeneration++;const host=$('#bc-auth-email',o);host.innerHTML=`<form class="bc-form" id="bc-verification-entry"><h3>Verify email</h3><p>Enter the email used to create your account. No password needed; this does not send an email.</p>${authField('email','Email','verify')}<button class="bc-btn primary" type="submit">Continue with code</button><button class="bc-btn ghost" type="button" data-back-signin>Back to sign in</button></form>`;
+  $('[data-back-signin]',host).onclick=()=>{clearPendingVerification();renderEmailAuth('signin',o)};
+  $('form',host).onsubmit=e=>{e.preventDefault();renderVerification($('[name="email"]',host).value,o)};$('[name="email"]',host).focus();
+}
+function renderVerification(email,o,resendAt=0){
+  if(logoutLocked||abandonVerification())return;const host=$('#bc-auth-email',o),generation=++verificationGeneration;savePendingVerification(email,resendAt);
+  host.innerHTML=`<form class="bc-form" id="bc-email-verify" novalidate><h3>Verify email</h3><p>Verify <strong class="bc-verification-email">${esc(email)}</strong>.</p><div class="bc-field"><label for="bc-verification-code">Verification code</label><input class="bc-input" id="bc-verification-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" aria-describedby="bc-verification-help bc-verification-error" required><small id="bc-verification-help">Enter the code exactly as shown in your email.</small></div><p id="bc-verification-error" class="bc-auth-error" data-verification-error role="alert" hidden></p><p data-verification-status role="status" aria-live="polite"></p><button class="bc-btn primary" type="submit">Verify email</button><button class="bc-btn ghost" type="button" data-resend>Resend code</button><button class="bc-btn ghost" type="button" data-change-email>Change email</button><button class="bc-btn ghost" type="button" data-back-signin>Back to sign in</button></form>`;
+  const form=$('form',host),input=$('[name="code"]',host),verify=$('[type="submit"]',host),resend=$('[data-resend]',host),status=$('[data-verification-status]',host),errorRegion=$('[data-verification-error]',host);let busy=false;
+  const current=()=>generation===verificationGeneration&&form.isConnected&&!logoutLocked;
+  input.oninput=()=>{input.removeAttribute('aria-invalid');errorRegion.hidden=true;errorRegion.textContent=''};
+  input.onpaste=e=>{e.preventDefault();const text=e.clipboardData.getData('text').replace(/\s/g,'');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.dispatchEvent(new Event('input',{bubbles:true}))};
+  const tick=()=>{if(!current()){clearInterval(timer);return}const seconds=Math.max(0,Math.ceil((resendAt-Date.now())/1000));resend.disabled=busy||seconds>0;resend.textContent=seconds?`Resend code in ${seconds}s`:'Resend code'};
+  const timer=setInterval(tick,1000);tick();const cleanup=o.bcAuthCleanup;o.bcAuthCleanup=()=>{clearInterval(timer);cleanup?.()};
+  const back=change=>{clearPendingVerification();if(abandonVerification())return;change?renderVerificationEntry(o):renderEmailAuth('signin',o)};$('[data-change-email]',host).onclick=()=>back(true);$('[data-back-signin]',host).onclick=()=>back(false);
+  async function request(kind){
+    if(busy||logoutLocked||verificationFlight)return;
+    const token=input.value.replace(/\s/g,'');if(kind==='verify'&&!/^\d{6,10}$/.test(token)){errorRegion.hidden=false;errorRegion.textContent='Enter a code containing 6–10 digits only.';input.setAttribute('aria-invalid','true');input.focus();return}if(kind==='resend'&&Date.now()<resendAt)return;
+    busy=true;verify.disabled=true;input.removeAttribute('aria-invalid');errorRegion.hidden=true;status.textContent=kind==='verify'?'Verifying email…':'Sending a new code…';
+    const operation=beginAuthOperation(),flight={operation,abandoned:false};operation.verifying=true;verificationFlight=flight;let expired=false,timer;
+    if(kind==='resend'){resendAt=Date.now()+60000;savePendingVerification(email,resendAt)}tick();
+    // The deadline bounds the UI wait, not the SDK lifetime. The operation stays
+    // in the logout drain until both verification and the server user check settle.
+    const work=Promise.resolve().then(async()=>{
+      const result=kind==='verify'?await db.auth.verifyOtp({email,token,type:'email'}):await db.auth.resend({type:'signup',email,options:{emailRedirectTo:`${location.origin}/v2.html`}});
+      if(kind==='verify')flight.sessionUser=result.data?.session?.user;
+      if(result.error)throw result.error;
+      if(kind==='verify'){
+        const checked=await db.auth.getUser(),user=checked.data?.user;
+        if(checked.error||!user?.email_confirmed_at||!result.data?.session||user.id!==result.data.session.user?.id||user.email?.toLowerCase()!==email.toLowerCase())throw {code:'unconfirmed_session'};
+      }
+      return result;
+    });
+    work.then(result=>{if((expired||flight.abandoned||!current())&&result.data?.session?.user)retiredAccounts.add(result.data.session.user.id)},()=>{if(flight.sessionUser)retiredAccounts.add(flight.sessionUser.id)}).finally(()=>{endAuthOperation(operation);if(verificationFlight===flight)verificationFlight=null;if(expired&&!logoutLocked)signOut(true)});
+    try{
+      const result=await Promise.race([work,new Promise((_,reject)=>{timer=setTimeout(()=>{expired=true;reject({code:'timeout'})},10000)})]);
+      if(!current()||flight.abandoned||!authOperationCurrent(operation))return;
+      if(kind==='verify'){verificationFlight=null;if(!finishAuthOperation(operation,result.data))return;clearPendingVerification();switchAuth=false;closeOverlay();toast('Email verified.')}else status.textContent='If this account is pending confirmation, a new code has been sent. Check your inbox and spam folder.';
+    }catch(error){if(!current()||flight.abandoned)return;if(kind==='resend'){resendAt=Date.now()+retryAfterSeconds(error)*1000;savePendingVerification(email,resendAt)}else input.setAttribute('aria-invalid','true');verificationError(host,error);status.textContent=expired?'Still waiting for the server. New login is blocked until this request settles; then confirm local sign out.':'';if(kind==='verify'&&!expired&&error?.code==='unconfirmed_session'){flight.abandoned=true;signOut(true)}}
+    finally{clearTimeout(timer);if(current()&&!expired){busy=false;verify.disabled=false;tick()}}
+  }
+  form.onsubmit=e=>{e.preventDefault();request('verify')};resend.onclick=()=>request('resend');input.focus();
+}
 function showPasswordRecovery(){
   if($('#bc-password-recovery'))return;
   const o=modal(`<div class="bc-modal-head"><div><h2>Set new password</h2><p class="bc-muted">Choose a new password for your BrickCircle account.</p></div></div><form class="bc-form" id="bc-password-recovery"><div class="bc-field"><label>New password</label><input class="bc-input" name="password" type="password" autocomplete="new-password" minlength="6" required></div><div class="bc-field"><label>Confirm password</label><input class="bc-input" name="confirm" type="password" autocomplete="new-password" minlength="6" required></div><button class="bc-btn primary" type="submit">Save new password</button></form>`);
@@ -517,7 +581,7 @@ const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error})
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
 const missingAuthSession=error=>error?.name==='AuthSessionMissingError'||/auth session missing/i.test(String(error?.message||''));
 async function refreshCore(){
-  if(logoutLocked||explicitLogout)return;
+  if(logoutLocked||explicitLogout||verificationPending())return;
   const generation=++refreshGeneration;
   const auth=await settledTimeout(db.auth.getUser()),authError=auth.error||null,user=auth.data?.user||null;
   if(generation!==refreshGeneration)return;
@@ -1303,6 +1367,7 @@ async function signOut(useAnother=false){
   if(localLogout.pending)return;
   // onclick passes a MouseEvent for plain sign-out, not switch intent.
   useAnother=useAnother===true;
+  clearPendingVerification();if(verificationFlight)verificationFlight.abandoned=true;
   const user=S.user;
   if(!logoutLocked){closeOverlay();authEpoch++;logoutEpoch++;refreshGeneration++;S.renderToken++;pendingAuthChange=null;explicitLogout=true;if(user?.id)retiredAccounts.add(user.id);try{window.bcWebPush?.pause?.()}catch(_){}}
   logoutLocked=true;
@@ -2056,10 +2121,40 @@ function setupPWA(){
 }
 
 async function boot(){
-  const signinIntent=location.hash==='#signin',epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
+  const signinIntent=location.hash==='#signin',verifyIntent=location.hash==='#verify',epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
   if(signinIntent)history.replaceState({},'',location.pathname+location.search+'#home');
   captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(!signinIntent&&parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();
-  const sessionResult=await settledTimeout(db.auth.getSession(),8000);if(!current())return;
+  const callback=new URLSearchParams(initialAuthUrl.search),tokenHash=callback.get('token_hash'),callbackType=callback.get('type'),initialFragment=new URLSearchParams(initialAuthUrl.hash.slice(1)),sdkCallback=callback.has('code')||callback.has('error')||initialFragment.has('access_token')||initialFragment.has('error');
+  let callbackSession=null;
+  if(sdkCallback&&!tokenHash){
+    try{
+      callbackSession=await withTimeout(trackedAuthCall(async()=>{
+        // Public initialize() reuses initializePromise; it does not exchange the
+        // code twice. getSession() alone deliberately hides initialization errors.
+        const initialized=await db.auth.initialize();if(initialized.error)throw {code:'invalid_link'};
+        // In the pinned SDK a successful PKCE exchange consumes ?code. A missing
+        // verifier/unsupported callback leaves it untouched and may retain B.
+        if(callback.has('code')&&new URLSearchParams(location.search).has('code'))throw {code:'unsupported_link'};
+        const session=await db.auth.getSession(),checked=await db.auth.getUser(),user=checked.data?.user;
+        if(session.error||checked.error||!session.data?.session||!user?.email_confirmed_at||user.id!==session.data.session.user?.id)throw {code:'invalid_link'};
+        return session.data.session;
+      },true),10000);
+      if(!current())return;
+      if(initialFragment.get('type')==='recovery'||pendingAuthChange?.[0]==='PASSWORD_RECOVERY')pendingAuthChange=['PASSWORD_RECOVERY',callbackSession];
+    }catch(_){confirmationLinkFailed=true;cleanOAuthQuery();S.booted=true;pendingAuthChange=null;await signOut(true);return}
+  }
+  if(tokenHash){
+    cleanOAuthQuery();
+    try{
+      if(!['email','recovery'].includes(callbackType))throw new Error('Unsupported confirmation link');
+      const result=await withTimeout(trackedAuthCall(async()=>{
+        const result=await db.auth.verifyOtp({token_hash:tokenHash,type:callbackType});if(result.error)throw {code:'invalid_link'};
+        const checked=await db.auth.getUser();if(checked.error||!checked.data?.user?.email_confirmed_at||!result.data?.session||checked.data.user.id!==result.data.session.user?.id)throw {code:'invalid_link'};return result;
+      },true),10000);
+      if(!current())return;pendingAuthChange=[callbackType==='recovery'?'PASSWORD_RECOVERY':'SIGNED_IN',result.data.session];
+    }catch(_){confirmationLinkFailed=true;S.booted=true;pendingAuthChange=null;await signOut(true);return}
+  }
+  const sessionResult=callbackSession?{data:{session:callbackSession},error:null}:await settledTimeout(db.auth.getSession(),8000);if(!current())return;
   S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';
   // Consume the fixed admin handoff before any retained-account hydration or UI.
   // Mark boot complete so the confirmed logout's next interactive login can run.
@@ -2070,9 +2165,19 @@ async function boot(){
     else{explicitLogout=true;shell();await renderRoute();switchAuth=true;showAuth();$('#bc-email-signin [name="email"]')?.focus()}
     return;
   }
+  if((callback.has('code')&&sessionResult.error)||callback.has('error')){confirmationLinkFailed=true;cleanOAuthQuery();S.booted=true;pendingAuthChange=null;await signOut(true);return}
+  // A bare legacy/code-entry handoff is not proof that an existing account was
+  // just confirmed. Drain the retained session before collecting the email.
+  if(verifyIntent&&!callback.has('code')&&!tokenHash){
+    S.booted=true;pendingAuthChange=null;
+    if(S.user||sessionResult.error)await signOut(true);else{shell();await renderRoute();showAuth()}
+    if(!logoutLocked)renderVerificationEntry(document.getElementById('bc-overlay'));return;
+  }
   if(S.user)await syncProviderAvatar();if(!current())return;
   if(S.user)await refreshCore();if(!current())return;
   S.booted=true;shell();await renderRoute();if(!current())return;
+  if(verifyIntent&&!S.user){showAuth();if(!pendingVerification())renderVerificationEntry(document.getElementById('bc-overlay'))}
+  if(pendingAuthChange?.[0]==='PASSWORD_RECOVERY'){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession);return}
   if(S.user&&!signinIntent){
     await claimReferralAndProvider();if(!current())return;await refreshCore();if(!current())return;
     shell();await renderRoute();if(!current())return;await startNotificationRealtime().catch(()=>{});if(!current())return;

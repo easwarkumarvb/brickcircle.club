@@ -1,16 +1,18 @@
 /* BrickCircle product-funnel analytics. Delegated instrumentation keeps product logic untouched. */
 (function(){
   'use strict';
+  if(/[?&#](?:code|token|token_hash|access_token|refresh_token|id_token|provider_token|provider_refresh_token|error_description)=/.test(location.href)) return;
   function track(name,params){ if(typeof window.bcTrack==='function') window.bcTrack(name,params||{}); }
   function text(el){ return ((el&&el.textContent)||'').replace(/\s+/g,' ').trim().toLowerCase(); }
-  function hashPage(){ return (location.hash||'#home').slice(1); }
+  function hashPage(){var raw=(location.hash||'#home').slice(1).split('/')[0];return ['home','browse','sets','matches','exchanges','exchange','profile','messages'].indexOf(raw)>=0?raw:'home';}
+  function safePage(){var p=hashPage();return {page_title:'BrickCircle - '+p,page_location:location.origin+'/#'+p,page_path:'/#'+p};}
 
   var lastPage=hashPage();
   function trackVirtualPage(){
     var p=hashPage();
     if(p===lastPage) return;
     lastPage=p;
-    track('page_view',{page_title:'BrickCircle - '+p,page_location:location.href,page_path:'/#'+p});
+    track('page_view',safePage());
     track('bc_section_view',{section:p});
   }
   addEventListener('hashchange',trackVirtualPage);
