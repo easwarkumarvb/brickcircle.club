@@ -16,8 +16,9 @@ async function robustSignOut(){
     const {error}=await db.auth.signOut({scope:'local'});
     if(error)throw error;
   }catch(err){
-    console.warn('BrickCircle sign-out retry',err);
-    try{await db.auth.signOut()}catch(_){ }
+    signingOut=false;btns.forEach(b=>{b.disabled=false;b.textContent='Sign out'});
+    alert('Sign out was not confirmed. Please retry.');
+    return;
   }
   clearBrickCircleSessionHints();
   try{await caches.delete('brickcircle-catalogue-v1')}catch(_){ }

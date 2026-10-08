@@ -290,7 +290,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
   .bc-logo img{width:42px!important;height:42px!important;border-radius:9px!important}
   .bc-brand-copy strong{display:none}
   .bc-brand-copy small{font-size:9px;max-width:98px;line-height:1.15}
-  .bc-desktop-nav,.bc-top-signout{display:none!important}
+  .bc-desktop-nav,.bc-top-actions>.bc-top-signout{display:none!important}
   .bc-top-actions{gap:4px!important;margin-left:auto!important}
   .bc-icon-btn,.bc-avatar-btn{width:40px!important;height:40px!important;min-width:40px!important}
   .bc-signin{min-height:40px!important;padding-inline:12px!important;font-size:12px!important}

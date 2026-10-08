@@ -246,17 +246,32 @@ let notificationChannel=null;
 let notificationPollTimer=null;
 let notificationRealtimeGeneration=0;
 let refreshGeneration=0;
+let authEpoch=0,logoutEpoch=0,logoutLocked=false,explicitLogout=false,switchAuth=false;
+const retiredAccounts=new Set(),authOperations=new Set();
+const localLogout=window.bcCreateLocalLogout(db.auth);
+function beginAuthOperation(){let resolve;const settled=new Promise(done=>{resolve=done}),operation={epoch:logoutEpoch,settled,resolve};authOperations.add(operation);return operation}
+function endAuthOperation(operation){authOperations.delete(operation);operation.resolve()}
+async function trackedAuthCall(work){const operation=beginAuthOperation();try{return await work()}finally{endAuthOperation(operation)}}
+function authOperationCurrent(operation){return operation.epoch===logoutEpoch&&!logoutLocked}
+function finishAuthOperation(operation,data){
+  if(!authOperationCurrent(operation)){if(data?.session?.user)retiredAccounts.add(data.session.user.id);return false}
+  if(data?.session?.user){retiredAccounts.delete(data.session.user.id);explicitLogout=false;handleAuthChange('SIGNED_IN',data.session,true)}
+  return true;
+}
 let a11ySequence=0;
 
 function rememberRoute(){const hash=location.hash||'#home';if(hash&&hash!=='#home')lastRoute=hash;try{sessionStorage.setItem('bc_last_route',hash)}catch(_){}}
 function isResumeWindow(){const now=Date.now();return document.hidden||now-lastHiddenAt<6000||now-lastVisibleAt<2500}
 async function recoverSession(){
-  try{const current=await db.auth.getSession();if(current?.data?.session?.user)return current.data.session}catch(_){}
-  try{const refreshed=await db.auth.refreshSession?.();if(refreshed?.data?.session?.user)return refreshed.data.session}catch(_){}
+  const epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked&&!explicitLogout;
+  if(!current())return null;
+  try{const session=await db.auth.getSession();if(!current())return null;if(session?.data?.session?.user)return session.data.session}catch(_){}
+  if(!current())return null;
+  try{const refreshed=await db.auth.refreshSession?.();if(current()&&refreshed?.data?.session?.user)return refreshed.data.session}catch(_){}
   return null;
 }
 async function validateResume(){
-  if(document.hidden)return;const session=await recoverSession();if(!session)return;
+  const epoch=authEpoch;if(document.hidden||logoutLocked||explicitLogout)return;const session=await recoverSession();if(!session||epoch!==authEpoch||logoutLocked||explicitLogout)return;
   const remembered=lastRoute||(()=>{try{return sessionStorage.getItem('bc_last_route')||''}catch(_){return ''}})();
   if((location.hash||'#home')==='#home'&&remembered&&remembered!=='#home')location.hash=remembered;
   await refreshRoute();
@@ -281,6 +296,9 @@ function fail(error,fallback='Something went wrong. Please try again.'){
   console.error(error);toast(error?.message||fallback);
 }
 function modal(html,wide=false){
+  // Delayed private actions may bind their detached markup, but never replace
+  // the blocking logout overlay or render it into the live document.
+  if(logoutLocked&&document.getElementById('bc-overlay')){const detached=document.createElement('div');detached.innerHTML=`<section class="bc-modal">${html}</section>`;return detached}
   closeOverlay();const opener=document.activeElement,o=document.createElement('div');o.className='bc-overlay';o.id='bc-overlay';o.innerHTML=`<section class="bc-modal ${wide?'wide':''}" role="dialog" aria-modal="true">${html}</section>`;o.bcReturnFocus=opener;document.body.appendChild(o);
   const controls=()=>$$('a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',o).filter(el=>el.getClientRects().length);
   o.addEventListener('click',e=>{if(e.target===o)closeOverlay()});
@@ -293,8 +311,9 @@ function modal(html,wide=false){
   });
   applyA11y(o);controls()[0]?.focus();announceRender(o);return o;
 }
-function closeOverlay(){const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();if(opener?.isConnected)opener.focus()}
+function closeOverlay(){if(logoutLocked)return;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();if(opener?.isConnected)opener.focus()}
 function drawer(html){
+  if(logoutLocked){const detached=document.createElement('div');detached.innerHTML=`<aside class="bc-drawer">${html}</aside>`;return detached}
   document.getElementById('bc-drawer-overlay')?.remove();const o=document.createElement('div');o.className='bc-drawer-overlay';o.id='bc-drawer-overlay';o.innerHTML=`<aside class="bc-drawer">${html}</aside>`;document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)o.remove()});applyA11y(o);announceRender(o);return o;
 }
 function loading(label='Loading BrickCircle…'){return `<div class="bc-loading"><div><div class="bc-spinner"></div>${esc(label)}</div></div>`}
@@ -358,18 +377,22 @@ function navigate(page,id=''){
 }
 
 function shell(){
+  if(logoutLocked)return;
   let root=document.getElementById('bc-root');if(!root){root=document.createElement('div');root.id='bc-root';document.body.appendChild(root)}
   const nav=desktopRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}">${l}</button>`).join('');
   const mobile=mobileRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}" aria-label="${l}" ${routeName()===p?'aria-current="page"':''}><span>${i}</span>${l}</button>`).join('');
   const unread=S.notifications.filter(n=>!n.read_at).length;
   const identity=S.profile||{};
   root.innerHTML=`<header class="bc-topbar"><div class="bc-topbar-in"><button class="bc-logo" data-nav="home" aria-label="BrickCircle home"><img src="/assets/brickcircle-logo.png?v=20260913-logo" alt=""><span class="bc-brand-copy"><strong>BrickCircle</strong><small>Buy Less. Build More.</small></span></button><nav class="bc-desktop-nav" aria-label="Primary navigation">${nav}</nav><div class="bc-top-actions">${S.user?`<button class="bc-icon-btn" data-open="inbox" aria-label="Messages">💬</button><button class="bc-icon-btn" data-open="notifications" aria-label="Notifications">🔔${unread?`<span class="bc-badge">${unread>9?'9+':unread}</span>`:''}</button>${S.user.id===OWNER_USER_ID?'<a class="bc-owner-admin-link" href="/admin.html" aria-label="Open BrickCircle admin dashboard">Admin</a>':''}<button class="bc-avatar-btn" data-nav="profile" aria-label="Profile and account controls">${avatar(identity)}</button><button class="bc-top-signout" type="button" data-signout-top>Log out</button>`:`<button class="bc-signin" data-auth>Join / Sign in</button>`}</div></div></header><main id="bc-main" class="bc-main">${loading()}</main><nav class="bc-mobile-nav" aria-label="Mobile navigation">${mobile}</nav>`;
+  const signout=$('[data-signout-top]',root);
+  if(signout){signout.textContent='Sign out';const menu=document.createElement('details');menu.className='bc-account-menu';menu.innerHTML='<summary aria-label="Account menu">Account ▾</summary><div><button type="button" data-switch-account>Use another account</button></div>';signout.before(menu);menu.lastElementChild.appendChild(signout)}
   wireAvatars(root);bindShell(root);
 }
 function bindShell(root=document){
   $$('[data-nav]',root).forEach(b=>b.onclick=()=>navigate(b.dataset.nav));
   $$('[data-auth]',root).forEach(b=>b.onclick=showAuth);
   $$('[data-signout-top]',root).forEach(b=>b.onclick=signOut);
+  $$('[data-switch-account]',root).forEach(b=>b.onclick=()=>signOut(true));
   $$('[data-open="notifications"]',root).forEach(b=>b.onclick=showNotifications);
   $$('[data-open="inbox"]',root).forEach(b=>b.onclick=()=>navigate('messages'));
 }
@@ -379,6 +402,12 @@ function syncNav(){
 function app(){return document.getElementById('bc-main')}
 function page(html){stopThreadSync();const a=app();if(!a)return;const warning=S.refreshWarning?`<div class="bc-notice warn bc-refresh-warning" role="status" style="margin-bottom:14px"><b>Some information could not refresh.</b> Your last confirmed view is still shown. <button class="bc-btn ghost" data-refresh-retry>Retry</button></div>`:'';a.innerHTML=`<div class="bc-page">${S.user&&routeName()!=='messages'?firstMatchCoach():''}${warning}${html}</div>`;wireImages(a);wireAvatars(a);applyA11y(a);bindCommon(a);syncNav();announceRender(a);window.scrollTo({top:0,behavior:'instant'})}
 function bindCommon(root=document){
+  if(routeName()==='profile'&&S.user&&!$('[data-account-card]',root)){
+    $('.bc-page-head [data-signout]',root)?.remove();
+    const existing=$$('h2',root).find(heading=>heading.textContent==='Account')?.closest('section'),card=existing||document.createElement('section');card.className='bc-card bc-profile-card';card.dataset.accountCard='';if(!existing){card.innerHTML=`<h2>Account</h2><p>${esc(S.user.email||'Signed in on this device')}</p>`;$('.bc-page',root)?.appendChild(card)}card.insertAdjacentHTML('beforeend','<div class="bc-head-actions"><button class="bc-btn" type="button" data-switch-account>Use another account</button><button class="bc-btn danger" type="button" data-signout>Sign out</button></div>');
+  }
+  $$('[data-switch-account]',root).forEach(b=>b.onclick=()=>signOut(true));
+  $$('[data-signout]',root).forEach(b=>b.onclick=()=>signOut());
   $$('[data-action="browse"]',root).forEach(b=>b.onclick=()=>navigate('browse'));
   $$('[data-action="sets"]',root).forEach(b=>b.onclick=()=>navigate('sets'));
   $$('[data-action="matches"]',root).forEach(b=>b.onclick=()=>navigate('matches'));
@@ -393,11 +422,12 @@ async function providerSettings(){
   try{const r=await fetch(`${SUPABASE_URL}/auth/v1/settings`,{headers:{apikey:SUPABASE_KEY}});if(r.ok)S.providers=(await r.json())?.external||S.providers}catch(_){ }
 }
 async function oauth(provider,button){
+  const epoch=logoutEpoch;if(logoutLocked)return;
   const original=button?Array.from(button.childNodes,node=>node.cloneNode(true)):[],label=button?.querySelector('[data-auth-label]');clearAuthError(button?.closest('.bc-auth-modal'),'provider');if(button){button.disabled=true;button.setAttribute('aria-busy','true');if(label)label.textContent=`Opening ${provider==='google'?'Google':provider}…`;else button.textContent=`Opening ${provider==='google'?'Google':provider}…`}
   try{
-    const {data,error}=await withTimeout(db.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true,...(provider==='google'?{queryParams:{prompt:'select_account'}}:{})}}),10000);
-    if(error)throw error;if(!data?.url)throw new Error(`${provider==='google'?'Google':provider} sign-in is temporarily unavailable. Please try again.`);location.assign(data.url);
-  }catch(error){authError(button?.closest('.bc-auth-modal'),'provider',error,`${provider} sign-in is unavailable.`);if(button){button.disabled=false;button.removeAttribute('aria-busy');button.replaceChildren(...original)}}
+    const {data,error}=await withTimeout(trackedAuthCall(()=>db.auth.signInWithOAuth({provider,options:{redirectTo:`${location.origin}/v2.html`,skipBrowserRedirect:true,...(provider==='google'?{queryParams:{prompt:'select_account'}}:{})}})),10000);
+    if(epoch!==logoutEpoch||logoutLocked)return;if(error)throw error;if(!data?.url)throw new Error(`${provider==='google'?'Google':provider} sign-in is temporarily unavailable. Please try again.`);location.assign(data.url);
+  }catch(error){if(epoch!==logoutEpoch||logoutLocked)return;authError(button?.closest('.bc-auth-modal'),'provider',error,`${provider} sign-in is unavailable.`);if(button){button.disabled=false;button.removeAttribute('aria-busy');button.replaceChildren(...original)}}
 }
 // Presentation helpers are deliberately limited to the canonical join/sign-in dialog.
 function authIcon(kind){
@@ -422,9 +452,11 @@ function prepareAuthOverlay(o){
 }
 document.addEventListener('click',event=>{const button=event.target.closest?.('[data-auth]');if(!button||button.closest('#bc-overlay'))return;event.preventDefault();event.stopImmediatePropagation();showAuth()},true);
 function showAuth(){
+  if(logoutLocked)return;
   const google=S.providers.google!==false,apple=!!S.providers.apple;
   const o=modal(`<div class="bc-auth-shell"><div class="bc-auth-bricks top" aria-hidden="true"><i></i><i></i><i></i></div><div class="bc-auth-bricks bottom" aria-hidden="true"><i></i><i></i><i></i></div><div class="bc-modal-head bc-auth-head"><div><h2>Join BrickCircle</h2><p class="bc-auth-motto"><span>Buy Less.</span> Build More.</p><p class="bc-muted">Sign in to connect with local collectors, track your collection, and exchange iconic sets.</p></div><button class="bc-close" type="button" aria-label="Close sign-in" data-close>×</button></div><div class="bc-form"><button class="bc-auth-provider google" data-oauth="google" ${google?'':'disabled'}><svg class="bc-google-mark" viewBox="0 0 48 48" aria-hidden="true" focusable="false"><path fill="#4285f4" d="M43.6 24.5c0-1.4-.1-2.8-.4-4.1H24v7.8h11a9.4 9.4 0 0 1-4.1 6.2v5.1h6.6c3.9-3.6 6.1-8.8 6.1-15Z"/><path fill="#34a853" d="M24 44c5.5 0 10.1-1.8 13.5-4.5l-6.6-5.1c-1.8 1.2-4.1 1.9-6.9 1.9-5.3 0-9.8-3.6-11.4-8.4H5.8v5.3A20 20 0 0 0 24 44Z"/><path fill="#fbbc05" d="M12.6 27.9a12 12 0 0 1 0-7.8v-5.3H5.8a20 20 0 0 0 0 18.4Z"/><path fill="#ea4335" d="M24 11.7c3 0 5.6 1 7.7 3l5.8-5.8A19.3 19.3 0 0 0 24 4 20 20 0 0 0 5.8 14.8l6.8 5.3c1.6-4.8 6.1-8.4 11.4-8.4Z"/></svg><span data-auth-label>Continue with Google</span><span class="bc-auth-arrow" aria-hidden="true">→</span></button>${apple?'<button class="bc-auth-provider apple" data-oauth="apple">Continue with Apple</button>':''}<p id="bc-auth-provider-error" class="bc-auth-error" data-auth-error="provider" role="alert" hidden></p><div class="bc-auth-sep">or use email</div><div class="bc-tabs"><button class="bc-tab active" data-auth-tab="signin" aria-pressed="true">Sign in</button><button class="bc-tab" data-auth-tab="signup" aria-pressed="false">Create account</button></div><div id="bc-auth-email"></div><p class="bc-auth-trust">Built for adult LEGO fans. Safe, local, collector-first.</p><div class="bc-small bc-auth-legal">By continuing, you agree to our <a href="/terms.html">Terms of Use</a> and acknowledge our <a href="/privacy.html">Privacy Policy</a>. Meet in safe public places and inspect sets before exchanging.</div></div></div>`);
   $('.bc-modal',o).classList.add('bc-auth-modal');
+  if(switchAuth)$('.bc-auth-head .bc-muted',o).textContent='Signed out on this device. Sign in with another email, or choose a Google account.';
   prepareAuthOverlay(o);
   $('[data-close]',o).onclick=closeOverlay;$$('[data-oauth]',o).forEach(b=>b.onclick=()=>oauth(b.dataset.oauth,b));$$('[data-auth-tab]',o).forEach(b=>b.onclick=()=>{const mode=b.dataset.authTab;$$('[data-auth-tab]',o).forEach(x=>{x.classList.toggle('active',x===b);x.setAttribute('aria-pressed',String(x===b))});renderEmailAuth(mode,o)});renderEmailAuth('signin',o);track('auth_opened');
 }
@@ -435,25 +467,41 @@ function renderEmailAuth(mode,o=document){
   $$('input[aria-labelledby]',host).forEach(input=>input.removeAttribute('aria-label'));
   $('[data-password-visibility]',host).onclick=e=>{const button=e.currentTarget,input=$('[name="password"]',host),visible=input.type==='password';input.type=visible?'text':'password';button.setAttribute('aria-pressed',String(visible));button.setAttribute('aria-label',visible?'Hide password':'Show password')};
   host.oninput=()=>clearAuthError(host,'email');
-  const signin=$('#bc-email-signin',host);if(signin)signin.onsubmit=async e=>{e.preventDefault();const f=new FormData(signin),btn=$('button[type="submit"]',signin);clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Signing in…';try{const {error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});if(error)throw error;closeOverlay()}catch(error){authError(host,'email',error,'Could not sign in. Please try again.')}finally{btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Sign in'}};
-  $('[data-forgot]',host)?.addEventListener('click',async()=>{const email=prompt('Enter your BrickCircle email');if(!email)return;const {error}=await db.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/v2.html#profile`});toast(error?error.message:'Password reset email sent.')});
-  const signup=$('#bc-email-signup',host);if(signup)signup.onsubmit=async e=>{e.preventDefault();const f=new FormData(signup);if(f.get('adult_confirmation')!=='on')return toast('Please confirm that you are at least 18 years old.');const btn=$('button[type="submit"]',signup);clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Creating account…';try{const {data,error}=await db.auth.signUp({email:String(f.get('email')),password:String(f.get('password')),options:{data:{full_name:String(f.get('name')),adult_confirmation_version:ADULT_CONFIRMATION_VERSION,adult_attestation:ADULT_ATTESTATION},emailRedirectTo:`${location.origin}/v2.html`}});if(error)throw error;closeOverlay();toast(data.session?'Account created.':'Account created — check your email to confirm.')}catch(error){authError(host,'email',error,'Could not create your account. Please try again.')}finally{btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Create account'}};
+  const signin=$('#bc-email-signin',host);if(signin)signin.onsubmit=async e=>{
+    e.preventDefault();if(logoutLocked||btnBusy(signin))return;
+    const operation=beginAuthOperation(),f=new FormData(signin),btn=$('button[type="submit"]',signin);
+    clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Signing in…';
+    try{const {data,error}=await db.auth.signInWithPassword({email:String(f.get('email')),password:String(f.get('password'))});if(error)throw error;if(!finishAuthOperation(operation,data))return;switchAuth=false;closeOverlay()}
+    catch(error){if(authOperationCurrent(operation))authError(host,'email',error,'Could not sign in. Please try again.')}
+    finally{endAuthOperation(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Sign in'}
+  };
+  $('[data-forgot]',host)?.addEventListener('click',async()=>{const epoch=logoutEpoch;if(logoutLocked)return;const email=prompt('Enter your BrickCircle email');if(!email)return;try{const {error}=await trackedAuthCall(()=>db.auth.resetPasswordForEmail(email,{redirectTo:`${location.origin}/v2.html#profile`}));if(epoch===logoutEpoch&&!logoutLocked)toast(error?error.message:'Password reset email sent.')}catch(error){if(epoch===logoutEpoch&&!logoutLocked)authError(host,'email',error,'Could not request a password reset.')}});
+  const signup=$('#bc-email-signup',host);if(signup)signup.onsubmit=async e=>{
+    e.preventDefault();if(logoutLocked||btnBusy(signup))return;const f=new FormData(signup);if(f.get('adult_confirmation')!=='on')return toast('Please confirm that you are at least 18 years old.');
+    const operation=beginAuthOperation(),btn=$('button[type="submit"]',signup);clearAuthError(host,'email');btn.disabled=true;btn.setAttribute('aria-busy','true');$('[data-auth-label]',btn).textContent='Creating account…';
+    try{const {data,error}=await db.auth.signUp({email:String(f.get('email')),password:String(f.get('password')),options:{data:{full_name:String(f.get('name')),adult_confirmation_version:ADULT_CONFIRMATION_VERSION,adult_attestation:ADULT_ATTESTATION},emailRedirectTo:`${location.origin}/v2.html`}});if(error)throw error;if(!finishAuthOperation(operation,data))return;closeOverlay();toast(data.session?'Account created.':'Account created — check your email to confirm.')}
+    catch(error){if(authOperationCurrent(operation))authError(host,'email',error,'Could not create your account. Please try again.')}
+    finally{endAuthOperation(operation);btn.disabled=false;btn.removeAttribute('aria-busy');$('[data-auth-label]',btn).textContent='Create account'}
+  };
 }
+function btnBusy(form){return !!$('button[type="submit"]',form)?.disabled}
 function showPasswordRecovery(){
   if($('#bc-password-recovery'))return;
   const o=modal(`<div class="bc-modal-head"><div><h2>Set new password</h2><p class="bc-muted">Choose a new password for your BrickCircle account.</p></div></div><form class="bc-form" id="bc-password-recovery"><div class="bc-field"><label>New password</label><input class="bc-input" name="password" type="password" autocomplete="new-password" minlength="6" required></div><div class="bc-field"><label>Confirm password</label><input class="bc-input" name="confirm" type="password" autocomplete="new-password" minlength="6" required></div><button class="bc-btn primary" type="submit">Save new password</button></form>`);
-  const form=$('#bc-password-recovery',o);form.onsubmit=async e=>{e.preventDefault();const f=new FormData(form),password=String(f.get('password')||''),confirmPassword=String(f.get('confirm')||''),btn=$('button[type="submit"]',form);if(password.length<6)return toast('Password must be at least 6 characters.');if(password!==confirmPassword)return toast('Passwords do not match.');btn.disabled=true;btn.textContent='Saving…';try{const {error}=await withTimeout(db.auth.updateUser({password}),10000);if(error)throw error;closeOverlay();cleanRecoveryUrl();await refreshCore();shell();navigate('profile');toast('Password updated. You are still signed in.')}catch(error){fail(error,'Could not update your password. Please try again.');btn.disabled=false;btn.textContent='Save new password'}};
+  const form=$('#bc-password-recovery',o);form.onsubmit=async e=>{e.preventDefault();const epoch=logoutEpoch;if(logoutLocked||btnBusy(form))return;const f=new FormData(form),password=String(f.get('password')||''),confirmPassword=String(f.get('confirm')||''),btn=$('button[type="submit"]',form);if(password.length<6)return toast('Password must be at least 6 characters.');if(password!==confirmPassword)return toast('Passwords do not match.');btn.disabled=true;btn.textContent='Saving…';try{const {error}=await withTimeout(trackedAuthCall(()=>db.auth.updateUser({password})),10000);if(epoch!==logoutEpoch||logoutLocked)return;if(error)throw error;closeOverlay();cleanRecoveryUrl();await refreshCore();if(epoch!==logoutEpoch||logoutLocked)return;shell();navigate('profile');toast('Password updated. You are still signed in.')}catch(error){if(epoch!==logoutEpoch||logoutLocked)return;fail(error,'Could not update your password. Please try again.');btn.disabled=false;btn.textContent='Save new password'}};
   $('[name="password"]',form)?.focus();
 }
 async function claimReferralAndProvider(){
-  if(!S.user)return;try{const code=localStorage.getItem('bc_pending_referral');if(code){await db.rpc('bc_claim_referral',{p_code:code});localStorage.removeItem('bc_pending_referral')}}catch(_){ }
+  const epoch=authEpoch;if(!S.user||logoutLocked)return;try{const code=localStorage.getItem('bc_pending_referral');if(code){await db.rpc('bc_claim_referral',{p_code:code});if(epoch!==authEpoch||logoutLocked)return;localStorage.removeItem('bc_pending_referral')}}catch(_){ }
+  if(epoch!==authEpoch||logoutLocked||!S.user)return;
   try{const provider=S.user.app_metadata?.provider||S.user.identities?.[0]?.provider||'unknown';await db.rpc('bc_record_auth_provider',{p_provider:provider})}catch(_){ }
 }
 function locationOptions(selected=''){return '<option value="">Select country</option>'+countries().map(c=>`<option value="${attr(c)}" ${c===selected?'selected':''}>${esc(c)}</option>`).join('')}
 function cityOptions(country,selected=''){const xs=LOC()[country]||[];return '<option value="">'+(country?'Select city':'Select country first')+'</option>'+xs.map(c=>`<option value="${attr(c)}" ${c===selected?'selected':''}>${esc(c)}</option>`).join('')}
 async function onboardingIfNeeded(){
-  if(!S.user)return false;let p=S.profile;
-  if(!p){await wait(250);const x=await db.from('profiles').select('*').eq('id',S.user.id).maybeSingle();p=S.profile=x.data||null}
+  const epoch=authEpoch,uid=S.user?.id,current=()=>epoch===authEpoch&&!logoutLocked&&S.user?.id===uid;
+  if(!uid||!current())return false;let p=S.profile;
+  if(!p){await wait(250);if(!current())return false;const x=await db.from('profiles').select('*').eq('id',uid).maybeSingle();if(!current())return false;p=S.profile=x.data||null}
   if(p?.display_name&&p?.country&&p?.city&&p?.adult_confirmed_at)return false;
   showOnboarding();return true;
 }
@@ -464,14 +512,16 @@ function showOnboarding(){
 }
 
 function clearProtectedState(){stopThreadSync();S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
-async function refreshMembership(){const result=await settledTimeout(db.rpc('bc_membership_status'));if(!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
+async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
 const missingAuthSession=error=>error?.name==='AuthSessionMissingError'||/auth session missing/i.test(String(error?.message||''));
 async function refreshCore(){
+  if(logoutLocked||explicitLogout)return;
   const generation=++refreshGeneration;
   const auth=await settledTimeout(db.auth.getUser()),authError=auth.error||null,user=auth.data?.user||null;
   if(generation!==refreshGeneration)return;
+  if(retiredAccounts.has(user?.id)){await signOut(true);return}
   if(authError){
     if(missingAuthSession(authError)){clearProtectedState();S.refreshWarning='';return}
     const status=Number(authError.status||0);
@@ -505,7 +555,7 @@ async function refreshCore(){
   window.bcWebPush?.consider(S.user,{meaningful:S.collection.length+S.wishlist.length>0});
   const people=new Set();S.exchanges.forEach(e=>{people.add(e.user_a);people.add(e.user_b)});S.matches.forEach(m=>people.add(m.match_user));S.messages.forEach(m=>{people.add(m.sender_id);people.add(m.recipient_id)});people.delete(uid);if(people.size){const result=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',[...people]));if(generation!==refreshGeneration||S.user?.id!==uid)return;if(result.error)S.refreshWarning=S.refreshWarning||result.error.message||'Collector details could not refresh.';else(result.data||[]).forEach(p=>S.profiles[p.id]=p)}
 }
-async function refreshRoute(){await refreshCore();shell();await renderRoute()}
+async function refreshRoute(){const epoch=authEpoch;if(logoutLocked||explicitLogout)return;await refreshCore();if(epoch!==authEpoch||logoutLocked)return;shell();await renderRoute()}
 
 function isProposalNotification(notification){return notification?.kind==='exchange_proposed'}
 function isReciprocalMatchNotification(notification){return notification?.kind==='reciprocal_match'&&notification?.entity_type==='reciprocal_match'}
@@ -567,6 +617,7 @@ function stopNotificationRealtime(){
   notificationChannel=null;
 }
 function applyNotificationChange(payload){
+  if(logoutLocked||explicitLogout)return;
   const row=payload?.new||payload?.old;if(!row?.id||!isCurrentNotificationRecipient(row))return;
   if(payload.eventType==='DELETE')S.notifications=S.notifications.filter(notification=>notification.id!==row.id);
   else{
@@ -577,17 +628,17 @@ function applyNotificationChange(payload){
   if(payload.eventType==='INSERT'&&!row.read_at){if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');else showLifecycleNotification(row)}
 }
 async function reconcileNotifications(){
-  const uid=S.user?.id;if(!uid)return;
+  const epoch=authEpoch,uid=S.user?.id;if(!uid||logoutLocked||explicitLogout)return;
   const result=await settledTimeout(db.from('notifications').select('*').eq('user_id',uid).order('created_at',{ascending:false}).limit(50));
-  if(result.error||S.user?.id!==uid)return;
+  if(result.error||S.user?.id!==uid||epoch!==authEpoch||logoutLocked)return;
   S.notifications=result.data||[];updateNotificationBadge();
   showNextUnreadNotificationNotice();
 }
 async function startNotificationRealtime(){
   stopNotificationRealtime();
-  if(!S.user?.id)return;
+  if(!S.user?.id||logoutLocked||explicitLogout)return;
   const userId=S.user.id,generation=notificationRealtimeGeneration;
-  const stillCurrent=()=>notificationRealtimeGeneration===generation&&S.user?.id===userId;
+  const epoch=authEpoch,stillCurrent=()=>epoch===authEpoch&&!logoutLocked&&!explicitLogout&&notificationRealtimeGeneration===generation&&S.user?.id===userId;
   const verified=await db.auth.getUser();
   if(verified.error||verified.data?.user?.id!==userId||!stillCurrent())return;
   notificationPollTimer=setInterval(()=>reconcileNotifications().catch(()=>{}),30000);
@@ -714,10 +765,12 @@ function otherId(e){return e.user_a===S.user?.id?e.user_b:e.user_a}
 function otherProfile(e){return S.profiles[otherId(e)]||{display_name:'Collector'} }
 function itemName(id){const i=S.items[id];return i?.lego_sets?.name||S.sets[i?.set_number]?.name||i?.set_number||'LEGO set'}
 async function hydrateExchangeItems(rows=S.exchanges,stillCurrent){
+  const epoch=authEpoch;const previousGuard=stillCurrent;stillCurrent=()=>epoch===authEpoch&&!logoutLocked&&(!previousGuard||previousGuard());
   const ids=[...new Set(rows.flatMap(e=>[e.item_a,e.item_b]).filter(Boolean))];if(!ids.length)return true;const missing=ids.filter(id=>!S.items[id]);if(missing.length){const {data}=await db.from('collection_items').select('*,lego_sets(*)').in('id',missing);if(stillCurrent&&!stillCurrent())return false;(data||[]).forEach(i=>{S.items[i.id]=i;if(i.lego_sets)S.sets[i.set_number]=i.lego_sets})}
   return true;
 }
 async function renderRoute(){
+  if(logoutLocked)return;
   const token=++S.renderToken;const r=routeName();syncNav();
   if(r!=='browse'&&r!=='catalogue')cancelCatalogueRequest();
   if(r==='home')return renderHome(token);
@@ -877,7 +930,7 @@ function replaceOwnerPhoto(item){
     await refreshCore();renderSetsBody();toast('Set photo updated.');
   }});
 }
-async function signedOwnerPhoto(path){if(!path)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
+async function signedOwnerPhoto(path){const epoch=authEpoch;if(!path||logoutLocked)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(epoch!==authEpoch||logoutLocked)return '';if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
 async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.owner_photo_path)continue;const image=root.querySelector(`[data-edit-set="${CSS.escape(row.id)}"]`)?.closest('.bc-myset')?.querySelector('.bc-myset-visual img');if(!image)continue;try{const url=await signedOwnerPhoto(row.owner_photo_path);if(url){image.src=url;image.removeAttribute('data-set-image');image.alt='Owner photo of assembled LEGO set'}}catch(_){}}}
 async function hydrateMatchPhotos(root){
   const cards=root.querySelectorAll('.bc-match');
@@ -991,15 +1044,21 @@ async function removeCollectionItem(id,name,button){
 }
 
 async function renderMatches(token){
+  const epoch=logoutEpoch,current=()=>epoch===logoutEpoch&&token===S.renderToken&&!logoutLocked;
   if(!S.user){showAuth();return navigate('home')}const rd=readiness();if(rd.score<40&&!S.matches.length){page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div></div>${empty('⇄','Finish your match setup','Add owned sets, mark exchangeable copies and build a wishlist. BrickCircle can only create a reciprocal match when both sides line up.','Continue setup','sets')}`);return}
-  const ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
+  const ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);if(!current())return;(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
+  if(!current())return;
   page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>showProposal(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
 }
 function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
-async function showProposal(i){const m=S.matches[i];if(!m)return;await loadPeerReputation(m.match_user);const p=S.profiles[m.match_user]||{};const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill green">Reciprocal match</span><h2 style="margin-top:8px">Propose an exchange with ${esc(p.display_name||'this collector')}</h2><p class="bc-muted">Meet locally. Inspect both sets. Exchange only when you are both happy.</p></div><button class="bc-close" data-close>×</button></div><div class="bc-proposal-steps" aria-label="Proposal steps"><span class="done"><b>1</b>Your set</span><span class="done"><b>2</b>Their set</span><span class="current"><b>3</b>Terms</span></div><div class="bc-proposal-pair"><div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><i>⇄</i><div><span>You request</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div>${reputationTrustContext(m.match_user)}<form class="bc-form" id="bc-proposal"><div class="bc-field"><label>How long would you like to exchange?</label><select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></div><div class="bc-field"><label>Optional message</label><textarea class="bc-textarea" name="message">Hi! We have a reciprocal BrickCircle match. Would you like to meet locally, inspect both sets and exchange them temporarily?</textarea></div><div class="bc-notice warn"><b>Meet. Inspect. Exchange.</b><br>The proposal creates one shared case for meetup, inspection, handoff, return and messages.</div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Not now</button><button type="submit" class="bc-btn primary">Send proposal</button></div></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-proposal',o).onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),btn=$('button[type="submit"]',e.currentTarget),days=Number(f.get('days')),message=String(f.get('message')||''),intent={offered_item_id:m.offered_item,requested_item_id:m.requested_item,duration_days:days,message};if(btn.disabled)return;btn.disabled=true;btn.textContent='Sending…';const {data,error}=await canonicalRpc('create_exchange_case',{p_offered_item_id:m.offered_item,p_requested_item_id:m.requested_item,p_duration_days:days,p_message:message},intent);if(error||data?.ok===false){fail(error||new Error('Could not send the proposal.'));btn.disabled=false;btn.textContent='Send proposal';return}closeOverlay();await refreshCore();navigate('exchange',data.case?.id);toast(data?.idempotent?'Your existing proposal is open.':'Exchange proposal sent.');track('exchange_proposal_sent',{match_user:m.match_user,duration_days:days})}}
+async function showProposal(i){
+  const epoch=logoutEpoch,uid=S.user?.id,m=S.matches[i],current=()=>epoch===logoutEpoch&&!logoutLocked&&S.user?.id===uid;
+  if(!m||!current())return;await loadPeerReputation(m.match_user);if(!current())return;
+  const p=S.profiles[m.match_user]||{};const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill green">Reciprocal match</span><h2 style="margin-top:8px">Propose an exchange with ${esc(p.display_name||'this collector')}</h2><p class="bc-muted">Meet locally. Inspect both sets. Exchange only when you are both happy.</p></div><button class="bc-close" data-close>×</button></div><div class="bc-proposal-steps" aria-label="Proposal steps"><span class="done"><b>1</b>Your set</span><span class="done"><b>2</b>Their set</span><span class="current"><b>3</b>Terms</span></div><div class="bc-proposal-pair"><div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><i>⇄</i><div><span>You request</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div>${reputationTrustContext(m.match_user)}<form class="bc-form" id="bc-proposal"><div class="bc-field"><label>How long would you like to exchange?</label><select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></div><div class="bc-field"><label>Optional message</label><textarea class="bc-textarea" name="message">Hi! We have a reciprocal BrickCircle match. Would you like to meet locally, inspect both sets and exchange them temporarily?</textarea></div><div class="bc-notice warn"><b>Meet. Inspect. Exchange.</b><br>The proposal creates one shared case for meetup, inspection, handoff, return and messages.</div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Not now</button><button type="submit" class="bc-btn primary">Send proposal</button></div></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-proposal',o).onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),btn=$('button[type="submit"]',e.currentTarget),days=Number(f.get('days')),message=String(f.get('message')||''),intent={offered_item_id:m.offered_item,requested_item_id:m.requested_item,duration_days:days,message};if(btn.disabled||!current())return;btn.disabled=true;btn.textContent='Sending…';const {data,error}=await canonicalRpc('create_exchange_case',{p_offered_item_id:m.offered_item,p_requested_item_id:m.requested_item,p_duration_days:days,p_message:message},intent);if(!current())return;if(error||data?.ok===false){fail(error||new Error('Could not send the proposal.'));btn.disabled=false;btn.textContent='Send proposal';return}closeOverlay();await refreshCore();if(!current())return;navigate('exchange',data.case?.id);toast(data?.idempotent?'Your existing proposal is open.':'Exchange proposal sent.');track('exchange_proposal_sent',{match_user:m.match_user,duration_days:days})}
+}
 
 async function renderExchanges(token,legacy='exchanges'){
-  if(!S.user){showAuth();return navigate('home')}await hydrateExchangeItems();if(legacy==='requests'||routeId())S.exchangeTab='requests';if(legacy==='returns'||legacy==='meetup')S.exchangeTab='active';
+  if(!S.user){showAuth();return navigate('home')}await hydrateExchangeItems();if(token!==S.renderToken||logoutLocked)return;if(legacy==='requests'||routeId())S.exchangeTab='requests';if(legacy==='returns'||legacy==='meetup')S.exchangeTab='active';
   const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();page(`<div class="bc-page-head"><div><h1>Exchanges</h1><p>Every exchange shows one clear stage and the next action to keep it moving.</p></div><div class="bc-head-actions">${active.length?pill(`${active.length} active`,'green'):''}${pending.length?pill(`${pending.length} needs attention`,'gold'):''}</div></div><div class="bc-tabs"><button class="bc-tab ${S.exchangeTab==='active'?'active':''}" data-extab="active">Active · ${active.length}</button><button class="bc-tab ${S.exchangeTab==='requests'?'active':''}" data-extab="requests">Needs action · ${pending.length}</button><button class="bc-tab ${S.exchangeTab==='completed'?'active':''}" data-extab="completed">Past · ${history.length}</button></div><div id="bc-exchange-body"></div>`);$$('[data-extab]').forEach(b=>b.onclick=()=>{S.exchangeTab=b.dataset.extab;renderExchangeBody()});renderExchangeBody();
 }
 function renderExchangeBody(){const host=$('#bc-exchange-body');if(!host)return;const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();if(S.exchangeTab==='requests'){host.innerHTML=pending.length?`<div class="bc-exchange-list">${pending.map(requestCard).join('')}</div>`:empty('📨','No pending proposals','New proposals you send or receive will appear here.','Find matches','matches');$$('[data-request-action]',host).forEach(b=>b.onclick=()=>respondRequest(b.dataset.requestId,b.dataset.requestAction))}else if(S.exchangeTab==='completed'){host.innerHTML=history.length?`<div class="bc-exchange-list">${history.map(exchangeCard).join('')}</div>`:empty('✓','No exchange history yet','Completed and closed exchange cases remain visible here.','Find a match','matches')}else{host.innerHTML=active.length?`<div class="bc-exchange-list">${active.map(exchangeCard).join('')}</div>`:empty('🤝','No active exchanges','Accept a reciprocal proposal and your meetup → handoff → return journey will live here.','See matches','matches')}$$('[data-exchange]',host).forEach(b=>b.onclick=()=>navigate('exchange',b.dataset.exchange));bindCommon(host)}
@@ -1041,10 +1100,12 @@ function exchangeStageLabel(e){return {PROPOSED:'Proposal pending',ACCEPTED:'Pla
 function exchangeCard(e){const p=otherProfile(e),a=itemName(e.item_a),b=itemName(e.item_b),stage=stageForExchange(e),closed=terminalCaseStates.has(e.state),next=caseNextAction(e);return `<article class="bc-card bc-ex-card"><div class="bc-ex-top"><div><span class="bc-pill ${e.state==='DISPUTED'||e.state==='HANDOFF_ISSUE'?'red':e.state==='COMPLETED'?'green':e.state==='ACTIVE'?'blue':'gold'}">${esc(exchangeStageLabel(e))}</span><h3>${esc(a)} ⇄ ${esc(b)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${e.duration_days} days${e.return_due_at?` · return ${fmtDate(e.return_due_at)}`:''}</div></div><button class="bc-btn ${closed?'':'primary'}" data-exchange="${e.id}">${closed?'View history':'Continue →'}</button></div>${closed?'':`<div class="bc-ex-next"><span>Next</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>`}<div class="bc-ex-progress">${[1,2,3,4,5].map(n=>`<i class="bc-ex-step ${n<stage?'done':n===stage?'current':''}"></i>`).join('')}</div><div class="bc-small">Proposal → Meetup → Handoff → Experience → Return</div></article>`}
 
 async function renderExchangeDetail(id,token){
-  if(!S.user){showAuth();return navigate('home')}if(!id)return navigate('exchanges');page(loading('Opening exchange…'));const {data:e,error}=await db.from('exchange_cases').select('*').eq('id',id).maybeSingle();if(error||!e)return page(empty('⚠️','Exchange unavailable','This exchange case could not be loaded. Please retry.','Back to exchanges','exchanges'));if(![e.user_a,e.user_b].includes(S.user.id))return navigate('exchanges');
+  const epoch=authEpoch,uid=S.user?.id,current=()=>epoch===authEpoch&&token===S.renderToken&&!logoutLocked&&S.user?.id===uid;
+  if(!uid){showAuth();return navigate('home')}if(!id)return navigate('exchanges');page(loading('Opening exchange…'));const {data:e,error}=await db.from('exchange_cases').select('*').eq('id',id).maybeSingle();if(!current())return;if(error||!e)return page(empty('⚠️','Exchange unavailable','This exchange case could not be loaded. Please retry.','Back to exchanges','exchanges'));if(![e.user_a,e.user_b].includes(uid))return navigate('exchanges');
   await hydrateExchangeItems([e]);
+  if(!current())return;
   const oid=otherId(e);
-  if(!S.profiles[oid]){const {data:p}=await db.from('public_profiles').select('*').eq('id',oid).maybeSingle();if(p)S.profiles[oid]=p}
+  if(!S.profiles[oid]){const {data:p}=await db.from('public_profiles').select('*').eq('id',oid).maybeSingle();if(!current())return;if(p)S.profiles[oid]=p}
   const overdueStates=['ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION'];
   const [msg,events,issueRows,reviews,reputation,overdue]=await Promise.all([
     db.from('exchange_case_messages').select('*').eq('case_id',id).order('created_at',{ascending:true}),
@@ -1054,8 +1115,10 @@ async function renderExchangeDetail(id,token){
     db.rpc('exchange_peer_reputation_summary',{p_user_id:oid}),
     e.return_due_at&&overdueStates.includes(e.state)?db.rpc('exchange_case_overdue_days',{p_case_id:id,p_as_of:new Date().toISOString()}):Promise.resolve({data:null,error:null})
   ]);
+  if(!current())return;
   const issues=issueRows.data||[],issueIds=issues.map(issue=>issue.id);
   const issueResponses=issueIds.length?((await db.from('exchange_case_issue_responses').select('*').in('issue_id',issueIds).order('created_at',{ascending:true})).data||[]):[];
+  if(!current())return;
   if(reputation&&!reputation.error&&reputation.data)S.reputation[oid]=reputation.data;
   const overdueDays=Number(overdue&&!overdue.error?overdue.data||0:0);
   if(overdueDays>0)S.caseOverdue[id]=overdueDays;else delete S.caseOverdue[id];
@@ -1143,10 +1206,11 @@ function reputationTrustContext(userId){
   return `<div class="bc-small">Peer trust: ${esc(parts.join(' · '))}.${unresolved?` ${unresolved} unresolved peer issue${unresolved===1?'':'s'}.`:''}</div>`;
 }
 async function loadPeerReputation(userId){
+  const epoch=authEpoch;if(logoutLocked)return null;
   if(!userId||userId===S.user?.id)return null;
   if(S.reputation[userId])return S.reputation[userId];
   const {data,error}=await db.rpc('exchange_peer_reputation_summary',{p_user_id:userId});
-  if(error||!data)return null;
+  if(error||!data||epoch!==authEpoch||logoutLocked)return null;
   S.reputation[userId]=data;return data;
 }
 async function loadPeerReputations(userIds){await Promise.all([...new Set(userIds.filter(Boolean))].map(id=>loadPeerReputation(id).catch(()=>null)))}
@@ -1235,8 +1299,31 @@ async function uploadAvatar(file){
   if(previous&&previous!==data.path&&ownedAvatarStoragePath(previous))await removeOwnedAvatar(previous);
   await refreshCore();shell();await renderRoute();toast('Profile photo updated.');
 }
-async function signOut(){stopNotificationRealtime();clearNotificationPresentation();await window.bcWebPush?.signOut(S.user);try{await db.auth.signOut({scope:'local'})}catch(_){try{await db.auth.signOut()}catch(__){}}try{Object.keys(localStorage).filter(k=>/^bc_(?!pending_referral)/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(_){ }try{sessionStorage.removeItem(peerReviewSubmissionsStore())}catch(_){}
-  resetPeerTrustCaches();S.user=null;closeOverlay();navigate('home');await refreshRoute();toast('Signed out.')}
+async function signOut(useAnother=false){
+  if(localLogout.pending)return;
+  // onclick passes a MouseEvent for plain sign-out, not switch intent.
+  useAnother=useAnother===true;
+  const user=S.user;
+  if(!logoutLocked){closeOverlay();authEpoch++;logoutEpoch++;refreshGeneration++;S.renderToken++;pendingAuthChange=null;explicitLogout=true;if(user?.id)retiredAccounts.add(user.id);try{window.bcWebPush?.pause?.()}catch(_){}}
+  logoutLocked=true;
+  const o=document.getElementById('bc-overlay')||modal('<h2>Signing out</h2><p role="status" id="bc-logout-status">Confirming sign out on this device…</p><button class="bc-btn" id="bc-logout-retry" disabled>Retry sign out</button>');
+  if(!o.bcAuthCleanup)prepareAuthOverlay(o);
+  const retry=$('#bc-logout-retry',o),status=$('#bc-logout-status',o);retry.disabled=true;
+  try{
+    const pendingAuth=[...authOperations].map(operation=>operation.settled);
+    await localLogout.run(()=>Promise.all(pendingAuth));
+    stopNotificationRealtime();clearNotificationPresentation();stopThreadSync();
+    // Ancillary cleanup must neither delay authentication nor revoke other devices.
+    withTimeout(Promise.resolve().then(()=>window.bcWebPush?.signOut(user,()=>explicitLogout&&!S.user)),2000).catch(()=>{});
+    try{sessionStorage.removeItem(peerReviewSubmissionsStore());Object.keys(sessionStorage).filter(k=>/^bc_/.test(k)).forEach(k=>sessionStorage.removeItem(k));Object.keys(localStorage).filter(k=>/^bc_(?!pending_referral)/.test(k)).forEach(k=>localStorage.removeItem(k))}catch(_){}
+    clearProtectedState();resetPeerTrustCaches();ownerPhotoUrls.clear();S.refreshWarning='';lastRoute='';window.BC_PROPOSAL_NOTICE_ACTIVE=false;
+    logoutLocked=false;closeOverlay();history.replaceState({},'',location.pathname+location.search+'#home');shell();await renderRoute();
+    if(useAnother){switchAuth=true;showAuth();$('#bc-email-signin [name="email"]')?.focus()}else toast('Signed out.');
+  }catch(_){
+    status.textContent=localLogout.pending?'Sign out is taking longer than expected and is not confirmed. No new login is allowed. Wait, then retry or reload to verify.':'Sign out failed and is not confirmed. No new login is allowed. Retry or reload to verify your session.';
+    retry.disabled=false;retry.onclick=()=>signOut(useAnother);
+  }
+}
 
 async function shareInvite(){if(!S.user){showAuth();return}try{const {data,error}=await db.rpc('bc_my_referral_code');if(error)throw error;const url=`${location.origin}/v2.html?ref=${encodeURIComponent(String(data||''))}`,text='Join me on BrickCircle — a local LEGO set exchange community for adult collectors. BrickCircle is free during beta.';if(navigator.share)await navigator.share({title:'Join BrickCircle',text,url});else if(navigator.clipboard){await navigator.clipboard.writeText(url);toast('Invite link copied.')}else prompt('Copy your BrickCircle invite link',url);track('beta_invite_shared')}catch(e){if(e?.name!=='AbortError')fail(e,'Could not create invite link.')}}
 function showNotifications(){
@@ -1969,15 +2056,60 @@ function setupPWA(){
 }
 
 async function boot(){
-  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();const sessionResult=await settledTimeout(db.auth.getSession(),8000);S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';if(S.user)await syncProviderAvatar();if(S.user)await refreshCore();S.booted=true;shell();await renderRoute();if(S.user){await claimReferralAndProvider();await refreshCore();shell();await renderRoute();await startNotificationRealtime().catch(()=>{});const onboardingShown=await onboardingIfNeeded();if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice()}if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
+  const signinIntent=location.hash==='#signin',epoch=authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
+  if(signinIntent)history.replaceState({},'',location.pathname+location.search+'#home');
+  captureReferral();setupPWA();shell();page(loading('Opening BrickCircle…'));if(!signinIntent&&parseJoinIntent()){showAuth();clearQueryParam('join')}providerSettings();
+  const sessionResult=await settledTimeout(db.auth.getSession(),8000);if(!current())return;
+  S.user=sessionResult.data?.session?.user||S.user||null;if(sessionResult.error)S.refreshWarning='Your session is taking longer than expected. BrickCircle will keep trying.';
+  // Consume the fixed admin handoff before any retained-account hydration or UI.
+  // Mark boot complete so the confirmed logout's next interactive login can run.
+  if(signinIntent){
+    S.booted=true;pendingAuthChange=null;
+    if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();
+    if(S.user||sessionResult.error)await signOut(true);
+    else{explicitLogout=true;shell();await renderRoute();switchAuth=true;showAuth();$('#bc-email-signin [name="email"]')?.focus()}
+    return;
+  }
+  if(S.user)await syncProviderAvatar();if(!current())return;
+  if(S.user)await refreshCore();if(!current())return;
+  S.booted=true;shell();await renderRoute();if(!current())return;
+  if(S.user&&!signinIntent){
+    await claimReferralAndProvider();if(!current())return;await refreshCore();if(!current())return;
+    shell();await renderRoute();if(!current())return;await startNotificationRealtime().catch(()=>{});if(!current())return;
+    const onboardingShown=await onboardingIfNeeded();if(!current())return;if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();
+  }
+  if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();
+  if(pendingAuthChange){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession)}
 }
-function handleAuthChange(event,session){
+function handleAuthChange(event,session,confirmedInteractive=false){
+  if(!confirmedInteractive&&['SIGNED_IN','TOKEN_REFRESHED'].includes(event)&&authOperations.size){
+    if(session?.user?.id!==S.user?.id&&[...authOperations].some(operation=>!authOperationCurrent(operation)))retiredAccounts.add(session?.user?.id);
+    return;
+  }
+  if(logoutLocked||retiredAccounts.has(session?.user?.id)||(!confirmedInteractive&&explicitLogout&&session?.user))return;
   if(!S.booted){pendingAuthChange=[event,session];return}
-  if(event==='SIGNED_OUT'&&isResumeWindow()){setTimeout(async()=>{const recovered=await recoverSession();if(recovered)handleAuthChange('TOKEN_REFRESHED',recovered);else handleAuthChange('CONFIRMED_SIGNED_OUT',null)},350);return}
+  if(explicitLogout&&(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'))return;
+  const epoch=++authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
+  if(event==='SIGNED_OUT'&&!explicitLogout&&isResumeWindow()){setTimeout(async()=>{if(!current())return;const recovered=await recoverSession();if(!current())return;if(recovered)handleAuthChange('TOKEN_REFRESHED',recovered);else handleAuthChange('CONFIRMED_SIGNED_OUT',null)},350);return}
   const prev=S.user?.id;
-  if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();clearNotificationPresentation();clearProtectedState()}
+  if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'||(prev&&session?.user?.id!==prev)){refreshGeneration++;S.renderToken++;stopNotificationRealtime();clearNotificationPresentation();clearProtectedState();resetPeerTrustCaches()}
+  if(session?.user)explicitLogout=false;
   S.user=session?.user||null;
-  setTimeout(async()=>{if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery()}else if((event==='SIGNED_IN'||event==='TOKEN_REFRESHED')&&S.user){if(event==='SIGNED_IN')await claimReferralAndProvider();await syncProviderAvatar();await refreshCore();shell();await renderRoute();await startNotificationRealtime().catch(()=>{});const onboardingShown=await onboardingIfNeeded();if(event==='SIGNED_IN'&&!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();if(event==='SIGNED_IN'&&!prev)toast('Welcome to BrickCircle.')}else if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();shell();await renderRoute()}},0)
+  setTimeout(async()=>{
+    if(!current())return;
+    if(event==='PASSWORD_RECOVERY'&&S.user){showPasswordRecovery();return}
+    if((event==='SIGNED_IN'||event==='TOKEN_REFRESHED')&&S.user){
+      if(event==='SIGNED_IN'){await claimReferralAndProvider();if(!current())return}
+      await syncProviderAvatar();if(!current())return;
+      await refreshCore();if(!current())return;shell();await renderRoute();if(!current())return;
+      await startNotificationRealtime().catch(()=>{});if(!current())return;
+      const onboardingShown=await onboardingIfNeeded();if(!current())return;
+      if(event==='SIGNED_IN'&&!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();
+      if(event==='SIGNED_IN'&&!prev)toast('Welcome to BrickCircle.');
+    }else if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'){
+      stopNotificationRealtime();window.BC_PROPOSAL_NOTICE_ACTIVE=false;await refreshCore();if(!current())return;shell();await renderRoute();
+    }
+  },0)
 }
 db.auth.onAuthStateChange(handleAuthChange);
 window.addEventListener('hashchange',()=>{if(S.booted)renderRoute()});
@@ -1986,6 +2118,6 @@ window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();rememberRoute()}
 window.addEventListener('pageshow',event=>{lastVisibleAt=Date.now();if(event.persisted)validateResume().catch(()=>{})});
 window.addEventListener('focus',()=>{lastVisibleAt=Date.now();validateResume().catch(()=>{})});
 window.addEventListener('online',()=>reconcileNotifications().catch(()=>{}));
-window.bcNav=navigate;window.bcAuth=showAuth;window.bcClose=closeOverlay;window.bcV3Refresh=refreshRoute;window.bcPushToast=toast;window.bcApplyA11y=()=>applyA11y(document);window.showInbox=showInbox;window.quickMessage=quickMessage;
+window.bcNav=navigate;window.bcAuth=showAuth;window.bcClose=closeOverlay;window.bcV3Refresh=refreshRoute;window.bcSignOut=()=>signOut();window.bcSwitchAccount=()=>signOut(true);window.bcPushToast=toast;window.bcApplyA11y=()=>applyA11y(document);window.showInbox=showInbox;window.quickMessage=quickMessage;
 boot().catch(e=>{console.error('BrickCircle V3 boot failed',e);shell();page(empty('⚠️','BrickCircle could not start','Please refresh the page. If this continues, try again in a moment.'))});
 })();
