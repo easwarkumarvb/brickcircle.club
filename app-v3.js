@@ -517,7 +517,7 @@ function renderVerification(email,o,resendAt=0){
   const form=$('form',host),input=$('[name="code"]',host),verify=$('[type="submit"]',host),resend=$('[data-resend]',host),status=$('[data-verification-status]',host),errorRegion=$('[data-verification-error]',host);let busy=false;
   const current=()=>generation===verificationGeneration&&form.isConnected&&!logoutLocked;
   input.oninput=()=>{input.removeAttribute('aria-invalid');errorRegion.hidden=true;errorRegion.textContent=''};
-  input.onpaste=e=>{e.preventDefault();const text=e.clipboardData.getData('text').replace(/\s/g,'');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end')};
+  input.onpaste=e=>{e.preventDefault();const text=e.clipboardData.getData('text').replace(/\s/g,'');input.setRangeText(text,input.selectionStart,input.selectionEnd,'end');input.dispatchEvent(new Event('input',{bubbles:true}))};
   const tick=()=>{if(!current()){clearInterval(timer);return}const seconds=Math.max(0,Math.ceil((resendAt-Date.now())/1000));resend.disabled=busy||seconds>0;resend.textContent=seconds?`Resend code in ${seconds}s`:'Resend code'};
   const timer=setInterval(tick,1000);tick();const cleanup=o.bcAuthCleanup;o.bcAuthCleanup=()=>{clearInterval(timer);cleanup?.()};
   const back=change=>{clearPendingVerification();if(abandonVerification())return;change?renderVerificationEntry(o):renderEmailAuth('signin',o)};$('[data-change-email]',host).onclick=()=>back(true);$('[data-back-signin]',host).onclick=()=>back(false);

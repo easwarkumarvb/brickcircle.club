@@ -55,8 +55,12 @@ test('invalid format never calls SDK; paste strips whitespace only',async({page}
   await expect(page.getByLabel('Verification code',{exact:true})).toHaveAttribute('aria-describedby','bc-verification-help bc-verification-error');
   await expect(page.getByLabel('Verification code',{exact:true})).toHaveAttribute('aria-invalid','true');
   await page.getByLabel('Verification code',{exact:true}).fill('0');await expect(page.getByLabel('Verification code',{exact:true})).not.toHaveAttribute('aria-invalid','true');
-  await page.getByLabel('Verification code',{exact:true}).fill('');await page.getByLabel('Verification code',{exact:true}).evaluate(el=>{const data=new DataTransfer();data.setData('text',' 01\n234\t567 ');el.dispatchEvent(new ClipboardEvent('paste',{clipboardData:data,bubbles:true,cancelable:true}))});
+  await verify(page,'12345');await expect(page.getByLabel('Verification code',{exact:true})).toHaveAttribute('aria-invalid','true');
+  // Firefox deliberately empties DataTransfer in a constructed ClipboardEvent.
+  // Supply the native clipboardData read contract without an OS clipboard/send.
+  await page.getByLabel('Verification code',{exact:true}).evaluate((el:HTMLInputElement)=>{el.select();const event=new Event('paste',{bubbles:true,cancelable:true});Object.defineProperty(event,'clipboardData',{value:{getData:()=> ' 01\n234\t567 '}});el.dispatchEvent(event)});
   await expect(page.getByLabel('Verification code',{exact:true})).toHaveValue('01234567');
+  await expect(page.getByLabel('Verification code',{exact:true})).not.toHaveAttribute('aria-invalid','true');await expect(page.locator('[data-verification-error]')).toBeHidden();
 });
 test('duplicates do not send a second verification operation',async({page})=>{
   await setup(page);await resume(page);await page.evaluate(()=>window.__bcIsolated.verificationMode='slow');await verify(page);
