@@ -193,6 +193,41 @@ exact candidate SHA above. These are **offline results only**. A reviewed repair
 on trusted main and a separately approved protected hosted rerun are still required;
 do not merge PR125 based on these results.
 
+## Proposal-stage follow-up (2026-10-09)
+
+Protected hosted run [37935226399](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/37935226399)
+used trusted main `c8095c43b5e64f6957efba16256956ac0f050195` after PR129. All
+three real-form browser logins passed; the browser failed at the broad inline
+proposal/no-reservation stage. Server smoke and the final provider-attempt audit
+passed again. PR125 remains `1eb64e59f000f3a93f55906ff55e9a194a70eee0`.
+
+The candidate really renders `Set <number>` alongside catalogue names. Offline
+real-form/pinned-SDK reproduction with Millennium Falcon (75192-1), Eiffel Tower
+(10307-1), and Titanic (10294-1) first confirmed the original selector and form
+work without distractors. Adding an unrelated retained collector's same pair
+reproduces the ambiguity: text-only filters do not identify the intended peer.
+A reversed pair also matches both text filters. The reported read-only staging
+aggregate (four available copies per set across four collectors) is consistent
+with this retained-fixture collision; the broad hosted stage alone cannot prove
+the exact failing assertion.
+
+The shared proposal helper selects intended peer B and ordered offered/requested
+image set slots, requires exactly one card, and independently asserts captured
+RPC physical IDs. It checks no case exists before submission and all **four exact
+physical IDs**, including both B copies, remain available (the old check covered
+only A copies). It retains the second distinct same-peer case and its participant
+and physical-pair assertions. Failures report fixed proposal substages only.
+
+Offline coverage now runs this same helper after real form login, through the
+pinned browser SDK and trusted HTTP fixtures. It reproduces three text matches
+(retained peer, reversed pair, intended pair), selects the non-first intended
+card, leaves distractors unselected, observes no case/reservation before submit,
+and creates two correct same-peer cases. **79/79** guards, offline transport and
+three-actor messaging checks, syntax, typecheck, release and diff checks passed.
+No product/workflow/dependency/guard/security/secret changes, fixture cleanup or
+hosted mutations occurred. These results are **not a hosted browser pass**; the
+reviewed trusted-main fix still requires a separately approved protected rerun.
+
 ## Supabase semantics and current documentation
 
 Read the current [Postgres Changes documentation](https://supabase.com/docs/guides/realtime/postgres-changes)
