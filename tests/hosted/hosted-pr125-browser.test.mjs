@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { transportAllowed, stagingApplication, browserFixtureSets } from '../../scripts/hosted-pr125-browser.mjs';
-import { insertOwnedItem } from '../../scripts/hosted-exchange-smoke.mjs';
+import { transportAllowed, stagingApplication, browserFixtureSets, withDesktopNotifications } from '../../scripts/hosted-pr125-browser.mjs';
+import { insertOwnedItem, serializeRedactedReport } from '../../scripts/hosted-exchange-smoke.mjs';
 import { STAGING_REF, PRODUCTION_REF } from '../../scripts/validate-hosted-pr125.mjs';
 import { assertOutboxOnly } from '../../scripts/audit-hosted-pr125-outbox.mjs';
 const url=`https://${STAGING_REF}.supabase.co`;
@@ -78,4 +78,40 @@ test('browser evidence is secret-free and never invokes candidate Node scripts',
 test('outbox-only means zero attempts, not merely a queued record',()=>{
   assertOutboxOnly([{status:'pending',attempt_count:0}]);
   for(const rows of [[],[{status:'pending',attempt_count:1}],[{status:'sent',attempt_count:1}],[{status:'processing',attempt_count:1}],[{status:'skipped',attempt_count:0}]])assert.throws(()=>assertOutboxOnly(rows));
+});
+test('notification viewport is desktop only during interaction and restores mobile even on failure',async()=>{
+  for(const fail of [false,true]){
+    let viewport={width:390,height:844};
+    const page={viewportSize:()=>viewport,setViewportSize:async value=>{viewport=value}};
+    const operation=withDesktopNotifications(page,async()=>{
+      assert.deepEqual(viewport,{width:1280,height:844});
+      if(fail)throw new Error('synthetic interaction failure');
+    });
+    if(fail)await assert.rejects(operation,/synthetic interaction failure/);else await operation;
+    assert.deepEqual(viewport,{width:390,height:844});
+  }
+});
+test('login uses real form, exact browser identity and mobile-visible profile, with fixed diagnostics',()=>{
+  const source=readFileSync('scripts/hosted-pr125-browser.mjs','utf8');
+  const login=source.split('export async function browserLogin')[1].split('export async function withDesktopNotifications')[0];
+  assert.match(login,/data-auth-tab="signin"/);
+  assert.match(login,/BC_SUPABASE\.auth\.getUser\(\)/);
+  assert.match(login,/result\.data\.user\.id===id/);
+  assert.match(login,/result\.data\.user\?\.email===email/);
+  assert.match(login,/\.bc-avatar-btn'\)\)\.toBeVisible/);
+  assert.doesNotMatch(login,/notifications|force:|localStorage|addInitScript|console\./);
+  assert.match(source,/sessions\[index\]\.id/);
+  assert.match(source,/scrollWidth<=document\.documentElement\.clientWidth/);
+  for(const match of login.matchAll(/substage\((.*?)\)/g)){
+    assert.match(match[1],/^'[A-Za-z -]+'$/);
+    for(const actor of ['A','B','C']){
+      const failedStage=`browser collector ${actor} authentication: ${match[1].slice(1,-1)}`;
+      assert.equal(JSON.parse(serializeRedactedReport({ok:false,failedStage})).failedStage,failedStage);
+    }
+  }
+  const offline=readFileSync('scripts/offline-pr125-login.mjs','utf8');
+  assert.match(offline,/installTransport\(context,\{url,key:'offline'\},candidate,diagnostics\)/);
+  assert.match(offline,/context\.route\(url\+'\/\*\*'/);
+  assert.match(offline,/context\.routeWebSocket\('\*\*\/\*',ws=>ws\.close\(\)\)/);
+  assert.doesNotMatch(offline,/addInitScript|storageState|readFile|route\.continue|route\.fetch/);
 });
