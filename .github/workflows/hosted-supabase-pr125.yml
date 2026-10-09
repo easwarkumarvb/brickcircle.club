@@ -1,0 +1,151 @@
+name: Hosted Supabase PR125
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Only open same-repository PR125 (main base)
+        required: true
+        type: string
+      expected_head_sha:
+        description: Reviewed immutable PR125 SHA (allowlisted in trusted main)
+        required: true
+        type: string
+      confirmation:
+        description: Type RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Share the existing staging mutex; never interrupt retained evidence.
+concurrency:
+  group: hosted-supabase-exchange-smoke
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      head_sha: ${{ steps.selection.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test tests/hosted/hosted-pr125.test.mjs
+      - uses: actions/github-script@v7
+        id: selection
+        env:
+          REQUESTED_PR: ${{ inputs.pull_request_number }}
+          EXPECTED_SHA: ${{ inputs.expected_head_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr125.mjs`);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 125 });
+            const sha = validateSelection({ pr, repository: `${context.repo.owner}/${context.repo.repo}`, ref: context.ref,
+              number: process.env.REQUESTED_PR, sha: process.env.EXPECTED_SHA, confirmation: process.env.CONFIRMATION });
+            core.setOutput('head_sha', sha);
+
+  staging:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: hosted-supabase-staging
+    env:
+      BC_HOSTED_SMOKE_CONFIRMATION: ${{ inputs.confirmation }}
+      BC_HOSTED_SMOKE_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+      BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA: ${{ needs.validate.outputs.head_sha }}
+      BC_STAGING_SUPABASE_PROJECT_REF: ${{ vars.BC_STAGING_SUPABASE_PROJECT_REF }}
+      BC_PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.BC_PRODUCTION_SUPABASE_PROJECT_REF }}
+      BC_STAGING_ALLOWED_EMAIL_DOMAIN: ${{ vars.BC_STAGING_ALLOWED_EMAIL_DOMAIN }}
+      BC_STAGING_NOTIFICATION_MODE: ${{ vars.BC_STAGING_NOTIFICATION_MODE }}
+      BC_STAGING_SET_A: ${{ vars.BC_STAGING_SET_A }}
+      BC_STAGING_SET_B: ${{ vars.BC_STAGING_SET_B }}
+    steps:
+      - name: Trusted harness (never execute PR scripts or install PR dependencies)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Revalidate selection after human review
+        uses: actions/github-script@v7
+        env:
+          REQUESTED_PR: ${{ inputs.pull_request_number }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.head_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr125.mjs`);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 125 });
+            validateSelection({ pr, repository: `${context.repo.owner}/${context.repo.repo}`, ref: context.ref,
+              number: process.env.REQUESTED_PR, sha: process.env.EXPECTED_SHA, confirmation: process.env.CONFIRMATION });
+      - name: Immutable browser assets only
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.head_sha }}
+          path: candidate
+          persist-credentials: false
+      - run: test "$(git -C candidate rev-parse HEAD)" = "$BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:hosted:guard && node --test tests/hosted/hosted-pr125.test.mjs
+      - run: npx --no-install playwright install --with-deps chromium
+      - name: Offline browser transport safety
+        env:
+          BC_HOSTED_CANDIDATE_PATH: candidate
+        run: node scripts/hosted-pr125-browser.mjs --offline
+      - name: Verify exact staging before provisioning
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: node --input-type=module -e "import {validateTarget} from './scripts/validate-hosted-pr125.mjs'; try {validateTarget(process.env)} catch {console.error('Exact staging configuration rejected; values withheld'); process.exitCode=1}"
+      - name: Provision three fresh example.test accounts
+        id: users
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: node scripts/bootstrap-hosted-smoke-users.mjs
+      - name: PR125 real browser evidence (no server secret)
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_HOSTED_CANDIDATE_PATH: candidate
+        run: node scripts/hosted-pr125-browser.mjs
+      - name: Existing server RLS Realtime and outbox smoke
+        if: ${{ !cancelled() && steps.users.outcome == 'success' }}
+        id: server
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: npm run smoke:hosted:exchange
+      - name: Verify no provider delivery for all three disposable accounts
+        if: ${{ !cancelled() && steps.users.outcome == 'success' }}
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: node scripts/audit-hosted-pr125-outbox.mjs
+      - name: Upload only allowlisted redacted reports (never trace storage or screenshots)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-pr125-${{ needs.validate.outputs.head_sha }}
+          path: |
+            artifacts/hosted-pr125-browser.json
+            artifacts/hosted-exchange-smoke.json
+            artifacts/hosted-pr125-outbox.json
+          if-no-files-found: warn
+          retention-days: 30
