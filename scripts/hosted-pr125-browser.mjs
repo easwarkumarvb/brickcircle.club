@@ -212,9 +212,12 @@ async function run(env=process.env) {
     assert.ok(timeline.indexOf('Browser direct first')>=0);
     assert.ok(timeline.indexOf('Browser direct first')<timeline.indexOf('Browser case one second'));
     assert.ok(timeline.indexOf('Browser case one second')<timeline.indexOf('Browser case two third'));
-    assert.equal((await rows(a.client,'messages','Browser direct first')).length,1);
+    const direct=await rows(a.client,'messages','Browser direct first');assert.equal(direct.length,1);
+    assert.equal(direct[0].sender_id,a.id);assert.equal(direct[0].recipient_id,b.id);assert.equal(direct[0].exchange_id,null);
+    await expect(pa.locator(`.bc-collector-event[data-timeline-case="${case1}"]`).filter({hasText:'Proposal created'})).toHaveCount(1);
+    await expect(pa.locator(`.bc-collector-event[data-timeline-case="${case2}"]`).filter({hasText:'Proposal created'})).toHaveCount(1);
     for(const [body,id] of [['Browser case one second',case1],['Browser case two third',case2]]){
-      const r=await rows(a.client,'exchange_case_messages',body);assert.equal(r.length,1);assert.equal(r[0].case_id,id);
+      const r=await rows(a.client,'exchange_case_messages',body);assert.equal(r.length,1);assert.equal(r[0].case_id,id);assert.equal(r[0].sender_id,a.id);assert.equal(r[0].recipient_id,b.id);
     }
     for(const [id,rpc,body,table] of [[case1,'send_exchange_case_message','Browser case retry','exchange_case_messages'],['','send_collector_message','Browser direct retry','messages']]){
       await pa.locator('#bc-case-destination').selectOption(id);
@@ -235,7 +238,7 @@ async function run(env=process.env) {
       if(id){
         assert.equal(r[0].case_id,id);
         const note=await b.client.from('notifications').select('id').eq('exchange_case_message_id',r[0].id);assert.ifError(note.error);assert.equal(note.data.length,1);
-      }
+      }else{assert.equal(r[0].sender_id,a.id);assert.equal(r[0].recipient_id,b.id);assert.equal(r[0].exchange_id,null);}
     }
     await pa.evaluate(()=>window.bcNav('messages'));
     await expect(pa.locator(`[data-message-open="direct:${b.id}"]`)).toHaveCount(1);
@@ -271,6 +274,8 @@ async function run(env=process.env) {
       const r=await c.client.from(table).select('id').eq(table==='exchange_cases'?'id':'case_id',case1);assert.ifError(r.error);assert.deepEqual(r.data,[]);
     }
     const denied=await c.client.rpc('send_exchange_case_message',{p_case_id:case1,p_body:'Unauthorized fixture',p_idempotency_key:runId+':outsider'});assert.ok(denied.error);
+    assert.deepEqual(await rows(c.client,'messages','Browser direct first'),[]);
+    const outsiderNotes=await c.client.from('notifications').select('id').in('exchange_case_id',[case1,case2]);assert.ifError(outsiderNotes.error);assert.deepEqual(outsiderNotes.data,[]);
     passed('outsider real browser unavailable; no composer/actions; server denies case/event/message reads and message RPC');
 
     stage='guided inline exchange lifecycle';
@@ -292,6 +297,7 @@ async function run(env=process.env) {
     await expect(pb.locator('#bc-msg-form')).toBeHidden();
     await expect(pb.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');
     await expect(pb.locator('#bc-msg-chat')).toContainText('Browser case one second');
+    await expect(pb.locator(`.bc-collector-event[data-timeline-case="${case1}"]`).filter({hasText:'Completed'})).toHaveCount(1);
     passed('real inline accept, meetup, safety, arrival, inspection, handoff, build, return and completion; closed archive retains chronological messages');
     assert.equal(diagnostics.deniedProduction,0);assert.equal(diagnostics.deniedSocket,0);
     report.transport={productionRequests:0,unexpectedSockets:0};
