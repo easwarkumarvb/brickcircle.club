@@ -158,6 +158,41 @@ The earlier bootstrap validation also ran PR125's guided messaging suite with
 not rerun for this fixture-only correction. These results establish harness readiness,
 not hosted staging success.
 
+## Browser harness authentication repair (2026-10-09)
+
+Hosted run [37912613882](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/37912613882)
+used trusted main `063450af5bca0ed8d1c335dc52245918c895c5e6` and candidate
+`1eb64e59f000f3a93f55906ff55e9a194a70eee0`. Its browser authentication stage
+failed; validation, provisioning, server canonical/RLS/Realtime/outbox smoke and
+final zero-provider-attempt audit passed. The three disposable users were retained.
+
+Concrete offline reproduction with that exact candidate, the pinned real SDK and
+trusted mock HTTP transport reaches the real password Auth request exactly once,
+verifies the browser user, and renders the visible profile control. Notifications
+exists but is hidden by candidate `app-v3.css` at the harness's 390px viewport.
+The original post-login visibility assertion therefore cannot pass at this width;
+the session-injected three-actor mock did not exercise this assertion. This is a
+harness selector/viewport defect, not evidence of bad credentials or a product
+authentication defect. The earlier hosted report retained only the broad fixed
+stage, so it does not establish which individual login step completed there.
+
+The repair verifies exact browser email and the independently authenticated user
+ID, plus the visible profile control and closed login form. Login failures retain
+only fixed collector A/B/C and fixed substage labels. Notification clicks temporarily
+use 1280px, then restore mobile width even on failure. Mobile chat overflow checks
+remain unchanged. Offline fixtures and SDK come from the trusted harness; only
+browser assets come from the immutable candidate. No workflow, project/SHA guards,
+reviewer policy, fresh-trio provisioning, outbox policy or secret boundaries changed.
+
+Local evidence: **77/77** hosted guard tests; changed-module and repository syntax,
+typecheck, release and diff checks; and the real-form/pinned-SDK offline
+reproduction, desktop notification interaction, mobile restoration, existing
+three-actor messaging mock and transport probes passed. The command used
+`BC_HOSTED_CANDIDATE_PATH=/tmp/opencode/pr125-auth-candidate`, an archive of the
+exact candidate SHA above. These are **offline results only**. A reviewed repair
+on trusted main and a separately approved protected hosted rerun are still required;
+do not merge PR125 based on these results.
+
 ## Supabase semantics and current documentation
 
 Read the current [Postgres Changes documentation](https://supabase.com/docs/guides/realtime/postgres-changes)

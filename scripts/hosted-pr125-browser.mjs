@@ -11,6 +11,28 @@ const ORIGIN = 'http://127.0.0.1:4179';
 const SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4';
 const expect = playwrightExpect.configure({timeout:30000});
 const TYPES = {'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.jpg':'image/jpeg','.webp':'image/webp'};
+export async function browserLogin(page, user, substage=()=>{}, expectedId) {
+  substage('load candidate');await page.goto(ORIGIN+'/v2.html');
+  substage('SDK readiness');await expect.poll(()=>page.evaluate(()=>!!window.BC_SUPABASE)).toBe(true);
+  substage('open sign-in');await page.locator('[data-auth]').first().click();
+  substage('select sign-in tab');await page.locator('[data-auth-tab="signin"]').click();
+  substage('fill email');await page.locator('#bc-email-signin [name="email"]').fill(user.email);
+  substage('fill password');await page.locator('#bc-email-signin [name="password"]').fill(user.password);
+  substage('submit password');await page.locator('#bc-email-signin button[type="submit"]').click();
+  substage('verify browser identity');
+  await expect.poll(()=>page.evaluate(async ({email,id})=>{
+    const result=await window.BC_SUPABASE.auth.getUser();
+    return !result.error && result.data.user?.email===email && (!id || result.data.user.id===id);
+  },{email:user.email,id:expectedId})).toBe(true);
+  // Top-bar icon buttons are intentionally hidden at the mobile evidence width.
+  substage('visible authenticated shell');await expect(page.locator('[data-nav="profile"].bc-avatar-btn')).toBeVisible();
+  await expect(page.locator('#bc-email-signin')).toHaveCount(0);
+}
+export async function withDesktopNotifications(page, work) {
+  const viewport=page.viewportSize();
+  try { await page.setViewportSize({width:1280,height:844});await work(); }
+  finally { await page.setViewportSize(viewport); }
+}
 export async function browserFixtureSets(client, setA, setB) {
   assert.ok(setA && setB && setA.toLowerCase()!==setB.toLowerCase());
   const configured=await client.from('lego_sets').select('set_number').in('set_number',[setA,setB]);
@@ -89,7 +111,9 @@ async function offline() {
     await context.close();
     if(process.env.BC_HOSTED_CANDIDATE_PATH){
       const candidate=process.env.BC_HOSTED_CANDIDATE_PATH;
-      const mock=await readFile(resolve(candidate,'tests/isolated/fixtures/three-user-supabase-browser-mock.js'),'utf8');
+      const { offlineLogin }=await import('./offline-pr125-login.mjs');
+      await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications);
+      const mock=await readFile('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
       const A='00000000-0000-4000-8000-000000000101',B='00000000-0000-4000-8000-000000000102',C='00000000-0000-4000-8000-000000000103',stamp='2026-10-05T12:00:00Z';
       const database={profiles:[{id:A,display_name:'Easwar'},{id:B,display_name:'Ramya'},{id:C,display_name:'Dhyan'}].map(p=>({...p,email:p.id+'@example.invalid',country:'India',city:'Bengaluru',adult_confirmed_at:stamp,created_at:stamp})),
         collection:[{id:'item-a',user_id:A,set_number:'42143-1'},{id:'item-b',user_id:B,set_number:'42172-1'},{id:'item-a-third',user_id:A,set_number:'42115-1'},{id:'item-b-third',user_id:B,set_number:'42115-1'}].map(item=>({...item,available_for_exchange:false})),wishlist:[],
@@ -166,18 +190,12 @@ async function run(env=process.env) {
     stage='browser collector authentication';
     browser=await chromium.launch();
     const pages=[],diagnostics={deniedSocket:0,deniedProduction:0,deniedExternal:0};
-    for(const user of users){
+    for(const [index,user] of users.entries()){
       const context=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
       await installTransport(context,config,env.BC_HOSTED_CANDIDATE_PATH,diagnostics);
       const page=await context.newPage();page.on('dialog',dialog=>dialog.accept());
-      await page.goto(ORIGIN+'/v2.html');
-      await expect.poll(()=>page.evaluate(()=>!!window.BC_SUPABASE)).toBe(true);
       // Real login form, browser SDK and Auth; no injected session or mocked backend.
-      await page.locator('[data-auth]').first().click();
-      await page.locator('#bc-email-signin [name="email"]').fill(user.email);
-      await page.locator('#bc-email-signin [name="password"]').fill(user.password);
-      await page.locator('#bc-email-signin button[type="submit"]').click();
-      await expect(page.locator('[data-open="notifications"]')).toBeVisible({timeout:30000});
+      await browserLogin(page,user,detail=>{stage=`browser collector ${['A','B','C'][index]} authentication: ${detail}`;},sessions[index].id);
       pages.push(page);
     }
     const [pa,pb,pc]=pages;
@@ -275,12 +293,16 @@ async function run(env=process.env) {
     await expect.poll(async()=>[!!await watermark(`direct:${a.id}`),!!await watermark(`case:${case1}`),!!await watermark(`case:${case2}`),await watermark(`direct:${c.id}`)]).toEqual([true,true,true,null]);
     await expect(pb.locator(`[data-message-open="direct:${c.id}"] .bc-msg-unread`)).toHaveText('1');
     const proposalNote=await b.client.from('notifications').select('id').eq('exchange_case_id',case1).eq('kind','exchange_proposed').single();assert.ifError(proposalNote.error);
-    await pb.locator('[data-open="notifications"]').click();await pb.locator(`[data-note="${proposalNote.data.id}"]`).click();
+    await withDesktopNotifications(pb,async()=>{
+      await pb.locator('[data-open="notifications"]').click();await pb.locator(`[data-note="${proposalNote.data.id}"]`).click();
+    });
     await expect(pb.locator('#bc-case-destination')).toHaveValue(case1);
     await expect.poll(()=>pb.evaluate(()=>decodeURIComponent(location.hash))).toBe(`#messages/case:${case1}`);
     const notification=await b.client.from('notifications').select('*').eq('exchange_case_id',case2).eq('kind','exchange_message').order('created_at',{ascending:false}).limit(1);assert.ifError(notification.error);assert.equal(notification.data.length,1);
-    await pb.locator('[data-open="notifications"]').click();
-    await pb.locator(`[data-note="${notification.data[0].id}"]`).click();
+    await withDesktopNotifications(pb,async()=>{
+      await pb.locator('[data-open="notifications"]').click();
+      await pb.locator(`[data-note="${notification.data[0].id}"]`).click();
+    });
     await expect(pb.locator('#bc-case-destination')).toHaveValue(case2);
     await expect.poll(()=>pb.evaluate(()=>decodeURIComponent(location.hash))).toBe(`#messages/case:${case2}:message:${notification.data[0].exchange_case_message_id}`);
     await expect(pb.locator(`[data-timeline-message="${notification.data[0].exchange_case_message_id}"]`)).toBeVisible();
