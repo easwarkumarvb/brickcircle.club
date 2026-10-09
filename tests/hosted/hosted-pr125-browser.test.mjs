@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { transportAllowed, stagingApplication, browserFixtureSets, withDesktopNotifications } from '../../scripts/hosted-pr125-browser.mjs';
+import { transportAllowed, stagingApplication, browserFixtureSets, withDesktopNotifications, assertUnreservedPhysicalItems, physicalPairCard } from '../../scripts/hosted-pr125-browser.mjs';
 import { insertOwnedItem, serializeRedactedReport } from '../../scripts/hosted-exchange-smoke.mjs';
 import { STAGING_REF, PRODUCTION_REF } from '../../scripts/validate-hosted-pr125.mjs';
 import { assertOutboxOnly } from '../../scripts/audit-hosted-pr125-outbox.mjs';
@@ -114,4 +114,35 @@ test('login uses real form, exact browser identity and mobile-visible profile, w
   assert.match(offline,/context\.route\(url\+'\/\*\*'/);
   assert.match(offline,/context\.routeWebSocket\('\*\*\/\*',ws=>ws\.close\(\)\)/);
   assert.doesNotMatch(offline,/addInitScript|storageState|readFile|route\.continue|route\.fetch/);
+});
+test('no reservation requires all four exact physical copies, including both requested B copies',()=>{
+  const items=['a-offer','b-request','a-third','b-third'].map(id=>({id}));
+  const rows=items.map(item=>({...item,available_for_exchange:true}));
+  assertUnreservedPhysicalItems(items,[...rows].reverse());
+  for(let index=0;index<4;index++){
+    assert.throws(()=>assertUnreservedPhysicalItems(items,rows.filter((_,i)=>i!==index)));
+    assert.throws(()=>assertUnreservedPhysicalItems(items,rows.map((row,i)=>i===index?{...row,available_for_exchange:false}:row)));
+  }
+  assert.throws(()=>assertUnreservedPhysicalItems(items,[...rows.slice(0,3),{id:'unrelated-copy',available_for_exchange:true}]));
+  assert.throws(()=>assertUnreservedPhysicalItems(items,[...rows,rows[0]]));
+  assert.throws(()=>assertUnreservedPhysicalItems([items[0],items[0],...items.slice(2)],rows));
+});
+test('proposal retains fixed serializable diagnostics, captured physical IDs and exact same-peer second case',()=>{
+  const source=readFileSync('scripts/hosted-pr125-browser.mjs','utf8');
+  const proposal=source.split('export async function browserProposal')[1].split('export async function browserFixtureSets')[0];
+  for(const match of proposal.matchAll(/substage\((.*?)\)/g)){
+    assert.match(match[1],/^'[A-Za-z -]+'$/);
+    const failedStage=`inline proposal: ${match[1].slice(1,-1)}`;
+    assert.equal(JSON.parse(serializeRedactedReport({ok:false,failedStage})).failedStage,failedStage);
+  }
+  assert.match(proposal,/physicalPairCard\(page,b\.id,sets\[0\],sets\[1\]\)/);
+  assert.match(proposal,/assertUnreservedPhysicalItems\(items,unlocked\.data\)/);
+  assert.match(proposal,/proposalArgs\.p_offered_item_id,items\[0\]\.id/);
+  assert.match(proposal,/proposalArgs\.p_requested_item_id,items\[1\]\.id/);
+  assert.match(proposal,/second\.data\.case\.user_b,b\.id/);
+  assert.match(proposal,/page\.off\('request',capture\)/);
+  assert.doesNotMatch(proposal,/\.first\(|force:|hasText|console\./);
+  assert.match(source,/reproduceProposal\(page,fixture,browserProposal,physicalPairCard,url\)/);
+  for(const values of [['bad"peer','10307-1','75192-1'],['peer','bad[set','75192-1'],['peer','10307-1','']])
+    assert.throws(()=>physicalPairCard(null,...values));
 });

@@ -4,7 +4,7 @@ import { installTransport } from './hosted-pr125-browser.mjs';
 import { STAGING_REF } from './validate-hosted-pr125.mjs';
 
 // Trusted HTTP substitute, not a session injection or candidate SDK substitute.
-export async function offlineLogin(browser, candidate, login, notifications) {
+export async function offlineLogin(browser, candidate, login, notifications, workflow={}) {
   const context=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
   const diagnostics={deniedSocket:0,deniedProduction:0,deniedExternal:0};
   const url=`https://${STAGING_REF}.supabase.co`;
@@ -15,7 +15,9 @@ export async function offlineLogin(browser, candidate, login, notifications) {
     await installTransport(context,{url,key:'offline'},candidate,diagnostics);
     await context.route(url+'/**',async route=>{
       const request=route.request(),target=new URL(request.url());
-      let body=[];
+      let body=workflow.transport?.(request,target);
+      if(body!==undefined){await route.fulfill({contentType:'application/json',body:JSON.stringify(body)});return;}
+      body=[];
       if(target.pathname==='/auth/v1/settings')body={external:{email:true,google:false}};
       else if(target.pathname==='/auth/v1/token'){
         attempts++;
@@ -43,6 +45,7 @@ export async function offlineLogin(browser, candidate, login, notifications) {
     assert.equal(accepted,true,'Real form must reach trusted password transport');
     assert.equal(attempts,1,'Exactly one password sign-in');
     assert.equal(diagnostics.deniedProduction,0);
+    await workflow.afterLogin?.(page,url);
     console.log('Offline real login form and pinned SDK passed; not hosted evidence.');
   } finally { await context.close(); }
 }

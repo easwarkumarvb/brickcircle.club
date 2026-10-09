@@ -33,6 +33,48 @@ export async function withDesktopNotifications(page, work) {
   try { await page.setViewportSize({width:1280,height:844});await work(); }
   finally { await page.setViewportSize(viewport); }
 }
+export function physicalPairCard(page, peer, offered, requested) {
+  for(const value of [peer,offered,requested])assert.match(value,/^[a-zA-Z0-9-]+$/);
+  return page.locator('.bc-match')
+    .filter({has:page.locator(`[data-message-person="${peer}"]`)})
+    .filter({has:page.locator('.bc-match-set').nth(0).locator(`img[data-set-image="${offered}"]`)})
+    .filter({has:page.locator('.bc-match-set').nth(1).locator(`img[data-set-image="${requested}"]`)});
+}
+export function assertUnreservedPhysicalItems(items, rows) {
+  const ids=items.map(item=>item.id);
+  assert.equal(ids.length,4);assert.equal(new Set(ids).size,4);
+  assert.equal(rows.length,4);
+  assert.deepEqual(new Set(rows.map(item=>item.id)),new Set(ids));
+  assert.ok(rows.every(item=>item.available_for_exchange===true));
+}
+export async function browserProposal(page, {url,a,b,sets,items,runId}, substage=()=>{}) {
+  let proposalArgs;
+  const capture=request=>{if(request.url()===url+'/rest/v1/rpc/create_exchange_case')proposalArgs=request.postDataJSON()};
+  page.on('request',capture);
+  try {
+    substage('open matches');await page.evaluate(()=>{window.bcClose();window.bcNav('matches')});
+    substage('select intended peer and ordered sets');
+    const card=physicalPairCard(page,b.id,sets[0],sets[1]);
+    await expect(card).toHaveCount(1);await card.locator('[data-propose]').click();
+    substage('inline form visible');await expect(page.locator('#bc-inline-proposal')).toBeVisible();
+    substage('no case or reservation on open');
+    const before=await a.client.from('exchange_cases').select('id');assert.ifError(before.error);assert.equal(before.data.length,0);
+    const ids=items.map(item=>item.id);
+    const unlocked=await a.client.from('collection_items').select('id,available_for_exchange').in('id',ids);assert.ifError(unlocked.error);
+    assertUnreservedPhysicalItems(items,unlocked.data);
+    substage('submit inline proposal');await page.locator('#bc-inline-proposal').evaluate(form=>form.requestSubmit());
+    substage('exact case route');await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toMatch(/^#messages\/case:/);
+    const case1=(await page.evaluate(()=>decodeURIComponent(location.hash))).split('case:')[1];
+    substage('captured physical pair');
+    assert.ok(proposalArgs);assert.equal(proposalArgs.p_offered_item_id,items[0].id);assert.equal(proposalArgs.p_requested_item_id,items[1].id);
+    substage('second same-peer physical pair');
+    const second=await a.client.rpc('create_exchange_case',{p_offered_item_id:items[2].id,p_requested_item_id:items[3].id,p_duration_days:30,p_message:runId,p_idempotency_key:runId+':second'});assert.ifError(second.error);
+    const case2=second.data.case.id;
+    assert.notEqual(case2,case1);assert.equal(second.data.case.user_a,a.id);assert.equal(second.data.case.user_b,b.id);
+    assert.equal(second.data.case.item_a,items[2].id);assert.equal(second.data.case.item_b,items[3].id);
+    return {case1,case2};
+  } finally { page.off('request',capture); }
+}
 export async function browserFixtureSets(client, setA, setB) {
   assert.ok(setA && setB && setA.toLowerCase()!==setB.toLowerCase());
   const configured=await client.from('lego_sets').select('set_number').in('set_number',[setA,setB]);
@@ -112,7 +154,10 @@ async function offline() {
     if(process.env.BC_HOSTED_CANDIDATE_PATH){
       const candidate=process.env.BC_HOSTED_CANDIDATE_PATH;
       const { offlineLogin }=await import('./offline-pr125-login.mjs');
-      await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications);
+      const { proposalFixture, reproduceProposal }=await import('./offline-pr125-proposal.mjs');
+      const fixture=proposalFixture();
+      await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications,{transport:fixture.transport,
+        afterLogin:(page,url)=>reproduceProposal(page,fixture,browserProposal,physicalPairCard,url)});
       const mock=await readFile('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
       const A='00000000-0000-4000-8000-000000000101',B='00000000-0000-4000-8000-000000000102',C='00000000-0000-4000-8000-000000000103',stamp='2026-10-05T12:00:00Z';
       const database={profiles:[{id:A,display_name:'Easwar'},{id:B,display_name:'Ramya'},{id:C,display_name:'Dhyan'}].map(p=>({...p,email:p.id+'@example.invalid',country:'India',city:'Bengaluru',adult_confirmed_at:stamp,created_at:stamp})),
@@ -213,26 +258,7 @@ async function run(env=process.env) {
     };
     passed('three independent real browser staging sessions');
     stage='inline proposal and no reservation on open';
-    await pa.evaluate(()=>window.bcNav('matches'));
-    // Exact physical pair, not first reciprocal match (there are four combinations).
-    // Select by both unique rendered set numbers, never an old modal or "first match" selector.
-    let proposalArgs;
-    pa.on('request',request=>{if(request.url()===config.url+'/rest/v1/rpc/create_exchange_case')proposalArgs=request.postDataJSON();});
-    const card=pa.locator('.bc-match').filter({hasText:`Set ${sets[0]}`}).filter({hasText:`Set ${sets[1]}`});
-    await expect(card).toHaveCount(1);await card.locator('[data-propose]').click();
-    await expect(pa.locator('#bc-inline-proposal')).toBeVisible();
-    const before=await a.client.from('exchange_cases').select('id');assert.ifError(before.error);assert.equal(before.data.length,0);
-    const unlocked=await a.client.from('collection_items').select('available_for_exchange').in('id',[items[0].id,items[2].id]);assert.ifError(unlocked.error);assert.ok(unlocked.data.every(i=>i.available_for_exchange));
-    await pa.locator('#bc-inline-proposal').evaluate(f=>f.requestSubmit());
-    await expect.poll(()=>pa.evaluate(()=>decodeURIComponent(location.hash))).toMatch(/^#messages\/case:/);
-    const case1=(await pa.evaluate(()=>decodeURIComponent(location.hash))).split('case:')[1];
-    assert.equal(proposalArgs.p_offered_item_id,items[0].id);assert.equal(proposalArgs.p_requested_item_id,items[1].id);
-    // A second same-peer case supplies a meaningful destination ambiguity without locks or hidden state edits.
-    const second=await a.client.rpc('create_exchange_case',{p_offered_item_id:items[2].id,p_requested_item_id:items[3].id,p_duration_days:30,p_message:runId,p_idempotency_key:runId+':second'});assert.ifError(second.error);
-    const case2=second.data.case.id;
-    assert.notEqual(case2,case1);
-    assert.equal(second.data.case.user_a,a.id);assert.equal(second.data.case.user_b,b.id);
-    assert.equal(second.data.case.item_a,items[2].id);assert.equal(second.data.case.item_b,items[3].id);
+    const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId},detail=>{stage=`inline proposal: ${detail}`});
     passed('inline physical-item proposal; opening does not reserve; two authorized same-peer cases');
 
     stage='direct and exact-case messages chronological inbox drafts and retry';
