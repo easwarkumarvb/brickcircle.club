@@ -34,10 +34,30 @@ The server secret is step-scoped to trusted account provisioning, existing
 server smoke and read-only outbox audit; it is absent from the browser process.
 Three fresh confirmed adult `example.test` accounts are created using the
 existing bootstrap (no real email sends). Completed fixtures and audit rows are
-retained; no users or existing evidence are deleted. Browser fixtures use four
-distinct catalogue sets outside the server smoke's configured pair, respecting
-collection `(owner,set_number)` uniqueness. A catalogue with four additional
-sets is required; missing fixture prerequisites fail closed.
+retained; no users or existing evidence are deleted. The supplied read-only
+connector audit reports exactly **three** staging catalogue sets. The browser
+requires the two existing configured sets plus one third set (selected outside
+configured A/B); no catalogue, account-count or configuration change is needed.
+Missing configured sets or a missing third set fail closed before item inserts.
+
+| Suite / case | Collector A owns | Collector B owns |
+| --- | --- | --- |
+| Browser first case | configured SET_B | configured SET_A |
+| Browser second case | third set | same third set |
+| Existing server smoke | configured SET_A | configured SET_B |
+
+Each browser owner inserts two unique catalogue sets. Collection uniqueness is
+`(owner,set_number)`, not global set-number uniqueness; all four browser item IDs
+are distinct, and the server smoke's two owner/set slots remain unused. The
+second browser case uses distinct physical items of the same catalogue set,
+which the existing proposal RPC permits. Both cases have the same peers; the
+first match is selected by its two different rendered set numbers, with exact
+offered/requested IDs asserted. Cross-combinations may also match, so selecting
+the first match is not safe. Wishlist entries cover both reciprocal pairs;
+case destinations, notifications, locks and lifecycle assertions use case/item
+IDs, not globally distinct catalogue numbers. The server smoke uses exact item
+IDs for matching and scoped case evidence, so existing browser rows do not
+replace its own fixtures or require an empty account after the browser run.
 
 ## Coverage required before PR125 approval
 
@@ -129,12 +149,13 @@ npm run release:check
 git diff --check
 ```
 
-Passed: **73/73** selection/target/transport/configuration/outbox/existing guard
+Passed after the three-set prerequisite correction: **75/75** selection/target/transport/configuration/outbox/existing guard
 tests; real offline Chromium transport probe and three-actor PR125 mock
 selector/destination/draft/isolation check; syntax, typecheck, release check and
 diff check. Workflow lint passed with checksum-verified **actionlint 1.7.7**.
-Also reran PR125's guided messaging suite with **48/48 Chromium**
-tests passing and retries disabled. These results establish harness readiness,
+The earlier bootstrap validation also ran PR125's guided messaging suite with
+**48/48 Chromium** tests passing and retries disabled; that product suite was
+not rerun for this fixture-only correction. These results establish harness readiness,
 not hosted staging success.
 
 ## Supabase semantics and current documentation

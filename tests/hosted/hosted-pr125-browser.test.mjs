@@ -1,10 +1,56 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { transportAllowed, stagingApplication } from '../../scripts/hosted-pr125-browser.mjs';
+import { transportAllowed, stagingApplication, browserFixtureSets } from '../../scripts/hosted-pr125-browser.mjs';
+import { insertOwnedItem } from '../../scripts/hosted-exchange-smoke.mjs';
 import { STAGING_REF, PRODUCTION_REF } from '../../scripts/validate-hosted-pr125.mjs';
 import { assertOutboxOnly } from '../../scripts/audit-hosted-pr125-outbox.mjs';
 const url=`https://${STAGING_REF}.supabase.co`;
+function catalogueClient(sets, error=null) {
+  return {from(table){
+    assert.equal(table,'lego_sets');
+    return {select(column){
+      assert.equal(column,'set_number');
+      return {
+        in(column, configured){assert.equal(column,'set_number');return {data:sets.filter(set=>configured.includes(set)).map(set_number=>({set_number})),error};},
+        not(column, operator, excluded){
+          assert.equal(column,'set_number');assert.equal(operator,'in');
+          return {order(column){assert.equal(column,'set_number');return {limit(count){assert.equal(count,1);return {data:sets.filter(set=>!excluded.slice(1,-1).split(',').includes(set)).sort().slice(0,count).map(set_number=>({set_number})),error};}};}};
+        }
+      };
+    }};
+  }};
+}
+test('exactly three catalogue sets support browser and server owner/set uniqueness',async()=>{
+  const sets=await browserFixtureSets(catalogueClient(['SET_A','SET_B','THIRD']),'SET_A','SET_B');
+  assert.deepEqual(sets,['SET_B','SET_A','THIRD','THIRD']);
+  const owned=new Set(),items=[];
+  const session=label=>({label,id:label,client:{from(table){
+    assert.equal(table,'collection_items');
+    return {insert(payload){
+      const key=payload.user_id+':'+payload.set_number;
+      assert.equal(owned.has(key),false,'No duplicate owner/set insert, including server smoke');owned.add(key);
+      assert.equal('id' in payload,false);
+      return {select:()=>({single:async()=>({data:{...payload,id:`generated-${owned.size}`},error:null})})};
+    }};
+  }}});
+  const a=session('A'),b=session('B');
+  for(const [index,owner] of [a,b,a,b].entries())items.push(await insertOwnedItem(owner,sets[index],'offline-browser'));
+  assert.equal(new Set(items.map(item=>item.id)).size,4);
+  assert.notEqual(items[0].set_number,items[1].set_number);
+  assert.equal(items[2].set_number,items[3].set_number);
+  assert.equal(owned.has('A:SET_A'),false);assert.equal(owned.has('B:SET_B'),false);
+  // Exactly the unmodified server smoke's subsequent inserts, on the same users.
+  items.push(await insertOwnedItem(a,'SET_A','offline-server'),await insertOwnedItem(b,'SET_B','offline-server'));
+  assert.equal(owned.size,6);assert.equal(new Set(items.map(item=>item.id)).size,6);
+});
+test('catalogue prerequisites fail closed on missing configured or third sets and read errors',async()=>{
+  for(const sets of [[],['SET_A','THIRD'],['SET_B','THIRD'],['SET_A','SET_B']]){
+    await assert.rejects(()=>browserFixtureSets(catalogueClient(sets),'SET_A','SET_B'));
+  }
+  await assert.rejects(()=>browserFixtureSets(catalogueClient(['SET_A','SET_B','THIRD'],new Error('offline read failure')),'SET_A','SET_B'));
+  for(const [a,b] of [['','SET_B'],['SET_A',undefined],['SET_A','set_a']])await assert.rejects(()=>browserFixtureSets(catalogueClient([]),a,b));
+});
 test('only staging public data/Auth/storage routes can leave browser',()=>{
   for(const path of ['/auth/v1/token','/rest/v1/rpc/send_collector_message','/storage/v1/object/public/avatars/a.jpg'])assert.equal(transportAllowed(url+path),true);
   for(const target of [`https://${PRODUCTION_REF}.supabase.co/rest/v1/profiles`,url+'/functions/v1/send-notifications',url+'/auth/v10/token',url+'/unknown',url.replace('https','http')+'/auth/v1/token',url.replace('.co','.co.evil.test')+'/auth/v1/token',url.replace('https://','https://user:password@')+'/auth/v1/token',url+':444/rest/v1/profiles'])assert.equal(transportAllowed(target),false);

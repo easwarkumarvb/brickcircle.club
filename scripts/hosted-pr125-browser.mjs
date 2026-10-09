@@ -11,6 +11,21 @@ const ORIGIN = 'http://127.0.0.1:4179';
 const SDK = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4';
 const expect = playwrightExpect.configure({timeout:30000});
 const TYPES = {'.html':'text/html','.js':'application/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml','.jpg':'image/jpeg','.webp':'image/webp'};
+export async function browserFixtureSets(client, setA, setB) {
+  assert.ok(setA && setB && setA.toLowerCase()!==setB.toLowerCase());
+  const configured=await client.from('lego_sets').select('set_number').in('set_number',[setA,setB]);
+  assert.ifError(configured.error);
+  const found=new Set((configured.data||[]).map(row=>row.set_number));
+  assert.ok(found.has(setA) && found.has(setB),'Both configured sets must exist');
+  const third=await client.from('lego_sets').select('set_number').not('set_number','in',`(${setA},${setB})`).order('set_number').limit(1);
+  assert.ifError(third.error);
+  assert.equal(third.data?.length,1,'One additional catalogue set is required');
+  const set=third.data[0].set_number;
+  assert.ok(set && ![setA.toLowerCase(),setB.toLowerCase()].includes(set.toLowerCase()));
+  // Per-owner uniqueness: browser A owns B/third, browser B owns A/third.
+  // Server smoke later inserts A-own-A and B-own-B on the same fresh accounts.
+  return [setB,setA,set,set];
+}
 export function transportAllowed(raw, websocket = false) {
   const url = new URL(raw);
   if (url.username || url.password) return false;
@@ -77,8 +92,8 @@ async function offline() {
       const mock=await readFile(resolve(candidate,'tests/isolated/fixtures/three-user-supabase-browser-mock.js'),'utf8');
       const A='00000000-0000-4000-8000-000000000101',B='00000000-0000-4000-8000-000000000102',C='00000000-0000-4000-8000-000000000103',stamp='2026-10-05T12:00:00Z';
       const database={profiles:[{id:A,display_name:'Easwar'},{id:B,display_name:'Ramya'},{id:C,display_name:'Dhyan'}].map(p=>({...p,email:p.id+'@example.invalid',country:'India',city:'Bengaluru',adult_confirmed_at:stamp,created_at:stamp})),
-        collection:[{id:'item-a',user_id:A,set_number:'42172-1',available_for_exchange:false},{id:'item-b',user_id:B,set_number:'42143-1',available_for_exchange:false}],wishlist:[],
-        exchanges:['first-case','second-case'].map(id=>({id,user_a:A,user_b:B,proposer_id:A,recipient_id:B,item_a:'item-a',item_b:'item-b',duration_days:60,state:'PROPOSED',state_version:5,created_at:stamp,updated_at:stamp})),
+        collection:[{id:'item-a',user_id:A,set_number:'42143-1'},{id:'item-b',user_id:B,set_number:'42172-1'},{id:'item-a-third',user_id:A,set_number:'42115-1'},{id:'item-b-third',user_id:B,set_number:'42115-1'}].map(item=>({...item,available_for_exchange:false})),wishlist:[],
+        exchanges:['first-case','second-case'].map((id,index)=>({id,user_a:A,user_b:B,proposer_id:A,recipient_id:B,item_a:index?'item-a-third':'item-a',item_b:index?'item-b-third':'item-b',duration_days:60,state:'PROPOSED',state_version:5,created_at:stamp,updated_at:stamp})),
         events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
       for(const actor of ['easwar','ramya','dhyan']){
         const ctx=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
@@ -92,6 +107,10 @@ async function offline() {
           await expect(p.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();await expect(p.locator('#bc-msg-form')).toHaveCount(0);
         }else{
           await expect(p.getByRole('region',{name:'Exchange next step'})).toBeVisible();
+          await expect(p.locator('#bc-case-destination option')).toHaveCount(3);
+          const firstLabel=await p.locator('#bc-case-destination option[value="first-case"]').innerText();
+          const secondLabel=await p.locator('#bc-case-destination option[value="second-case"]').innerText();
+          assert.notEqual(firstLabel,secondLabel,'Three-set cases remain distinguishable destinations');
           const input=p.locator('#bc-msg-form textarea');await input.fill('First destination draft');
           await p.locator('#bc-case-destination').selectOption('second-case');await input.fill('Second destination draft');
           await p.locator('#bc-case-destination').selectOption('');await input.fill('General draft');
@@ -120,7 +139,7 @@ async function run(env=process.env) {
     assert.ok(!env.BC_STAGING_SUPABASE_SECRET_KEY,'Server secret forbidden in browser process');
     const users=validateStagingEmails(['A','B','C'].map(label=>({label,email:env[`BC_STAGING_USER_${label}_EMAIL`],password:env[`BC_STAGING_USER_${label}_PASSWORD`]})),'example.test');
     assert.ok(users.every(u=>u.password));
-    assert.ok(env.BC_STAGING_SET_A && env.BC_STAGING_SET_B && env.BC_STAGING_SET_A!==env.BC_STAGING_SET_B);
+    assert.ok(env.BC_STAGING_SET_A && env.BC_STAGING_SET_B && env.BC_STAGING_SET_A.toLowerCase()!==env.BC_STAGING_SET_B.toLowerCase());
     const config={url:env.BC_STAGING_SUPABASE_URL,key:env.BC_STAGING_SUPABASE_PUBLISHABLE_KEY};
     stage='three public-key Auth sessions and synthetic fixtures';
     const sessions=[];
@@ -133,16 +152,14 @@ async function run(env=process.env) {
     const [a,b,c]=sessions;
     assert.equal(new Set(sessions.map(s=>s.id)).size,3);
     const runId=`browser-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`;
-    // The existing server smoke needs its configured pair on these same users.
-    // Collection uniqueness is (owner,set_number): never insert duplicate copies.
-    const catalogue=await a.client.from('lego_sets').select('set_number').not('set_number','in',`(${env.BC_STAGING_SET_A},${env.BC_STAGING_SET_B})`).order('set_number').limit(4);
-    assert.ifError(catalogue.error);assert.equal(catalogue.data.length,4);
-    const sets=catalogue.data.map(row=>row.set_number),items=[];
+    // Exactly three catalogue sets suffice; validate all prerequisites before inserts.
+    const sets=await browserFixtureSets(a.client,env.BC_STAGING_SET_A,env.BC_STAGING_SET_B),items=[];
     for(const [index,session] of [a,b,a,b].entries()){
       const set=sets[index];
       const item=await insertOwnedItem(session,set,runId);items.push(item);
       const available=await session.client.rpc('set_exchange_item_availability',{p_item_id:item.id,p_available:true});assert.ifError(available.error);
     }
+    assert.equal(new Set(items.map(item=>item.id)).size,4,'Each browser case needs distinct physical items');
     for(const [session,set] of [[a,sets[1]],[b,sets[0]],[a,sets[3]],[b,sets[2]]]){
       const result=await session.client.from('wishlists').upsert({user_id:session.id,set_number:set,priority:3},{onConflict:'user_id,set_number'});assert.ifError(result.error);
     }
@@ -195,6 +212,9 @@ async function run(env=process.env) {
     // A second same-peer case supplies a meaningful destination ambiguity without locks or hidden state edits.
     const second=await a.client.rpc('create_exchange_case',{p_offered_item_id:items[2].id,p_requested_item_id:items[3].id,p_duration_days:30,p_message:runId,p_idempotency_key:runId+':second'});assert.ifError(second.error);
     const case2=second.data.case.id;
+    assert.notEqual(case2,case1);
+    assert.equal(second.data.case.user_a,a.id);assert.equal(second.data.case.user_b,b.id);
+    assert.equal(second.data.case.item_a,items[2].id);assert.equal(second.data.case.item_b,items[3].id);
     passed('inline physical-item proposal; opening does not reserve; two authorized same-peer cases');
 
     stage='direct and exact-case messages chronological inbox drafts and retry';
