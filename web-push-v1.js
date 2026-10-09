@@ -3,6 +3,7 @@
 const DISMISS_PREFIX='bc_push_prompt_dismissed:';
 const STYLE_ID='bc-web-push-style';
 let promptedUser='';
+let promptEpoch=0,promptTimer=null;
 
 function supported(){return 'serviceWorker'in navigator&&'PushManager'in window&&'Notification'in window}
 function dismissed(userId){try{return Number(localStorage.getItem(DISMISS_PREFIX+userId)||0)>Date.now()-30*864e5}catch(_){return false}}
@@ -69,18 +70,23 @@ function open(user,{automatic=false}={}){
 function consider(user,{meaningful=false}={}){
   if(!user?.id||!meaningful||promptedUser===user.id||!supported()||Notification.permission!=='default')return;
   promptedUser=user.id;
-  setTimeout(()=>{if(!document.querySelector('.bc-modal-overlay,.bc-drawer-overlay,.bc-match-login-notice'))open(user,{automatic:true})},1800);
+  const epoch=promptEpoch;
+  promptTimer=setTimeout(()=>{if(epoch===promptEpoch&&promptedUser===user.id&&!document.querySelector('#bc-overlay,.bc-modal-overlay,.bc-drawer-overlay,.bc-match-login-notice'))open(user,{automatic:true})},1800);
 }
-async function signOut(user){
+function pause(){promptEpoch++;clearTimeout(promptTimer);promptTimer=null;promptedUser='';close()}
+async function signOut(user,isCurrent=()=>true){
+  pause();
   if(!user?.id||!supported())return;
   try{
     const worker=await navigator.serviceWorker.getRegistration('/'),subscription=await worker?.pushManager.getSubscription();
+    if(!isCurrent())return;
     if(worker&&subscription){
-      await window.BC_SUPABASE.from('push_subscriptions').delete().eq('user_id',user.id).eq('endpoint',subscription.endpoint);
+      // Local browser unsubscribe does not require an authenticated RLS write.
+      // The retained server row is disabled by existing 404/410 delivery handling.
       await subscription.unsubscribe();
     }
   }catch(_){ }
-  promptedUser='';close();
+  if(isCurrent()){promptedUser='';close()}
 }
-window.bcWebPush={consider,open,signOut,supported};
+window.bcWebPush={consider,open,signOut,pause,supported};
 })();

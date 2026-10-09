@@ -50,6 +50,13 @@ async function switchActor(page:any,actor:'easwar'|'ramya'|'dhyan'){
   await expect(page.locator('.bc-profile-hero h1')).toHaveText(actor[0].toUpperCase()+actor.slice(1));
 }
 
+async function proposeFromMatch(page:any){
+  await page.locator('[data-propose]').click();
+  await expect(page.locator('#bc-inline-proposal')).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toMatch(/^#messages\/direct:/);
+  await page.locator('#bc-inline-proposal').getByRole('button',{name:'Send proposal'}).click();
+}
+
 test('Easwar, Ramya and Dhyan share deterministic reciprocal and proposal truth',async({page})=>{
   test.setTimeout(120000);
   await page.goto('/v2.html?isolated=three-user#home');
@@ -75,16 +82,15 @@ test('Easwar, Ramya and Dhyan share deterministic reciprocal and proposal truth'
   await page.locator('[data-nav="matches"]').first().click();
   await expect(page.locator('.bc-match')).toHaveCount(1);
   await expect(page.locator('.bc-match')).toContainText('Ramya');
-  await page.locator('[data-propose]').click();
-  await page.locator('#bc-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await proposeFromMatch(page);
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges.length)).toBe(1);
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('PROPOSED');
 
   await switchActor(page,'ramya');
   await expect(page.locator('#bc-overlay')).toContainText('Easwar proposed an exchange with you.');
   await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
-  await expect(page).toHaveURL(/#exchange\/case-1$/);
-  await expect(page.locator('#bc-flow')).toContainText('Proposal pending');
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-1');
+  await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Proposal pending');
   await page.getByRole('button',{name:'Accept proposal'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('ACCEPTED');
   const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],collection:window.__bcThreeUser.data.collection,wishlist:window.__bcThreeUser.data.wishlist,events:window.__bcThreeUser.data.events}));
@@ -110,8 +116,7 @@ test('active third-party reservation is hidden from matches and failed acceptanc
   await switchActor(page,'easwar');
   await page.locator('[data-nav="matches"]').first().click();
   await expect(page.locator('.bc-match')).toHaveCount(1);
-  await page.locator('[data-propose]').click();
-  await page.locator('#bc-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await proposeFromMatch(page);
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges.length)).toBe(1);
 
   await page.evaluate(()=>{
@@ -164,8 +169,7 @@ test('an owner cancels an accepted pre-handoff case and both preferences remain 
   await makeAvailable(page);
   await switchActor(page,'easwar');
   await page.locator('[data-nav="matches"]').first().click();
-  await page.locator('[data-propose]').click();
-  await page.locator('#bc-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await proposeFromMatch(page);
   await switchActor(page,'ramya');
   await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
   await page.getByRole('button',{name:'Accept proposal'}).click();
@@ -199,7 +203,7 @@ test('active custody routes to the canonical case without unreserving either set
   await page.locator('[data-nav="sets"]').first().click();
   const release=page.getByRole('button',{name:'Request early return'});
   await release.click();
-  await expect(page).toHaveURL(/#exchange\/active-exchange/);
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:active-exchange');
   await expect(page.getByText(/Physical custody may have changed/i)).toBeVisible();
   const result=await page.evaluate(()=>({state:window.__bcThreeUser.data.exchanges[0].state,available:window.__bcThreeUser.data.collection.map((row:any)=>row.available_for_exchange)}));
   expect(result).toEqual({state:'ACTIVE',available:[false,false]});

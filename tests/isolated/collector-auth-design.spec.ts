@@ -134,7 +134,7 @@ test('password visibility and required validation never change signup payload',a
   await expect(toggle).toHaveAttribute('aria-pressed','false');
   await expect(password).toHaveAttribute('type','password');
   await form.getByRole('button',{name:'Create account',exact:true}).click();
-  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.authCalls.find((call:any)=>call.method==='signUp')?.credentials)).toEqual({email:'afol@example.invalid',password:'secret123',options:{data:{full_name:'AFOL Collector',adult_confirmation_version:'2026-09-11',adult_attestation:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'},emailRedirectTo:'http://127.0.0.1:4173/v2.html'}});
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.authCalls.find((call:any)=>call.method==='signUp')?.credentials)).toEqual({email:'afol@example.invalid',password:'secret123',options:{data:{full_name:'AFOL Collector',adult_confirmation_version:'2026-09-11',adult_attestation:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'},emailRedirectTo:`${new URL(page.url()).origin}/v2.html`}});
 });
 
 for(const mode of ['signin','signup'])test(`${mode} announces errors, keeps CTA geometry and retries the exact contract`,async({page})=>{
@@ -168,7 +168,7 @@ for(const mode of ['signin','signup'])test(`${mode} announces errors, keeps CTA 
   await expect(form.getByLabel('Password',{exact:true})).not.toHaveAttribute('aria-invalid','true');
   await cta.click();
   const credentials={email:'retry@example.invalid',password:'password123'};
-  await expect.poll(()=>page.evaluate(method=>window.__bcIsolated.authCalls.find((call:any)=>call.method===method)?.credentials,mode==='signin'?'signInWithPassword':'signUp')).toEqual(mode==='signin'?credentials:{...credentials,options:{data:{full_name:'Retry Collector',adult_confirmation_version:'2026-09-11',adult_attestation:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'},emailRedirectTo:'http://127.0.0.1:4173/v2.html'}});
+  await expect.poll(()=>page.evaluate(method=>window.__bcIsolated.authCalls.find((call:any)=>call.method===method)?.credentials,mode==='signin'?'signInWithPassword':'signUp')).toEqual(mode==='signin'?credentials:{...credentials,options:{data:{full_name:'Retry Collector',adult_confirmation_version:'2026-09-11',adult_attestation:'I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.'},emailRedirectTo:`${new URL(page.url()).origin}/v2.html`}});
 });
 
 test('thrown email failures re-enable submission and preserve input',async({page})=>{
