@@ -1,6 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
-const loopbackBaseURL='http://127.0.0.1:4173';
+const port=Number(process.env.BC_ISOLATED_PORT||4173);
+const loopbackBaseURL=`http://127.0.0.1:${port}`;
 const externalServer=process.env.BC_EXTERNAL_TEST_SERVER==='1';
 
 export default defineConfig({
@@ -9,7 +10,7 @@ export default defineConfig({
   timeout: 30000,
   expect: {timeout: 7000},
   webServer: externalServer?undefined:{
-    command: 'node scripts/serve-isolated.mjs 4173',
+    command: `node scripts/serve-isolated.mjs ${port}`,
     url: loopbackBaseURL,
     reuseExistingServer: false
   },

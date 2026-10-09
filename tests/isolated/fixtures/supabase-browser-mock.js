@@ -3,6 +3,7 @@
 'use strict';
 const now='2026-09-03T12:00:00.000Z';
 const user={id:'00000000-0000-4000-8000-000000000007',email:'collector@example.invalid',created_at:now,app_metadata:{provider:'google'},identities:[{provider:'google'}]};
+user.email_confirmed_at=now;
 const defaultProfile={id:user.id,display_name:'Isolated Collector',email:user.email,country:'India',city:'Bengaluru',bio:'Technic fan',avatar_url:null,rating:0,review_count:0,member_since:now,created_at:now,adult_confirmed_at:now,adult_confirmation_version:'2026-09-11'};
 const sets=[{set_number:'42172-1',name:'McLaren P1',theme:'Technic',year:2024,piece_count:3893,estimated_value:450,catalog_active:true},{set_number:'42143-1',name:'Ferrari Daytona SP3',theme:'Technic',year:2022,piece_count:3778,estimated_value:450,catalog_active:true},{set_number:'42115-1',name:'Lamborghini Sián FKP 37',theme:'Technic',year:2020,piece_count:3696,estimated_value:420,catalog_active:true}];
 const params=new URLSearchParams(location.search);const mode=params.get('isolated');const proposalMode=mode==='proposal'||mode==='proposal-offline';const delayedRealtime=mode==='realtime-delayed';let signedOut=mode==='signed-out'||mode==='proposal-offline';const onboarding=mode==='onboarding';
@@ -41,4 +42,8 @@ window.__bcClientCreateCount=0;window.supabase={createClient:(_url,_key,options)
 // Match the pinned SDK's successful password-login response, including session.
 const passwordSignIn=db.auth.signInWithPassword;
 db.auth.signInWithPassword=async credentials=>{const result=await passwordSignIn(credentials);return {...result,data:{session:{user},user}}};
+db.auth.verifyOtp=async credentials=>{state.authCalls.push({method:'verifyOtp',credentials});signedOut=false;emitAuth(credentials.type==='recovery'?'PASSWORD_RECOVERY':'SIGNED_IN',{user});return {data:{session:{user},user},error:null}};
+db.auth.resend=async credentials=>{state.authCalls.push({method:'resend',credentials});return {data:{},error:null}};
+// Public initialization models the pinned SDK's successful PKCE URL transition.
+db.auth.initialize=async()=>{state.authCalls.push({method:'initialize'});const url=new URL(location.href);if(url.searchParams.has('code')){url.searchParams.delete('code');history.replaceState({},'',url.pathname+url.search+url.hash);signedOut=false;emitAuth('SIGNED_IN',{user})}return {error:null}};
 })();
