@@ -20,6 +20,15 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit firefox
       - name: UX browser, screenshot, accessibility and navigation gates
         run: npx playwright test --config playwright.ux.config.ts
+      - name: Unit regression tests for three-user UX assertions
+        if: success()
+        run: node --test tests/hosted/ux-mobile-journey.test.mjs
+      - name: Offline three-collector messaging and lifecycle UX simulation
+        if: success()
+        env:
+          BC_HOSTED_CANDIDATE_PATH: .
+          BC_UX_SYNTHETIC_ONLY: '1'
+        run: node scripts/hosted-pr125-browser.mjs --offline
       - name: Generate initial UX triage
         if: always()
         run: node scripts/ux-triage.mjs
