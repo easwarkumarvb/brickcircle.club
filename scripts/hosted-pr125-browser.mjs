@@ -4,6 +4,7 @@ import { resolve, sep, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium, expect as playwrightExpect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { inspectConversationUx, captureSyntheticUxScreenshot } from './ux-mobile-journey.mjs';
 import { validateTarget, STAGING_REF, PRODUCTION_REF, PR125_SHA } from './validate-hosted-pr125.mjs';
 import { insertOwnedItem, serializeRedactedReport, validateStagingEmails } from './hosted-exchange-smoke.mjs';
 
@@ -107,7 +108,9 @@ export async function browserLifecycle({pa,pb,case1,a,b}, substage=()=>{}) {
     await page.locator('#bc-case-meetup [name="when"]').fill(new Date(Date.now()+86400000).toISOString().slice(0,16));
     await page.locator('#bc-case-meetup').evaluate(form=>form.requestSubmit());await expect(page.locator('#bc-case-meetup')).toHaveCount(0);
   };
-  substage('draft before acceptance');await open(pb);await pb.locator('#bc-msg-form textarea').fill('Lifecycle draft stays in this case');
+  substage('draft before acceptance');await open(pb);
+  await inspectConversationUx(pb,{phase:'exchange-proposed',mode:'composer'});
+  await pb.locator('#bc-msg-form textarea').fill('Lifecycle draft stays in this case');
   await action(pb,'accept','accept B');
   substage('draft after acceptance');await expect(pb.locator('#bc-msg-form textarea')).toHaveValue('Lifecycle draft stays in this case');
   await plan(pa,'propose_meetup','propose meetup A');await action(pb,'accept_meetup','accept meetup B');
@@ -118,6 +121,7 @@ export async function browserLifecycle({pa,pb,case1,a,b}, substage=()=>{}) {
   substage('canonical completed state');state=await a.client.from('exchange_cases').select('state,state_version').eq('id',case1).single();assert.ifError(state.error);assert.equal(state.data.state,'COMPLETED');
   substage('closed composer');await expect(pb.locator('#bc-msg-form')).toBeHidden();
   substage('closed guide');await expect(pb.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');
+  await inspectConversationUx(pb,{phase:'exchange-completed',mode:'closed'});
   substage('archived message');await expect(pb.locator('#bc-msg-chat')).toContainText('Browser case one second');
   substage('canonical completion event identity');
   const events=await a.client.from('exchange_case_events').select('*').eq('case_id',case1);assert.ifError(events.error);
@@ -244,6 +248,8 @@ async function offline() {
           assert.equal(await p.evaluate(()=>window.__bcThreeUser.data.messages.find(m=>m.body==='First destination draft').case_id),'first-case');
           await p.evaluate(()=>window.bcNav('messages'));await expect(p.locator('.bc-msg-row')).toHaveCount(1);
         }
+        await inspectConversationUx(p,{phase:'synthetic-'+actor,mode:actor==='dhyan'?'outsider':'composer'});
+        if(process.env.BC_UX_SYNTHETIC_ONLY==='1')await captureSyntheticUxScreenshot(p,'synthetic-'+actor);
         await ctx.close();
       }
       assert.equal(diagnostics.deniedProduction,1,'Only the deliberately blocked production probe is permitted');
@@ -305,9 +311,11 @@ async function run(env=process.env) {
     const send=async(page,body)=>{await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(f=>f.requestSubmit());await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');};
     const rows=async(client,table,body)=>{const r=await client.from(table).select('*').eq('body',body);assert.ifError(r.error);return r.data;};
     const openCase=async(page,id)=>{await nav(page,`case:${id}`);await expect(page.locator('#bc-case-destination')).toHaveValue(id);};
+    for(const [index,page] of pages.entries())await inspectConversationUx(page,{phase:'staging-login-'+['a','b','c'][index]});
     passed('three independent real browser staging sessions');
     stage='inline proposal and no reservation on open';
     const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId},detail=>{stage=`inline proposal: ${detail}`});
+    await inspectConversationUx(pa,{phase:'staging-proposal',mode:'composer'});
     passed('inline physical-item proposal; opening does not reserve; two authorized same-peer cases');
 
     stage='direct and exact-case messages chronological inbox drafts and retry';
@@ -359,6 +367,7 @@ async function run(env=process.env) {
     await pa.locator('.bc-msg-row').click();
     await expect(pa.locator('#bc-case-destination option')).toHaveCount(3);
     assert.equal(await pa.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+    await inspectConversationUx(pa,{phase:'staging-message',mode:'composer'});
     passed('one collector inbox; chronological direct and two exact-case messages; separate drafts; actual committed-response-lost retries exactly once; mobile width');
 
     stage='notification deep links and displayed read watermarks';
@@ -387,6 +396,7 @@ async function run(env=process.env) {
     await pc.evaluate(id=>window.bcNav('messages',`case:${id}`),case1);
     await expect(pc.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();
     await expect(pc.locator('#bc-msg-form')).toHaveCount(0);await expect(pc.locator('[data-thread-case-action]')).toHaveCount(0);
+    await inspectConversationUx(pc,{phase:'staging-outsider',mode:'outsider'});
     for(const table of ['exchange_cases','exchange_case_messages','exchange_case_events']){
       const r=await c.client.from(table).select('id').eq(table==='exchange_cases'?'id':'case_id',case1);assert.ifError(r.error);assert.deepEqual(r.data,[]);
     }
