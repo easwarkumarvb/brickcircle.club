@@ -6,10 +6,18 @@ const migration=fs.readFileSync('supabase/migrations/20260908093000_require_coll
 const html=fs.readFileSync('v2.html','utf8');
 
 assert.match(client,/Photo of your finished LEGO set/);
-assert.match(client,/type="file"[^>]+accept="image\/jpeg,image\/png,image\/webp"[^>]+required/);
+// Captured files live in picker state, not input.files; custom validation is required.
+assert.match(client,/id="bc-owner-photo-input" type="file" accept="image\/jpeg,image\/png,image\/webp" hidden/);
+assert.match(client,/const file=selected,error=ownerPhotoValidation\(file\)/);
+assert.match(client,/data-camera-start>Take photo/);
+assert.match(client,/data-choose-file>Choose file/);
+assert.match(client,/getUserMedia\(\{audio:false,video:\{facingMode:\{ideal:'environment'\}\}\}\)/);
 assert.match(client,/button class="bc-btn primary" type="submit" disabled/);
 assert.match(client,/owner_photo_path:path/);
-assert.match(client,/if\(error\)\{await cleanupOwnerPhoto\(path\);throw error\}/);
+assert.match(client,/catch\(error\)\{await cleanupOwnerPhoto\(path\);throw error\}/);
+assert.match(client,/contentType:file.type,upsert:false/);
+assert.match(client,/user_id:owner.id/);
+assert.match(client,/sessionGeneration!==ownerPhotoIdentityGeneration/);
 assert.match(client,/OWNER_PHOTO_MAX_BYTES=8\*1024\*1024/);
 
 assert.match(client,/data-exchangeable/);
