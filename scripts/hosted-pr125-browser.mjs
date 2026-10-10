@@ -192,6 +192,7 @@ export async function installTransport(context, config, candidate, diagnostics, 
 
 async function offline() {
   const browser=await chromium.launch();
+  let syntheticStage='transport-probe';
   try {
     const context=await browser.newContext({serviceWorkers:'block'}), diagnostics={deniedSocket:0,deniedProduction:0,deniedExternal:0};
     await installTransport(context,{url:`https://${STAGING_REF}.supabase.co`,key:'offline'},'.',diagnostics,'window.__pinnedSDK=true;');
@@ -226,12 +227,14 @@ async function offline() {
         events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
       const uxCheckpoints=[];
       for(const actor of ['easwar','ramya','dhyan']){
+        syntheticStage='synthetic-'+actor+'-setup';
         const ctx=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
         await installTransport(ctx,{url:`https://${STAGING_REF}.supabase.co`,key:'offline'},candidate,diagnostics,mock);
         // A catch-all staging override ensures mock execution cannot reach hosted Auth/settings.
         await ctx.route(`https://${STAGING_REF}.supabase.co/**`,r=>r.fulfill({contentType:'application/json',body:'{}'}));
         await ctx.routeWebSocket('**/*',ws=>ws.close());
         await ctx.addInitScript(({actor,database})=>{localStorage.setItem('bc_three_user_actor',actor);localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1');},{actor,database});
+        syntheticStage='synthetic-'+actor+'-navigation';
         const p=await ctx.newPage();await p.goto(ORIGIN+'/v2.html?isolated=three-user#messages/case:first-case');
         if(actor==='dhyan'){
           await expect(p.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();await expect(p.locator('#bc-msg-form')).toHaveCount(0);
@@ -249,7 +252,9 @@ async function offline() {
           assert.equal(await p.evaluate(()=>window.__bcThreeUser.data.messages.find(m=>m.body==='First destination draft').case_id),'first-case');
           await p.evaluate(()=>window.bcNav('messages'));await expect(p.locator('.bc-msg-row')).toHaveCount(1);
         }
+        syntheticStage='synthetic-'+actor+'-ux-checkpoint';
         uxCheckpoints.push(await inspectConversationUx(p,{phase:'synthetic-'+actor,mode:actor==='dhyan'?'outsider':'composer'}));
+        syntheticStage='synthetic-'+actor+'-screenshot';
         if(process.env.BC_UX_SYNTHETIC_ONLY==='1')await captureSyntheticUxScreenshot(p,'synthetic-'+actor);
         await ctx.close();
       }
@@ -259,6 +264,11 @@ async function offline() {
       console.log('Offline PR125 three-actor selector/destination/draft/isolation mock passed; not hosted evidence.');
     }
     console.log('Offline browser transport guard passed; no hosted requests.');
+  }catch(failure){
+    // Fixed, synthetic-only stage codes; never log browser/network errors.
+    console.log('Synthetic replay stage: '+syntheticStage);
+    if(failure?.code==='BC_UX_SAFE_METRICS')console.log(failure.message);
+    throw failure;
   }finally{await browser.close();}
 }
 
