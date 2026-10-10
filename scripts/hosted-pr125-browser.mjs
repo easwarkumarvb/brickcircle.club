@@ -370,6 +370,8 @@ async function run(env=process.env) {
     await pa.locator('.bc-msg-row').click();
     await expect(pa.locator('#bc-case-destination option')).toHaveCount(3);
     assert.equal(await pa.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+    await pa.evaluate(id=>window.bcNav('messages',`case:${id}`),case1);
+    await expect(pa.locator('#bc-case-destination')).toHaveValue(case1);
     await inspectConversationUx(pa,{phase:'staging-message',mode:'composer'});
     passed('one collector inbox; chronological direct and two exact-case messages; separate drafts; actual committed-response-lost retries exactly once; mobile width');
 
