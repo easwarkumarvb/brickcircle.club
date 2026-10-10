@@ -224,6 +224,7 @@ async function offline() {
         collection:[{id:'item-a',user_id:A,set_number:'42143-1'},{id:'item-b',user_id:B,set_number:'42172-1'},{id:'item-a-third',user_id:A,set_number:'42115-1'},{id:'item-b-third',user_id:B,set_number:'42115-1'}].map(item=>({...item,available_for_exchange:false})),wishlist:[],
         exchanges:['first-case','second-case'].map((id,index)=>({id,user_a:A,user_b:B,proposer_id:A,recipient_id:B,item_a:index?'item-a-third':'item-a',item_b:index?'item-b-third':'item-b',duration_days:60,state:'PROPOSED',state_version:5,created_at:stamp,updated_at:stamp})),
         events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
+      const uxCheckpoints=[];
       for(const actor of ['easwar','ramya','dhyan']){
         const ctx=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
         await installTransport(ctx,{url:`https://${STAGING_REF}.supabase.co`,key:'offline'},candidate,diagnostics,mock);
@@ -248,10 +249,12 @@ async function offline() {
           assert.equal(await p.evaluate(()=>window.__bcThreeUser.data.messages.find(m=>m.body==='First destination draft').case_id),'first-case');
           await p.evaluate(()=>window.bcNav('messages'));await expect(p.locator('.bc-msg-row')).toHaveCount(1);
         }
-        await inspectConversationUx(p,{phase:'synthetic-'+actor,mode:actor==='dhyan'?'outsider':'composer'});
+        uxCheckpoints.push(await inspectConversationUx(p,{phase:'synthetic-'+actor,mode:actor==='dhyan'?'outsider':'composer'}));
         if(process.env.BC_UX_SYNTHETIC_ONLY==='1')await captureSyntheticUxScreenshot(p,'synthetic-'+actor);
         await ctx.close();
       }
+      await mkdir('ux-report/synthetic',{recursive:true});
+      await writeFile('ux-report/synthetic/checkpoints.json',JSON.stringify({kind:'synthetic-only',count:uxCheckpoints.length,checkpoints:uxCheckpoints},null,2));
       assert.equal(diagnostics.deniedProduction,1,'Only the deliberately blocked production probe is permitted');
       console.log('Offline PR125 three-actor selector/destination/draft/isolation mock passed; not hosted evidence.');
     }
