@@ -1846,7 +1846,7 @@ function bindThreadCompose(form,kind,id,senderName){
   const input=$('textarea[name="message"]',form);
   if(input){
     const saved=threadDrafts.get(key);
-    if(saved)input.value=saved;
+    if(saved&&input.value!==saved)input.value=saved;
     input.oninput=()=>{threadDrafts.set(key,input.value)};
   }
   if(pendingSends.has(key)){
@@ -2096,8 +2096,7 @@ async function refreshThread(chat){
       if(picker){picker.parentElement.outerHTML=collectorDestinationMarkup(id,selected);$('#bc-case-destination').onchange=event=>{const caseId=event.target.value;navigate('messages',caseId?`case:${caseId}`:`direct:${id}`)}}
       const e=selected?messageIndexByUid.get(uid)?.cases.get(selected)?.case:null;
      if(selected&&!e)return renderMessagesUnavailable('Conversation unavailable.');
-     const host=$('#bc-collector-action');if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">General chat does not change exchange terms. Select a case for its next step.</p>';
-     if(e)bindThreadCaseActions(e);
+      selectCollectorCase(id,selected);
       updateThreadChat(threadCache('direct',id,uid),{senderName,scrollMode:'keep'});
       advanceCollectorWatermarks(id,uid);
      renderMessagesListPane();
@@ -2182,8 +2181,8 @@ function selectCollectorCase(peerId,caseId){
   const host=$('#bc-collector-action'),e=group?.case;
   if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">General chat does not change exchange terms. Select a case for its next step.</p>';
   if(e)bindThreadCaseActions(e);
-  const form=$('#bc-msg-form');if(form){const current=form.dataset.destination||'',input=$('textarea',form);if(input&&form.dataset.bound)threadDrafts.set(`${uid}:${current?'case':'direct'}:${current||peerId}`,input.value);form.dataset.destination=caseId||'';form.dataset.bound='true';if(input)input.value=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name)}
-  const picker=$('#bc-case-destination');if(picker)picker.value=caseId||'';
+  const form=$('#bc-msg-form');if(form){const current=form.dataset.destination||'',input=$('textarea',form);if(input&&form.dataset.bound)threadDrafts.set(`${uid}:${current?'case':'direct'}:${current||peerId}`,input.value);form.dataset.destination=caseId||'';form.dataset.bound='true';const draft=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';if(input&&input.value!==draft)input.value=draft;bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name)}
+  const picker=$('#bc-case-destination');if(picker){picker.value=caseId||'';picker.disabled=pendingSends.has(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)}
   if(e){const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b]}
   const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
   if(e&&terminalCaseStates.has(e.state)&&form){form.hidden=true}else if(form)form.hidden=false;

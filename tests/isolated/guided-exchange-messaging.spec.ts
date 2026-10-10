@@ -259,7 +259,87 @@ test('pre-handoff cancellation uses the canonical RPC and releases both item pre
   page.on('dialog',dialog=>dialog.type()==='prompt'?dialog.accept('Not exchanging now'):dialog.accept());
   await page.locator('[data-thread-case-action="cancel_before_handoff"]').click();
   await expect(page.locator('#bc-collector-action')).toContainText('Closed');
+  await expect(page.locator('#bc-msg-form')).toBeHidden();
+  expect(await page.evaluate(()=>(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow.state)).toBe('CANCELLED');
   expect(await page.evaluate(()=>{const s=(window as any).__bcThreeUser;return {state:s.data.exchanges[0].state,available:s.data.collection.map((row:any)=>row.available_for_exchange),rpc:s.rpcArgs.some((r:any)=>r.name==='cancel_exchange_case_before_mutual_handoff'&&r.args.p_case_id==='guide-case')}})).toMatchObject({state:'CANCELLED',available:[true,true],rpc:true});
+});
+for(const state of ['COMPLETED','CANCELLED'])test(`collector refresh ${state} closes current composer but preserves separate drafts and General chat`,async({page})=>{
+  await open(page,'easwar','ACCEPTED',{},'messages/case:guide-case',db=>{
+    db.exchanges.push({...db.exchanges[0],id:'second-case',state:'ACCEPTED'});
+    db.messages.push({id:'archived-body',case_id:'guide-case',sender_id:B,recipient_id:A,body:'Archived case body',created_at:stamp});
+  });
+  const input=page.locator('#bc-msg-form textarea'),form=page.locator('#bc-msg-form');
+  await expect(input).toBeVisible();await input.fill('First case draft');
+  await page.locator('#bc-case-destination').selectOption('second-case');await input.fill('Second case draft');
+  await page.locator('#bc-case-destination').selectOption('');await input.fill('General draft');
+  await page.locator('#bc-case-destination').selectOption('guide-case');await expect(input).toHaveValue('First case draft');
+  await page.evaluate(state=>{const s=(window as any).__bcThreeUser;s.data.exchanges[0].state=state;s.data.exchanges[0].state_version++;s.persist();(document.querySelector('[data-refresh-thread]') as HTMLButtonElement).click()},state);
+  await expect(form).toBeHidden();await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');
+  expect(await page.evaluate(()=>(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow.state)).toBe(state);
+  await expect(page.locator('#bc-msg-chat')).toContainText('Archived case body');
+  await page.locator('#bc-case-destination').selectOption('second-case');await expect(form).toBeVisible();await expect(input).toHaveValue('Second case draft');
+  await page.locator('#bc-case-destination').selectOption('');await expect(form).toBeVisible();await expect(input).toHaveValue('General draft');
+  expect(await page.evaluate(()=>(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow)).toBeNull();
+  await input.fill('General still sends');await form.evaluate((f:HTMLFormElement)=>f.requestSubmit());await expect(input).toHaveValue('');
+  expect(await page.evaluate(()=>(window as any).__bcThreeUser.data.directMessages.at(-1).body)).toBe('General still sends');
+  await page.locator('#bc-case-destination').selectOption('guide-case');await expect(form).toBeHidden();await expect(input).toHaveValue('First case draft');
+});
+test('canonical final return confirmation closes composer immediately without reselect',async({page})=>{
+  await open(page,'ramya','RETURN_INSPECTION',{return_arrived_a_at:stamp,return_arrived_b_at:stamp,return_inspected_a_at:stamp,return_inspected_b_at:stamp,return_confirmed_a_at:stamp,handoff_at:stamp});
+  const input=page.locator('#bc-msg-form textarea');await input.fill('Unsent final draft');page.on('dialog',dialog=>dialog.accept());
+  await page.locator('[data-thread-case-action="return_confirm"]').click();
+  await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');await expect(page.locator('#bc-msg-form')).toBeHidden();
+  await expect(input).toHaveValue('Unsent final draft');
+  expect(await page.evaluate(()=>{const s=(window as any).__bcThreeUser;return {state:(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow.state,event:s.data.events.at(-1).event_type,result:s.data.events.at(-1).resulting_state}})).toEqual({state:'COMPLETED',event:'return_confirm',result:'COMPLETED'});
+  await expect(page.locator('.bc-collector-event summary')).toContainText('Return confirm');
+});
+test('collector refresh preserves focus caret and an open meetup form',async({page})=>{
+  await open(page,'easwar','ACCEPTED');await page.locator('[data-thread-case-action="propose_meetup"]').click();
+  await page.locator('#bc-case-meetup [name="venue"]').fill('Keep venue');
+  const input=page.locator('#bc-msg-form textarea');await input.fill('Keep exact caret');
+  await input.evaluate((el:HTMLTextAreaElement)=>{el.focus();el.setSelectionRange(2,7);(document.querySelector('[data-refresh-thread]') as HTMLButtonElement).click()});
+  await expect(page.locator('[data-refresh-thread]')).toBeEnabled();await expect(input).toHaveValue('Keep exact caret');
+  expect(await input.evaluate((el:HTMLTextAreaElement)=>[document.activeElement===el,el.selectionStart,el.selectionEnd])).toEqual([true,2,7]);
+  await expect(page.locator('#bc-case-meetup [name="venue"]')).toHaveValue('Keep venue');
+});
+test('collector refresh keeps a pending case send disabled and bound to its original draft',async({page})=>{
+  await open(page,'easwar','ACCEPTED');
+  const form=page.locator('#bc-msg-form'),input=form.locator('textarea'),send=form.locator('button[type="submit"]');
+  await input.fill('Pending exact case');
+  await page.evaluate(()=>{const db=(window as any).BC_SUPABASE,rpc=db.rpc;db.rpc=(name:string,args:any)=>name==='send_exchange_case_message'?new Promise(resolve=>{(window as any).__releaseCaseSend=()=>rpc(name,args).then(resolve)}):rpc(name,args)});
+  await form.evaluate((f:HTMLFormElement)=>f.requestSubmit());await expect(input).toBeDisabled();await expect(send).toBeDisabled();
+  await page.locator('[data-refresh-thread]').click();await expect(page.locator('[data-refresh-thread]')).toBeEnabled();
+  await expect(input).toBeDisabled();await expect(send).toBeDisabled();await expect(input).toHaveValue('Pending exact case');
+  await expect(page.locator('#bc-case-destination')).toBeDisabled();
+  await page.evaluate(()=>(window as any).__releaseCaseSend());
+  await expect(input).toBeEnabled();await expect(input).toHaveValue('');await expect(page.locator('#bc-msg-chat')).toContainText('Pending exact case');
+  expect(await page.evaluate(()=>(window as any).__bcThreeUser.data.messages.filter((m:any)=>m.case_id==='guide-case'&&m.body==='Pending exact case').length)).toBe(1);
+});
+for(const switchAccount of [false,true])test(`late collector refresh respects ${switchAccount?'new account':'new case destination'}`,async({page})=>{
+  await open(page,'easwar','ACCEPTED',{},'messages/case:guide-case',db=>{db.exchanges.push({...db.exchanges[0],id:'second-case',state:'ACCEPTED'})});
+  await page.locator('#bc-msg-form textarea').fill('Original draft');
+  await page.evaluate(()=>{
+    const db=(window as any).BC_SUPABASE,from=db.from;let pause=true;
+    db.from=(table:string)=>{const q=from(table);if(table==='exchange_cases'&&pause){pause=false;const then=q.then;q.then=(resolve:any)=>then((result:any)=>new Promise(done=>{(window as any).__releaseCollectorRead=()=>done(resolve(result))}))}return q};
+    (document.querySelector('[data-refresh-thread]') as HTMLButtonElement).click();
+  });
+  await expect.poll(()=>page.evaluate(()=>typeof (window as any).__releaseCollectorRead)).toBe('function');
+  if(switchAccount){
+    await page.evaluate(async()=>{(window as any).__bcThreeUser.switchActor('dhyan');await (window as any).BC_SUPABASE.auth.signInWithPassword()});
+    await expect(page.locator('[data-nav="profile"].bc-avatar-btn')).toBeVisible();
+    await page.evaluate(peer=>(window as any).bcNav('messages','direct:'+peer),B);
+    await expect(page.locator('#bc-case-destination option')).toHaveCount(1);
+  }else await page.locator('#bc-case-destination').selectOption('second-case');
+  await page.locator('#bc-msg-form textarea').fill('New destination draft');
+  await page.evaluate(()=>(window as any).__releaseCollectorRead());
+  if(!switchAccount)await expect(page.locator('[data-refresh-thread]')).toBeEnabled();
+  await expect(page.locator('#bc-msg-form')).toBeVisible();await expect(page.locator('#bc-msg-form textarea')).toHaveValue('New destination draft');
+  if(switchAccount){
+    await expect(page.locator('[data-thread-case-action]')).toHaveCount(0);await expect(page.locator('#bc-case-destination')).toHaveValue('');
+  }else{
+    await expect(page.locator('#bc-case-destination')).toHaveValue('second-case');
+    await page.locator('#bc-case-destination').selectOption('guide-case');await expect(page.locator('#bc-msg-form textarea')).toHaveValue('Original draft');
+  }
 });
 test('collector case selector focuses exact case, and reconnect preserves draft',async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page,'easwar','PROPOSED',{},'messages/direct:'+B);

@@ -226,9 +226,14 @@ const db={
       else if(action==='accept_return'){exchange.state='RETURN_INSPECTION';exchange.return_accepted_by=active().id}
       else if(action==='return_arrive'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`return_arrived_${suffix}_at`]=NOW}
       else if(action==='return_inspect'){const suffix=active().id===exchange.user_a?'a':'b';if(!exchange.return_arrived_a_at||!exchange.return_arrived_b_at)return {data:null,error:{message:'Both collectors must arrive before return inspection'}};exchange[`return_inspected_${suffix}_at`]=NOW}
+      else if(action==='return_confirm'){
+        if(exchange.state!=='RETURN_INSPECTION'||!exchange.return_inspected_a_at||!exchange.return_inspected_b_at)return {data:null,error:{message:'Both returned sets must be inspected first'}};
+        const suffix=active().id===exchange.user_a?'a':'b';exchange[`return_confirmed_${suffix}_at`]=NOW;
+        if(exchange.return_confirmed_a_at&&exchange.return_confirmed_b_at){exchange.state='COMPLETED';exchange.completed_at=NOW}
+      }
       else return {data:null,error:{message:`Unsupported isolated transition: ${action}`}};
       exchange.state_version+=1;exchange.updated_at=NOW;
-      data.events.push({id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:`exchange_${action}`,resulting_state:exchange.state,actor_id:active().id,idempotency_key:args.p_idempotency_key,created_at:NOW});
+      data.events.push({id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:action==='return_confirm'?action:`exchange_${action}`,resulting_state:exchange.state,actor_id:active().id,idempotency_key:args.p_idempotency_key,created_at:NOW});
       persist();if(state.lostResponses.delete(name))return {data:null,error:{message:'Network response was lost after commit',status:0}};return {data:{ok:true,case:exchange},error:null};
     }
     if(name==='cancel_exchange_case_before_mutual_handoff'){
