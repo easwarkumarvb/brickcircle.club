@@ -4,6 +4,7 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 const read=async path=>{try{return JSON.parse(await readFile(path,'utf8'));}catch{return null;}};
 const pw=await read('ux-report/results.json');
 const lh=await read('ux-lighthouse/home.json');
+const synthetic=await read('ux-report/synthetic/checkpoints.json');
 const issues=[];
 const redact=s=>String(s||'').replace(/(?:eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_(?:secret|publishable)_[A-Za-z0-9_-]+)/g,'[credential]')
 .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[email]')
@@ -31,6 +32,7 @@ const esc=s=>String(s||'').replace(/\|/g,'\\|').replace(/\r?\n/g,' ');
 const md=['# BrickCircle automated UX triage','','This report reflects available automated evidence, **not** a human usability study. No claims are made for untested authenticated journeys.','', '## Evidence status', '',
  '- Playwright JSON: '+(pw?'available':'missing'),
  '- Lighthouse JSON: '+(lh?'available':'missing'),
+ '- Three-user synthetic metrics: '+(synthetic?.kind==='synthetic-only'?synthetic.count+' checkpoints':'missing'),
  '- Failed/advisory findings: '+issues.length,
  '- Priority counts: '+JSON.stringify(counts), '',
  '## Prioritized findings','',
@@ -38,6 +40,6 @@ const md=['# BrickCircle automated UX triage','','This report reflects available
  ...issues.map(x=>'| '+[x.priority,x.browser,esc(x.title),esc(x.recommendation)].join(' | ')+' |'),
  '', '## Follow-up','','Retain traces privately in CI; do not paste token-bearing browser artifacts into public issues. Verify any finding, then create a human-reviewed PR.'];
 await mkdir('ux-report',{recursive:true});
-await writeFile('ux-report/triage.json',JSON.stringify({version:1,generatedAt:new Date().toISOString(),available:{playwright:!!pw,lighthouse:!!lh},issues},null,2));
+await writeFile('ux-report/triage.json',JSON.stringify({version:1,generatedAt:new Date().toISOString(),available:{playwright:!!pw,lighthouse:!!lh,synthetic:synthetic?.kind==='synthetic-only'},issues},null,2));
 await writeFile('ux-report/triage.md',md.join('\n')+'\n');
 console.log('UX triage:',issues.length,'findings');
