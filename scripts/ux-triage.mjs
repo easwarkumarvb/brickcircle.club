@@ -6,6 +6,10 @@ const pw=await read('ux-report/results.json');
 const lh=await read('ux-lighthouse/home.json');
 const synthetic=await read('ux-report/synthetic/checkpoints.json');
 const issues=[];
+const syntheticFailure=await read('ux-report/synthetic/failure.json');
+if(syntheticFailure?.failed===true&&syntheticFailure.phase==='three-collector-synthetic'){
+  issues.push({priority:'P1',category:'synthetic-ux',title:'Three-collector offline UX replay failed',browser:'Chromium mobile',evidence:'ux-quality-evidence GitHub Actions artifact',reproduction:'BC_HOSTED_CANDIDATE_PATH=. BC_UX_SYNTHETIC_ONLY=1 node scripts/hosted-pr125-browser.mjs --offline',details:'Use redacted fixed-stage diagnostic from the CI log; avoid publishing browser traces or secret material.',recommendation:'Reproduce on disposable offline fixtures, correct the failing screen, and rerun full simulation.'});
+}
 const redact=s=>String(s||'').replace(/(?:eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|sb_(?:secret|publishable)_[A-Za-z0-9_-]+)/g,'[credential]')
 .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi,'[email]')
 .replace(/https?:\/\/[^\s)]+/gi,'[url]');
