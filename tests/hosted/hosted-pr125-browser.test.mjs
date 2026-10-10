@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { transportAllowed, stagingApplication, browserFixtureSets, withDesktopNotifications, assertUnreservedPhysicalItems, physicalPairCard } from '../../scripts/hosted-pr125-browser.mjs';
+import { transportAllowed, stagingApplication, browserFixtureSets, withDesktopNotifications, assertUnreservedPhysicalItems, physicalPairCard, canonicalArchiveEvents } from '../../scripts/hosted-pr125-browser.mjs';
 import { insertOwnedItem, serializeRedactedReport } from '../../scripts/hosted-exchange-smoke.mjs';
 import { STAGING_REF, PRODUCTION_REF } from '../../scripts/validate-hosted-pr125.mjs';
 import { assertOutboxOnly } from '../../scripts/audit-hosted-pr125-outbox.mjs';
@@ -129,7 +129,7 @@ test('no reservation requires all four exact physical copies, including both req
 });
 test('proposal retains fixed serializable diagnostics, captured physical IDs and exact same-peer second case',()=>{
   const source=readFileSync('scripts/hosted-pr125-browser.mjs','utf8');
-  const proposal=source.split('export async function browserProposal')[1].split('export async function browserFixtureSets')[0];
+  const proposal=source.split('export async function browserProposal')[1].split('export async function browserLifecycle')[0];
   for(const match of proposal.matchAll(/substage\((.*?)\)/g)){
     assert.match(match[1],/^'[A-Za-z -]+'$/);
     const failedStage=`inline proposal: ${match[1].slice(1,-1)}`;
@@ -145,4 +145,36 @@ test('proposal retains fixed serializable diagnostics, captured physical IDs and
   assert.match(source,/reproduceProposal\(page,fixture,browserProposal,physicalPairCard,url\)/);
   for(const values of [['bad"peer','10307-1','75192-1'],['peer','bad[set','75192-1'],['peer','10307-1','']])
     assert.throws(()=>physicalPairCard(null,...values));
+});
+test('canonical archive binds exact event identities, actor/state completion and full ordered action sequence',()=>{
+  const types=['proposal_created','accept','propose_meetup','accept_meetup',...['safety_ack','arrive','inspect','handoff'].flatMap(name=>[name,name]),'propose_return','accept_return',...['return_arrive','return_inspect','return_confirm'].flatMap(name=>[name,name])];
+  const rows=types.map((event_type,i)=>({id:'event-'+i,case_id:'case-one',event_type,actor_user_id:i%2?'B':'A',resulting_state:i===19?'COMPLETED':'RETURN_INSPECTION',state_version:i+1,created_at:new Date(1700000000000+i*1000).toISOString()}));
+  const check=events=>canonicalArchiveEvents(events,'case-one','A','B',20);
+  const labels=check([...rows].reverse());assert.equal(labels.length,20);assert.deepEqual(labels.slice(-2),['Return confirm','Return confirm']);
+  for(const patch of [{id:rows[18].id},{case_id:'other-case'},{event_type:'exchange_completed'},{actor_user_id:'A'},{resulting_state:'RETURN_INSPECTION'},{state_version:19}])
+    assert.throws(()=>check(rows.map((row,i)=>i===19?{...row,...patch}:row)));
+  assert.throws(()=>check(rows.slice(1)));
+  assert.throws(()=>check([...rows,rows[19]]));
+  assert.throws(()=>check(rows.map((row,i)=>i===18?{...row,resulting_state:'COMPLETED'}:row)));
+  assert.throws(()=>check(rows.map((row,i)=>i===4?{...row,actor_user_id:'B'}:row)));
+  assert.throws(()=>check(rows.map((row,i)=>i===4?{...row,state_version:6}:row)));
+});
+test('lifecycle keeps strict closed composer, guide, archived body and safe fixed substages without reselect workaround',()=>{
+  const source=readFileSync('scripts/hosted-pr125-browser.mjs','utf8');
+  const lifecycle=source.split('export async function browserLifecycle')[1].split('export async function browserFixtureSets')[0];
+  assert.match(lifecycle,/#bc-msg-form'\)\)\.toBeHidden\(\)/);
+  assert.match(lifecycle,/toContainText\('Closed'\)/);
+  assert.match(lifecycle,/toContainText\('Browser case one second'\)/);
+  assert.match(lifecycle,/canonicalArchiveEvents\(events.data,case1,a.id,b.id,state.data.state_version\)/);
+  assert.match(lifecycle,/toHaveCount\(labels.length\)/);
+  assert.match(lifecycle,/toEqual\(labels\)/);
+  assert.doesNotMatch(lifecycle,/selectOption|hasText:'Completed'|force:|console\./);
+  for(const label of ['closed composer','canonical completion event identity','exact rendered lifecycle event sequence',...['safety_ack','arrive','inspect','handoff','return_arrive','return_inspect','return_confirm'].flatMap(name=>[name+' A',name+' B'])]){
+    const failedStage='guided lifecycle: '+label;
+    assert.equal(JSON.parse(serializeRedactedReport({ok:false,failedStage})).failedStage,failedStage);
+  }
+  const offline=readFileSync('scripts/offline-pr125-lifecycle.mjs','utf8');
+  assert.match(offline,/event_type:name/);
+  assert.match(offline,/actor_user_id:actor/);
+  assert.doesNotMatch(offline,/route\.continue|route\.fetch|addInitScript|storageState|readFile/);
 });

@@ -12,6 +12,12 @@ const target = () => ({ BC_HOSTED_SMOKE_CONFIRMATION:STAGING_CONFIRMATION, BC_HO
   BC_PRODUCTION_SUPABASE_PROJECT_REF:PRODUCTION_REF, BC_STAGING_SUPABASE_URL:`https://${STAGING_REF}.supabase.co`,
   BC_STAGING_ALLOWED_EMAIL_DOMAIN:'example.test', BC_STAGING_NOTIFICATION_MODE:'outbox-only', BC_STAGING_SUPABASE_PUBLISHABLE_KEY:'offline-placeholder' });
 test('exact trusted-main selection', () => assert.equal(validateSelection(selection()), PR125_SHA));
+test('one reviewed product head replaces the original pin, never a broader allowlist',()=>{
+  assert.equal(PR125_SHA,'e12eac9244360c5b6e616484b73c3492b8ee3922');
+  const old='1eb64e59f000f3a93f55906ff55e9a194a70eee0',s=selection();s.sha=old;s.pr.head.sha=old;
+  assert.throws(()=>validateSelection(s));
+  assert.throws(()=>validateTarget({...target(),BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA:old}));
+});
 for (const [name, mutate] of [
   ['dispatch branch',s=>s.ref='refs/heads/opencode/hosted-pr125-bootstrap'],
   ['other repository',s=>s.repository='outsider/fork'], ['number',s=>s.number='0125'],

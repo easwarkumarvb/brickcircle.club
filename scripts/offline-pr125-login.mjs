@@ -8,8 +8,8 @@ export async function offlineLogin(browser, candidate, login, notifications, wor
   const context=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
   const diagnostics={deniedSocket:0,deniedProduction:0,deniedExternal:0};
   const url=`https://${STAGING_REF}.supabase.co`;
-  const email='offline@example.test',password='offline-password-only';
-  const user={id:'00000000-0000-4000-8000-000000000101',email,role:'authenticated',aud:'authenticated',app_metadata:{provider:'email'},user_metadata:{},identities:[],created_at:'2026-10-05T12:00:00Z'};
+  const email=workflow.actor?.email||'offline@example.test',password='offline-password-only';
+  const user={id:workflow.actor?.id||'00000000-0000-4000-8000-000000000101',email,role:'authenticated',aud:'authenticated',app_metadata:{provider:'email'},user_metadata:{},identities:[],created_at:'2026-10-05T12:00:00Z'};
   let attempts=0,accepted=false;
   try {
     await installTransport(context,{url,key:'offline'},candidate,diagnostics);
@@ -32,6 +32,7 @@ export async function offlineLogin(browser, candidate, login, notifications, wor
     });
     await context.routeWebSocket('**/*',ws=>ws.close());
     const page=await context.newPage();
+    page.on('dialog',dialog=>dialog.accept());
     await login(page,{email,password},()=>{},user.id);
     assert.equal(await page.locator('[data-open="notifications"]').count(),1);
     assert.equal(await page.locator('[data-open="notifications"]').isVisible(),false,'Reproduce original mobile visibility failure after successful Auth');

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 export const STAGING_CONFIRMATION = 'RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE';
 
-export const PR125_SHA = '1eb64e59f000f3a93f55906ff55e9a194a70eee0';
+export const PR125_SHA = 'e12eac9244360c5b6e616484b73c3492b8ee3922';
 export const STAGING_REF = 'tteyypklldgwwicrgjzt';
 export const PRODUCTION_REF = 'nsxtromjdpdscknadxez';
 

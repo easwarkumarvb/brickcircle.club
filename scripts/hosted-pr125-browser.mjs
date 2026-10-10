@@ -75,6 +75,58 @@ export async function browserProposal(page, {url,a,b,sets,items,runId}, substage
     return {case1,case2};
   } finally { page.off('request',capture); }
 }
+export function canonicalArchiveEvents(rows,caseId,actorA,actorB,version) {
+  const expected=['proposal_created','accept','propose_meetup','accept_meetup',...['safety_ack','arrive','inspect','handoff'].flatMap(name=>[name,name]),'propose_return','accept_return',...['return_arrive','return_inspect','return_confirm'].flatMap(name=>[name,name])];
+  assert.equal(rows.length,expected.length);
+  assert.ok(rows.every(event=>event.id&&event.case_id===caseId));
+  assert.equal(new Set(rows.map(event=>event.id)).size,rows.length);
+  const ordered=[...rows].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||String(a.id).localeCompare(String(b.id)));
+  assert.deepEqual(ordered.map(event=>event.event_type),expected);
+  assert.deepEqual(ordered.map(event=>event.actor_user_id),expected.map((_,i)=>i%2?actorB:actorA));
+  assert.deepEqual(ordered.map(event=>event.state_version),expected.map((_,i)=>i+1));
+  const returns=ordered.filter(event=>event.event_type==='return_confirm');
+  assert.deepEqual(returns.map(event=>[event.actor_user_id,event.resulting_state]),[[actorA,'RETURN_INSPECTION'],[actorB,'COMPLETED']]);
+  const completed=ordered.filter(event=>event.resulting_state==='COMPLETED');assert.equal(completed.length,1);
+  assert.equal(completed[0].id,returns[1].id);assert.equal(completed[0].state_version,version);
+  return ordered.map(event=>event.event_type.replace(/^exchange_/,'').replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()));
+}
+export async function browserLifecycle({pa,pb,case1,a,b}, substage=()=>{}) {
+  const open=async page=>{
+    await page.evaluate(id=>{window.bcClose();window.bcNav('messages',`case:${id}`)},case1);
+    await expect(page.locator('#bc-msg-form')).toBeVisible();await expect(page.locator('#bc-case-destination')).toHaveValue(case1);
+  };
+  const refresh=async page=>{const button=page.locator('[data-refresh-thread]');await button.click();await expect(button).toBeEnabled()};
+  const action=async(page,name,label)=>{
+    substage(label);await open(page);await refresh(page);
+    const button=page.locator(`[data-thread-case-action="${name}"]`);await expect(button).toBeVisible();await button.click();await expect(button).toHaveCount(0,{timeout:20000});
+    assert.equal(await page.evaluate(()=>decodeURIComponent(location.hash)),`#messages/case:${case1}`);
+  };
+  const plan=async(page,name,label)=>{
+    substage(label);await open(page);await refresh(page);await page.locator(`[data-thread-case-action="${name}"]`).click();
+    await page.locator('#bc-case-meetup [name="venue"]').fill('Synthetic public library');
+    await page.locator('#bc-case-meetup [name="when"]').fill(new Date(Date.now()+86400000).toISOString().slice(0,16));
+    await page.locator('#bc-case-meetup').evaluate(form=>form.requestSubmit());await expect(page.locator('#bc-case-meetup')).toHaveCount(0);
+  };
+  substage('draft before acceptance');await open(pb);await pb.locator('#bc-msg-form textarea').fill('Lifecycle draft stays in this case');
+  await action(pb,'accept','accept B');
+  substage('draft after acceptance');await expect(pb.locator('#bc-msg-form textarea')).toHaveValue('Lifecycle draft stays in this case');
+  await plan(pa,'propose_meetup','propose meetup A');await action(pb,'accept_meetup','accept meetup B');
+  for(const name of ['safety_ack','arrive','inspect','handoff'])for(const [page,label] of [[pa,'A'],[pb,'B']])await action(page,name,`${name} ${label}`);
+  substage('canonical active state');let state=await a.client.from('exchange_cases').select('state').eq('id',case1).single();assert.ifError(state.error);assert.equal(state.data.state,'ACTIVE');
+  await plan(pa,'propose_return','propose return A');await action(pb,'accept_return','accept return B');
+  for(const name of ['return_arrive','return_inspect','return_confirm'])for(const [page,label] of [[pa,'A'],[pb,'B']])await action(page,name,`${name} ${label}`);
+  substage('canonical completed state');state=await a.client.from('exchange_cases').select('state,state_version').eq('id',case1).single();assert.ifError(state.error);assert.equal(state.data.state,'COMPLETED');
+  substage('closed composer');await expect(pb.locator('#bc-msg-form')).toBeHidden();
+  substage('closed guide');await expect(pb.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');
+  substage('archived message');await expect(pb.locator('#bc-msg-chat')).toContainText('Browser case one second');
+  substage('canonical completion event identity');
+  const events=await a.client.from('exchange_case_events').select('*').eq('case_id',case1);assert.ifError(events.error);
+  const labels=canonicalArchiveEvents(events.data,case1,a.id,b.id,state.data.state_version);
+  substage('exact rendered lifecycle event sequence');
+  const rendered=pb.locator(`.bc-collector-event[data-timeline-case="${case1}"] summary`);
+  await expect(rendered).toHaveCount(labels.length);
+  await expect.poll(async()=> (await rendered.allTextContents()).map(text=>text.slice(text.lastIndexOf(' · ')+3))).toEqual(labels);
+}
 export async function browserFixtureSets(client, setA, setB) {
   assert.ok(setA && setB && setA.toLowerCase()!==setB.toLowerCase());
   const configured=await client.from('lego_sets').select('set_number').in('set_number',[setA,setB]);
@@ -155,9 +207,13 @@ async function offline() {
       const candidate=process.env.BC_HOSTED_CANDIDATE_PATH;
       const { offlineLogin }=await import('./offline-pr125-login.mjs');
       const { proposalFixture, reproduceProposal }=await import('./offline-pr125-proposal.mjs');
-      const fixture=proposalFixture();
-      await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications,{transport:fixture.transport,
-        afterLogin:(page,url)=>reproduceProposal(page,fixture,browserProposal,physicalPairCard,url)});
+      const { lifecycleFixture, reproduceLifecycle }=await import('./offline-pr125-lifecycle.mjs');
+      const fixture=proposalFixture(),lifecycle=lifecycleFixture(fixture);
+      await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications,{transport:lifecycle.transportFor(fixture.A),
+        afterLogin:async(page,url)=>{
+          const result=await reproduceProposal(page,fixture,browserProposal,physicalPairCard,url);
+          await reproduceLifecycle(browser,candidate,page,fixture,lifecycle,result,browserLogin,withDesktopNotifications,browserLifecycle);
+        }});
       const mock=await readFile('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
       const A='00000000-0000-4000-8000-000000000101',B='00000000-0000-4000-8000-000000000102',C='00000000-0000-4000-8000-000000000103',stamp='2026-10-05T12:00:00Z';
       const database={profiles:[{id:A,display_name:'Easwar'},{id:B,display_name:'Ramya'},{id:C,display_name:'Dhyan'}].map(p=>({...p,email:p.id+'@example.invalid',country:'India',city:'Bengaluru',adult_confirmed_at:stamp,created_at:stamp})),
@@ -249,13 +305,6 @@ async function run(env=process.env) {
     const send=async(page,body)=>{await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(f=>f.requestSubmit());await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');};
     const rows=async(client,table,body)=>{const r=await client.from(table).select('*').eq('body',body);assert.ifError(r.error);return r.data;};
     const openCase=async(page,id)=>{await nav(page,`case:${id}`);await expect(page.locator('#bc-case-destination')).toHaveValue(id);};
-    const action=async(page,id,name)=>{
-      await openCase(page,id);await refresh(page);
-      const button=page.locator(`[data-thread-case-action="${name}"]`);
-      await expect(button).toBeVisible();await button.click();
-      await expect(button).toHaveCount(0,{timeout:20000});
-      assert.equal(await page.evaluate(()=>decodeURIComponent(location.hash)),`#messages/case:${id}`);
-    };
     passed('three independent real browser staging sessions');
     stage='inline proposal and no reservation on open';
     const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId},detail=>{stage=`inline proposal: ${detail}`});
@@ -347,25 +396,7 @@ async function run(env=process.env) {
     passed('outsider real browser unavailable; no composer/actions; server denies case/event/message reads and message RPC');
 
     stage='guided inline exchange lifecycle';
-    await openCase(pb,case1);await pb.locator('#bc-msg-form textarea').fill('Lifecycle draft stays in this case');
-    await action(pb,case1,'accept');
-    await expect(pb.locator('#bc-msg-form textarea')).toHaveValue('Lifecycle draft stays in this case');
-    const plan=async(page,name)=>{
-      await openCase(page,case1);await refresh(page);await page.locator(`[data-thread-case-action="${name}"]`).click();
-      await page.locator('#bc-case-meetup [name="venue"]').fill('Synthetic public library');
-      await page.locator('#bc-case-meetup [name="when"]').fill(new Date(Date.now()+86400000).toISOString().slice(0,16));
-      await page.locator('#bc-case-meetup').evaluate(f=>f.requestSubmit());await expect(page.locator('#bc-case-meetup')).toHaveCount(0);
-    };
-    await plan(pa,'propose_meetup');await action(pb,case1,'accept_meetup');
-    for(const name of ['safety_ack','arrive','inspect','handoff'])for(const page of [pa,pb])await action(page,case1,name);
-    let state=await a.client.from('exchange_cases').select('state').eq('id',case1).single();assert.ifError(state.error);assert.equal(state.data.state,'ACTIVE');
-    await plan(pa,'propose_return');await action(pb,case1,'accept_return');
-    for(const name of ['return_arrive','return_inspect','return_confirm'])for(const page of [pa,pb])await action(page,case1,name);
-    state=await a.client.from('exchange_cases').select('state').eq('id',case1).single();assert.ifError(state.error);assert.equal(state.data.state,'COMPLETED');
-    await expect(pb.locator('#bc-msg-form')).toBeHidden();
-    await expect(pb.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');
-    await expect(pb.locator('#bc-msg-chat')).toContainText('Browser case one second');
-    await expect(pb.locator(`.bc-collector-event[data-timeline-case="${case1}"]`).filter({hasText:'Completed'})).toHaveCount(1);
+    await browserLifecycle({pa,pb,case1,a,b},detail=>{stage=`guided lifecycle: ${detail}`});
     passed('real inline accept, meetup, safety, arrival, inspection, handoff, build, return and completion; closed archive retains chronological messages');
     assert.equal(diagnostics.deniedProduction,0);assert.equal(diagnostics.deniedSocket,0);
     report.transport={productionRequests:0,unexpectedSockets:0};

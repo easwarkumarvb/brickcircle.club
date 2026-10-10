@@ -31,7 +31,7 @@ export function proposalFixture() {
       assert.ok(matches.some(m=>m.offered_item===args.p_offered_item_id&&m.requested_item===args.p_requested_item_id),'Offline proposal must be a reciprocal physical pair');
       const peer=copies.find(item=>item.id===args.p_requested_item_id).user_id;
       const row={id:'offline-case-'+(cases.length+1),user_a:A,user_b:peer,proposer_id:A,recipient_id:peer,item_a:args.p_offered_item_id,item_b:args.p_requested_item_id,duration_days:args.p_duration_days,state:'PROPOSED',state_version:1,created_at:stamp,updated_at:stamp};
-      cases.push(row);events.push({id:'event-'+cases.length,case_id:row.id,event_type:'exchange_proposed',actor_id:A,resulting_state:'PROPOSED',created_at:stamp});
+      cases.push(row);events.push({id:'event-'+cases.length,case_id:row.id,event_type:'proposal_created',actor_user_id:A,resulting_state:'PROPOSED',state_version:1,created_at:stamp});
       return {ok:true,case:row};
     }
     if(table.startsWith('rpc/'))return {};
@@ -46,6 +46,19 @@ export function proposalFixture() {
   return {transport,items,sets,matches,cases,events,calls,A,B,D};
 }
 
+export function browserSDKClient(page) {
+  return {from:table=>({select:column=>{
+    const steps=[];
+    const execute=()=>page.evaluate(async({table,column,steps})=>{
+      let query=window.BC_SUPABASE.from(table).select(column);
+      for(const [name,args] of steps)query=query[name](...args);
+      return await query;
+    },{table,column,steps});
+    const query={then:(resolve,reject)=>execute().then(resolve,reject)};
+    for(const name of ['in','eq','order','single'])query[name]=(...args)=>{steps.push([name,args]);return query};
+    return query;
+  }}),rpc:(name,args)=>page.evaluate(({name,args})=>window.BC_SUPABASE.rpc(name,args),{name,args})};
+}
 export async function reproduceProposal(page,fixture,proposal,pairCard,url) {
   await page.evaluate(()=>{window.bcClose();window.bcNav('matches')});
   await expect(page.locator('.bc-match')).toHaveCount(6);
@@ -55,11 +68,7 @@ export async function reproduceProposal(page,fixture,proposal,pairCard,url) {
   await expect(pairCard(page,fixture.B,'75192-1','10307-1')).toHaveCount(1);
   console.log('Offline original text selector is ambiguous with retained and reversed pairs.');
   // Use the browser's real SDK for the independent read assertions and second RPC.
-  const client={from:table=>({select:column=>{
-    const query={in:(key,ids)=>page.evaluate(({table,column,key,ids})=>window.BC_SUPABASE.from(table).select(column).in(key,ids),{table,column,key,ids}),
-      then:resolve=>page.evaluate(({table,column})=>window.BC_SUPABASE.from(table).select(column),{table,column}).then(resolve)};
-    return query;
-  }}),rpc:(name,args)=>page.evaluate(({name,args})=>window.BC_SUPABASE.rpc(name,args),{name,args})};
+  const client=browserSDKClient(page);
   let stage='start';
   const result=await proposal(page,{url,a:{id:fixture.A,client},b:{id:fixture.B},
     sets:['10307-1','75192-1','10294-1','10294-1'],items:fixture.items,runId:'offline-proposal'},detail=>{
@@ -78,4 +87,5 @@ export async function reproduceProposal(page,fixture,proposal,pairCard,url) {
   assert.equal(fixture.cases.length,2);assert.ok(fixture.cases.every(row=>row.user_b===fixture.B));
   assert.notEqual(result.case1,result.case2);
   console.log('Offline shared proposal selected intended peer/ordered pair, left distractors untouched, opened without reservation and created two exact same-peer cases; not hosted evidence.');
+  return {...result,client};
 }
