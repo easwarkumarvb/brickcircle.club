@@ -58,6 +58,16 @@ export async function inspectConversationUx(page, { phase, mode = 'page' }) {
       buttonHeight: visible(action) ? Math.round(action.getBoundingClientRect().height) : null
     };
   });
+  if (mode === 'composer' || mode === 'closed') {
+    // Resolve the same accessible *active* guide used by the canonical
+    // lifecycle assertions, rather than an unrelated DOM copy.
+    const activeGuide = page.getByRole('region', { name: 'Exchange next step' });
+    metrics.guideVisible = await activeGuide.isVisible();
+    if (mode === 'closed' && metrics.guideVisible) {
+      metrics.guideClosed = await activeGuide.locator('.bc-guide-heading .bc-pill')
+        .filter({ hasText: /^Closed$/ }).isVisible();
+    }
+  }
   try {
     return verifyUxMetrics(metrics, { phase, mode });
   } catch {
