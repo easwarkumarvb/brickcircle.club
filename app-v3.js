@@ -908,7 +908,7 @@ async function renderHome(token){
 }
 // Verified catalogue examples, not listings, availability or value comparisons.
 const landingPairs={
-  hero:[['42143-1','Ferrari Daytona SP3'],['42141-1','McLaren Formula 1 Race Car']],
+  hero:[['42143-1','Ferrari Daytona SP3'],['42115-1','Lamborghini Sián FKP 37']],
   story:[['10283-1','NASA Space Shuttle Discovery'],['21309-1','NASA Apollo Saturn V']],
   match:[['10214-1','Tower Bridge'],['10276-1','Colosseum']]
 };
