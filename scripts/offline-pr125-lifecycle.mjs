@@ -32,12 +32,21 @@ export function lifecycleFixture(fixture) {
     else if(name==='return_arrive'){requireState('RETURN_INSPECTION');confirm('return_arrived')}
     else if(name==='return_inspect'){requireState('RETURN_INSPECTION');assert.ok(both('return_arrived'));confirm('return_inspected')}
     else if(name==='return_confirm'){requireState('RETURN_INSPECTION');assert.ok(both('return_inspected'));confirm('return_confirmed');if(both('return_confirmed')){c.state='COMPLETED';c.completed_at=stamp}}
+    else if(name==='cancel'){
+      assert.ok(['PROPOSED','ACCEPTED'].includes(c.state));
+      assert.ok(args.p_payload.reason);c.state='CANCELLED';
+      fixture.items.filter(item=>[c.item_a,c.item_b].includes(item.id)).forEach(item=>{item.available_for_exchange=true});
+    }
     else assert.fail('Unsupported offline lifecycle action');
     c.state_version++;c.updated_at=stamp;actions.push({actor,name});
     fixture.events.push({id:'canonical-event-'+actions.length,case_id:c.id,event_type:name,previous_state:previous,resulting_state:c.state,actor_user_id:actor,state_version:c.state_version,idempotency_key:args.p_idempotency_key,metadata:args.p_payload||{},created_at:stamp});
     return {ok:true,case:{...c}};
   };
   const transportFor=actor=>(request,target)=>{
+    if(target.pathname==='/rest/v1/rpc/cancel_exchange_case_before_mutual_handoff'){
+      const args=request.postDataJSON();
+      return transition(actor,{...args,p_action:'cancel',p_payload:{reason:args.p_reason}});
+    }
     if(target.pathname==='/rest/v1/rpc/exchange_case_transition')return transition(actor,request.postDataJSON());
     if(target.pathname==='/rest/v1/rpc/send_exchange_case_message'){
       const args=request.postDataJSON(),c=fixture.cases.find(row=>row.id===args.p_case_id);
@@ -55,7 +64,7 @@ export function lifecycleFixture(fixture) {
   return {transportFor,actions,messages,transition};
 }
 
-export async function reproduceLifecycle(browser,candidate,pa,fixture,lifecycle,proposalResult,login,notifications,run,expectedOldFailure=false) {
+export async function reproduceLifecycle(browser,candidate,pa,fixture,lifecycle,proposalResult,login,notifications,run,expectedOldFailure=false,cancel) {
   const {case1,case2,client}=proposalResult;
   await pa.evaluate(id=>window.bcNav('messages',`case:${id}`),case1);
   await expect(pa.locator('#bc-msg-form')).toBeVisible();
@@ -91,6 +100,15 @@ export async function reproduceLifecycle(browser,candidate,pa,fixture,lifecycle,
       assert.equal(fixture.cases.find(row=>row.id===case2).state,'PROPOSED');
       assert.equal(lifecycle.actions.length,19);
       console.log('Offline full canonical lifecycle and closed archive passed; not hosted evidence.');
+      if(cancel){
+        const first=fixture.cases.find(row=>row.id===case1),second=fixture.cases.find(row=>row.id===case2);
+        const items=[first.item_a,first.item_b,second.item_a,second.item_b].map(id=>fixture.items.find(item=>item.id===id));
+        let cancellationStage='start';
+        try { await cancel({pa,pb,case2,a:{id:fixture.A,client},items},detail=>{cancellationStage=detail}); }
+        catch { console.log('Offline cancellation failed at fixed substage: '+cancellationStage);throw new Error('Offline cancellation failed; details withheld'); }
+        assert.equal(second.state,'CANCELLED');
+        console.log('Offline accepted-case cancellation and release passed; not hosted evidence.');
+      }
     }});
 }
 

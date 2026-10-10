@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { chromium, expect as playwrightExpect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
 import { inspectConversationUx, captureSyntheticUxScreenshot } from './ux-mobile-journey.mjs';
+import { browserCancellation, browserCollection, verifyCollectorPermissions } from './ux-staging-journey.mjs';
 import { validateTarget, STAGING_REF, PRODUCTION_REF, PR125_SHA } from './validate-hosted-pr125.mjs';
 import { insertOwnedItem, serializeRedactedReport, validateStagingEmails } from './hosted-exchange-smoke.mjs';
 
@@ -215,9 +216,10 @@ async function offline() {
       const { lifecycleFixture, reproduceLifecycle }=await import('./offline-pr125-lifecycle.mjs');
       const fixture=proposalFixture(),lifecycle=lifecycleFixture(fixture);
       await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications,{transport:lifecycle.transportFor(fixture.A),
-        afterLogin:async(page,url)=>{
+         afterLogin:async(page,url)=>{
+           await browserCollection(page,[fixture.items[0],fixture.items[2]]);
           const result=await reproduceProposal(page,fixture,browserProposal,physicalPairCard,url);
-          await reproduceLifecycle(browser,candidate,page,fixture,lifecycle,result,browserLogin,withDesktopNotifications,browserLifecycle);
+           await reproduceLifecycle(browser,candidate,page,fixture,lifecycle,result,browserLogin,withDesktopNotifications,browserLifecycle,false,browserCancellation);
         }});
       const mock=await readFile('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
       const A='00000000-0000-4000-8000-000000000101',B='00000000-0000-4000-8000-000000000102',C='00000000-0000-4000-8000-000000000103',stamp='2026-10-05T12:00:00Z';
@@ -262,8 +264,10 @@ async function offline() {
         await ctx.close();
       }
       await mkdir('ux-report/synthetic',{recursive:true});
-      await writeFile('ux-report/synthetic/checkpoints.json',JSON.stringify({kind:'synthetic-only',count:uxCheckpoints.length,checkpoints:uxCheckpoints},null,2));
+      await writeFile('ux-report/synthetic/checkpoints.json',JSON.stringify({kind:'synthetic-only',count:uxCheckpoints.length,journeys:['real-form-mocked-auth','owned-collection','physical-pair-proposal','handoff-return-completion','accepted-case-cancellation','three-collector-message-isolation'],checkpoints:uxCheckpoints},null,2));
       assert.equal(diagnostics.deniedProduction,1,'Only the deliberately blocked production probe is permitted');
+      // A successful rerun must supersede an earlier fixed-stage failure report.
+      await writeFile('ux-report/synthetic/failure.json',JSON.stringify({phase:'three-collector-synthetic',failed:false}));
       console.log('Offline PR125 three-actor selector/destination/draft/isolation mock passed; not hosted evidence.');
     }
     console.log('Offline browser transport guard passed; no hosted requests.');
@@ -298,6 +302,9 @@ async function run(env=process.env) {
     }
     const [a,b,c]=sessions;
     assert.equal(new Set(sessions.map(s=>s.id)).size,3);
+    stage='provisioned registration eligibility and ordinary collector admin permissions';
+    await verifyCollectorPermissions(sessions);
+    passed('three provisioned adult local profiles; all three collectors denied admin role; no privilege mutation');
     const runId=`browser-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`;
     // Exactly three catalogue sets suffice; validate all prerequisites before inserts.
     const sets=await browserFixtureSets(a.client,env.BC_STAGING_SET_A,env.BC_STAGING_SET_B),items=[];
@@ -329,6 +336,10 @@ async function run(env=process.env) {
     const openCase=async(page,id)=>{await nav(page,`case:${id}`);await expect(page.locator('#bc-case-destination')).toHaveValue(id);};
     for(const [index,page] of pages.entries())await inspectConversationUx(page,{phase:'staging-login-'+['a','b','c'][index]});
     passed('three independent real browser staging sessions');
+    stage='owned collection mobile controls';
+    await browserCollection(pa,[items[0],items[2]]);
+    await browserCollection(pb,[items[1],items[3]]);
+    passed('both owners see exact fixture collection copies, checked availability and editable details on mobile');
     stage='inline proposal and no reservation on open';
     const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId},detail=>{stage=`inline proposal: ${detail}`});
     await inspectConversationUx(pa,{phase:'staging-proposal',mode:'composer'});
@@ -426,6 +437,9 @@ async function run(env=process.env) {
     stage='guided inline exchange lifecycle';
     await browserLifecycle({pa,pb,case1,a,b},detail=>{stage=`guided lifecycle: ${detail}`});
     passed('real inline accept, meetup, safety, arrival, inspection, handoff, build, return and completion; closed archive retains chronological messages');
+    stage='guided cancellation';
+    await browserCancellation({pa,pb,case2,a,items},detail=>{stage=`guided cancellation: ${detail}`});
+    passed('accepted disposable second case cancelled before handoff; exact items released; both peers see closed archive');
     assert.equal(diagnostics.deniedProduction,0);assert.equal(diagnostics.deniedSocket,0);
     report.transport={productionRequests:0,unexpectedSockets:0};
     report.ok=true;

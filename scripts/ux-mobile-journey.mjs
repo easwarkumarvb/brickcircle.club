@@ -7,11 +7,15 @@ export function verifyUxMetrics(metrics, { phase, mode = 'page' } = {}) {
   assert.match(phase, /^[a-z][a-z0-9-]{0,49}$/);
   assert.ok(Number.isFinite(metrics.width) && metrics.width >= 320, 'Invalid UX viewport');
   assert.ok(Number.isFinite(metrics.overflow), 'Missing UX overflow measurement');
+  assert.ok(['page','composer','outsider','closed'].includes(mode), 'Unknown UX inspection mode');
   assert.ok(metrics.overflow <= 2, 'UX horizontal overflow in ' + phase);
   if (mode === 'composer') {
     assert.equal(metrics.composerVisible, true, 'Case composer not visible in ' + phase);
     assert.equal(metrics.composerEnabled, true, 'Case composer cannot accept a message in ' + phase);
     assert.equal(metrics.guideVisible, true, 'Exchange next-step guide missing in ' + phase);
+    assert.equal(metrics.editorNamed, true, 'Message editor lacks an accessible name in ' + phase);
+    assert.ok(metrics.buttonHeight >= 44 && metrics.buttonWidth >= 44, 'Send target is too small in ' + phase);
+    assert.ok(metrics.editorFontSize >= 16, 'Message editor may trigger mobile input zoom in ' + phase);
   } else if (mode === 'outsider') {
     assert.equal(metrics.composerVisible, false, 'Outsider sees case composer in ' + phase);
     assert.equal(metrics.caseActionCount, 0, 'Outsider sees exchange actions in ' + phase);
@@ -27,7 +31,6 @@ export function verifyUxMetrics(metrics, { phase, mode = 'page' } = {}) {
     horizontalOverflow: metrics.overflow,
     guideVisible: !!metrics.guideVisible,
     composerVisible: !!metrics.composerVisible,
-    // This is advisory until minimum target sizing is established.
     minimumComposerButtonHeight: metrics.buttonHeight || null
   });
 }
@@ -51,11 +54,14 @@ export async function inspectConversationUx(page, { phase, mode = 'page' }) {
       overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
       composerVisible: visible(composer),
       composerEnabled: visible(editor) && !editor.disabled && !editor.readOnly,
+      editorNamed: !!editor?.getAttribute('aria-label')?.trim(),
+      editorFontSize: editor ? parseFloat(getComputedStyle(editor).fontSize) : null,
       guideVisible: visible(guide),
       guideClosed: !!(visible(guide) && /\bClosed\b/i.test(guide.textContent || '')),
       caseActionCount: buttons.filter(visible).length,
       unavailableVisible: unavailable,
-      buttonHeight: visible(action) ? Math.round(action.getBoundingClientRect().height) : null
+      buttonHeight: visible(action) ? action.getBoundingClientRect().height : null,
+      buttonWidth: visible(action) ? action.getBoundingClientRect().width : null
     };
   });
   if (mode === 'composer' || mode === 'closed') {
@@ -76,8 +82,10 @@ export async function inspectConversationUx(page, { phase, mode = 'page' }) {
     const summary = 'UX '+phase+' metrics: width='+metrics.width+
       ' overflow='+metrics.overflow+' composer='+!!metrics.composerVisible+
       ' guide='+!!metrics.guideVisible+' closed='+!!metrics.guideClosed+
-      ' unavailable='+!!metrics.unavailableVisible+
-      ' actions='+metrics.caseActionCount;
+       ' unavailable='+!!metrics.unavailableVisible+
+       ' actions='+metrics.caseActionCount+
+       ' editorNamed='+!!metrics.editorNamed+' editorFont='+metrics.editorFontSize+
+       ' sendHeight='+metrics.buttonHeight+' sendWidth='+metrics.buttonWidth;
     const error = new Error(summary);
     error.code = 'BC_UX_SAFE_METRICS';
     throw error;
@@ -94,5 +102,6 @@ export async function captureSyntheticUxScreenshot(page, phase) {
   const pathname = 'ux-report/synthetic/' + phase + '.png';
   const first = await page.screenshot({ path: pathname, animations: 'disabled' });
   const second = await page.screenshot({ animations: 'disabled' });
+  assert.ok(first.equals(second), 'Synthetic screenshot is unstable in '+phase);
   return { phase, screenshot: pathname, stable: first.equals(second) };
 }

@@ -5,7 +5,7 @@ import { verifyUxMetrics } from '../../scripts/ux-mobile-journey.mjs';
 const base={
   width:390, overflow:0, composerVisible:true, composerEnabled:true,
   guideVisible:true, guideClosed:false, caseActionCount:1,
-  unavailableVisible:false, buttonHeight:44
+  unavailableVisible:false, buttonHeight:44, buttonWidth:44, editorNamed:true, editorFontSize:16
 };
 test('staged collector messaging is usable on a 390px mobile viewport',()=>{
   const result=verifyUxMetrics(base,{phase:'case-messaging',mode:'composer'});
@@ -14,7 +14,7 @@ test('staged collector messaging is usable on a 390px mobile viewport',()=>{
   assert.equal(result.minimumComposerButtonHeight,44);
 });
 test('mobile horizontal overflow, hidden composer, disabled textarea or guide are blockers',()=>{
-  for(const m of [{overflow:12},{composerVisible:false},{composerEnabled:false},{guideVisible:false}]){
+  for(const m of [{overflow:12},{composerVisible:false},{composerEnabled:false},{guideVisible:false},{editorNamed:false},{buttonHeight:43},{buttonWidth:43},{editorFontSize:15}]){
     assert.throws(()=>verifyUxMetrics({...base,...m},{phase:'case-messaging',mode:'composer'}));
   }
 });
