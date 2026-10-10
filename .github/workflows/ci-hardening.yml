@@ -27,6 +27,8 @@ jobs:
         run: npm run test:owner-review-recovery
       - name: Collector avatar pipeline contract
         run: npm run test:collector-avatar
+      - name: Owner photo camera contract
+        run: node qa/owner_photo_static_test.mjs
       - name: Hosted smoke harness regression suite
         run: npm run test:hosted:guard
       - name: Non-destructive release and workflow regression suite
@@ -49,7 +51,15 @@ jobs:
           name: guided-messaging-chromium
           path: test-results/**/guided-messaging-*.png
           if-no-files-found: error
+      - name: Upload mocked owner camera Chromium evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-photo-camera-chromium-test-only
+          path: test-results/**/owner-photo-camera-*.png
+          if-no-files-found: ignore
       - name: Reclaim test artifacts before cross-browser gate
+        # Camera evidence is uploaded before this phase clears test-results.
         run: |
           rm -rf test-results playwright-report
           df -h /
@@ -71,6 +81,13 @@ jobs:
           name: guided-messaging-firefox-webkit
           path: test-results/**/guided-messaging-*.png
           if-no-files-found: error
+      - name: Upload mocked owner camera Firefox and WebKit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owner-photo-camera-firefox-webkit-test-only
+          path: test-results/**/owner-photo-camera-*.png
+          if-no-files-found: ignore
       - name: Start branch-local static server
         run: |
           python3 -m http.server 4173 --bind 127.0.0.1 >/tmp/brickcircle-http.log 2>&1 &

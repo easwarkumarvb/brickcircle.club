@@ -250,6 +250,8 @@ let notificationPollTimer=null;
 let notificationRealtimeGeneration=0;
 let refreshGeneration=0;
 let authEpoch=0,logoutEpoch=0,logoutLocked=false,explicitLogout=false,switchAuth=false;
+// Photo operations survive token refresh, but never an identity/session boundary.
+let ownerPhotoIdentityGeneration=0;
 const retiredAccounts=new Set(),authOperations=new Set();
 let verificationFlight=null,verificationGeneration=0,confirmationLinkFailed=false;
 const pendingEmailKey='bc_pending_verification';
@@ -321,7 +323,18 @@ function modal(html,wide=false){
   });
   applyA11y(o);controls()[0]?.focus();announceRender(o);return o;
 }
-function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();const inline=$('#bc-collector-form');if(inline)inline.replaceChildren();if(opener?.isConnected)opener.focus()}
+// Resource-owning dialogs opt in; auth/OTP abandonment and focus rules stay separate.
+// Observe direct removals too (legacy integrations may bypass closeOverlay).
+function overlayDisposer(overlay,cleanup,resource=overlay){
+  let disposed=false;
+  const observer=new MutationObserver(()=>{if(!overlay.isConnected||!resource.isConnected)dispose()});
+  function dispose(){if(disposed)return;disposed=true;observer.disconnect();window.removeEventListener('pagehide',onPageHide);cleanup()}
+  // BFCache must not restore a connected, already-disposed resource dialog.
+  function onPageHide(){dispose();overlay.remove()}
+  overlay.bcDispose=dispose;observer.observe(document.body,{childList:true,subtree:true});window.addEventListener('pagehide',onPageHide);
+  return dispose;
+}
+function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcDispose?.();overlay?.bcAuthCleanup?.();overlay?.remove();const inline=$('#bc-collector-form');if(inline)inline.replaceChildren();if(opener?.isConnected)opener.focus()}
 function caseFormSurface(html){
   const host=!logoutLocked&&routeName()==='messages'&&collectorFocus?.uid===S.user?.id?$('#bc-collector-form'):null;
   if(!host)return modal(html);
@@ -387,6 +400,7 @@ function cleanRecoveryUrl(){
 }
 
 function navigate(page,id=''){
+  if(document.getElementById('bc-overlay')?.bcDispose)closeOverlay();
   const next='#'+page+(id?'/'+encodeURIComponent(id):'');
   if(page==='messages'&&$('#bc-msg-chat')&&collectorFocus?.uid===S.user?.id&&id){
     const [kind,value]=id.split(':'),messageId=kind==='case'?id.split(':message:')[1]:null;
@@ -986,27 +1000,96 @@ function openCatalogueSetDetails(setNumber){
 }
 function ownerPhotoValidation(file){if(!file)return 'Choose a photo first.';if(!OWNER_PHOTO_TYPES.has(file.type))return 'Please use a JPEG, PNG or WebP image.';if(file.size>OWNER_PHOTO_MAX_BYTES)return 'Photo must be 8 MB or smaller.';return ''}
 function ownerPhotoExtension(file){return file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg'}
-async function uploadOwnerPhoto(file){const path=`${S.user.id}/${crypto.randomUUID()}.${ownerPhotoExtension(file)}`,{error}=await db.storage.from('collection-photos').upload(path,file,{contentType:file.type,upsert:false});if(error)throw error;return path}
+async function uploadOwnerPhoto(file,owner){await owner.verify();owner.assert();const path=`${owner.id}/${crypto.randomUUID()}.${ownerPhotoExtension(file)}`,{error}=await db.storage.from('collection-photos').upload(path,file,{contentType:file.type,upsert:false});if(error)throw error;try{await owner.verify()}catch(stale){await cleanupOwnerPhoto(path);throw stale}return path}
 async function cleanupOwnerPhoto(path){if(!path)return;try{await db.storage.from('collection-photos').remove([path])}catch(_){}}
 function ownerPhotoPicker({title,copy,saveLabel='Add to My Sets',onSave}){
-  const o=modal(`<div class="bc-modal-head"><div><h2>${esc(title)}</h2><p class="bc-muted">${esc(copy)}</p></div><button class="bc-close" type="button" data-close>×</button></div><form class="bc-form" id="bc-owner-photo-form"><div class="bc-field"><label>Photo of your finished LEGO set <b>(required)</b></label><input class="bc-input" id="bc-owner-photo-input" type="file" accept="image/jpeg,image/png,image/webp" required><div class="bc-small">Use your phone camera or gallery. JPEG, PNG or WebP · max 8 MB.</div></div><div id="bc-owner-photo-preview" hidden><img alt="Selected assembled LEGO set" style="width:100%;max-height:330px;object-fit:contain;border-radius:12px"></div><div class="bc-notice"><b>Why this is required</b><br>This photo helps the other collector understand the visible condition and apparent completeness of your physical set. Final inspection still happens in person.</div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Cancel</button><button class="bc-btn primary" type="submit" disabled>${esc(saveLabel)}</button></div></form>`);
-  $$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);const input=$('#bc-owner-photo-input',o),preview=$('#bc-owner-photo-preview',o),image=$('img',preview),submit=$('button[type="submit"]',o);let objectUrl='';
-  input.onchange=()=>{if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl='';const file=input.files?.[0],error=ownerPhotoValidation(file);submit.disabled=!!error;if(error){preview.hidden=true;if(file)toast(error);return}objectUrl=URL.createObjectURL(file);image.src=objectUrl;preview.hidden=false};
-  $('#bc-owner-photo-form',o).onsubmit=async event=>{event.preventDefault();const file=input.files?.[0],error=ownerPhotoValidation(file);if(error)return toast(error);submit.disabled=true;const label=submit.textContent;submit.textContent='Uploading…';try{await onSave(file);if(objectUrl)URL.revokeObjectURL(objectUrl);closeOverlay()}catch(saveError){fail(saveError,'Could not save the photo. Please try again.');submit.disabled=false;submit.textContent=label}};
+  if(!S.user||logoutLocked)return;
+  const ownerId=S.user.id,sessionGeneration=ownerPhotoIdentityGeneration;
+  const o=modal(`<div class="bc-modal-head"><div><h2 id="bc-owner-photo-title">${esc(title)}</h2><p class="bc-muted">${esc(copy)}</p></div><button class="bc-close" type="button" data-close aria-label="Close photo picker">×</button></div>
+    <form class="bc-form bc-owner-photo-form" id="bc-owner-photo-form">
+      <div class="bc-field"><label for="bc-owner-photo-input">Photo of your finished LEGO set <b>(required)</b></label>
+        <div class="bc-photo-actions"><button class="bc-btn" type="button" data-camera-start>Take photo</button><button class="bc-btn" type="button" data-choose-file>Choose file</button></div>
+        <input id="bc-owner-photo-input" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+        <div class="bc-small">Take a photo or choose from files / gallery. JPEG, PNG or WebP · max 8 MB. Nothing uploads until you save.</div>
+      </div>
+      <p class="bc-small bc-photo-status" data-photo-status role="status" aria-live="polite" aria-atomic="true"></p>
+      <div data-camera-fallback hidden><button class="bc-btn" type="button" data-native-camera>Try device camera</button><p class="bc-small">May open a camera on supported phones; other browsers may show files.</p><input type="file" accept="image/jpeg,image/png,image/webp" capture="environment" aria-label="Device camera photo" hidden></div>
+      <div data-camera-panel hidden><video aria-label="Live camera preview" autoplay muted playsinline></video><div class="bc-photo-actions"><button class="bc-btn" type="button" data-camera-capture disabled>Capture photo</button><button class="bc-btn" type="button" data-camera-cancel>Cancel camera</button></div></div>
+      <div id="bc-owner-photo-preview" hidden><img alt="Selected assembled LEGO set"><button class="bc-btn" type="button" data-camera-retake hidden>Retake photo</button></div>
+      <div class="bc-notice"><b>Why this is required</b><br>This photo helps the other collector understand the visible condition and apparent completeness of your physical set. Final inspection still happens in person.</div>
+      <div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Cancel</button><button class="bc-btn primary" type="submit" disabled>${esc(saveLabel)}</button></div>
+    </form>`);
+  $('.bc-modal',o).setAttribute('aria-labelledby','bc-owner-photo-title');
+  $$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);
+  const input=$('#bc-owner-photo-input',o),preview=$('#bc-owner-photo-preview',o),image=$('img',preview),submit=$('button[type="submit"]',o),video=$('video',o),panel=$('[data-camera-panel]',o),start=$('[data-camera-start]',o),capture=$('[data-camera-capture]',o),retake=$('[data-camera-retake]',o),fallback=$('[data-camera-fallback]',o),nativeInput=$('input',fallback),status=$('[data-photo-status]',o),choose=$('[data-choose-file]',o),native=$('[data-native-camera]',o);
+  let selected=null,objectUrl='',stream=null,generation=0,cameraBusy=false,saving=false,disposed=false;
+  const active=()=>!disposed&&o.isConnected&&S.user?.id===ownerId&&!logoutLocked;
+  const owner={id:ownerId,assert(){if(!active()||sessionGeneration!==ownerPhotoIdentityGeneration)throw new Error('Your sign-in session changed. Reopen the photo picker before saving.')},async verify(){this.assert();const {data,error}=await withTimeout(db.auth.getUser(),8000);this.assert();if(error||data?.user?.id!==ownerId)throw new Error('Your sign-in session changed. Reopen the photo picker before saving.')}};
+  const say=message=>{status.textContent=message};
+  function sync(){start.disabled=cameraBusy||saving;retake.disabled=cameraBusy||saving;submit.disabled=!selected||cameraBusy||saving;capture.disabled=!stream||saving;input.disabled=saving;nativeInput.disabled=saving;choose.disabled=saving;native.disabled=saving}
+  function stopCamera(){const restoreFocus=panel.contains(document.activeElement)||document.activeElement===submit;generation++;stream?.getTracks().forEach(track=>track.stop());stream=null;video.pause();video.srcObject=null;video.removeAttribute('src');panel.hidden=true;cameraBusy=false;sync();if(restoreFocus&&!disposed&&o.isConnected)(start.disabled?$('[data-close]',o):start)?.focus()}
+  overlayDisposer(o,()=>{disposed=true;stopCamera();if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl='';selected=null;image.removeAttribute('src')},$('#bc-owner-photo-form',o));
+  function select(file,fromCamera=false){
+    if(!active()||saving||!file)return;
+    stopCamera();const error=ownerPhotoValidation(file);if(error){say(error);return}
+    if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(file);selected=file;image.src=objectUrl;preview.hidden=false;retake.hidden=!fromCamera;say('Photo selected. Review it, then save.');sync();
+  }
+  input.onchange=()=>select(input.files?.[0]);nativeInput.onchange=()=>select(nativeInput.files?.[0],true);
+  $('[data-choose-file]',o).onclick=()=>{stopCamera();input.value='';input.click()};
+  $('[data-native-camera]',o).onclick=()=>{stopCamera();nativeInput.value='';nativeInput.click()};
+  $('[data-camera-cancel]',o).onclick=()=>{stopCamera();say('Camera cancelled. Your previously selected photo is unchanged.');start.focus()};
+  async function startCamera(){
+    if(!active()||cameraBusy||saving)return;
+    stopCamera();fallback.hidden=true;
+    if(!window.isSecureContext||!navigator.mediaDevices?.getUserMedia){fallback.hidden=false;say('Live camera is unsupported here. Use HTTPS and a supported browser, choose a file, or try the device camera.');return}
+    const token=++generation;cameraBusy=true;panel.hidden=false;sync();say('Waiting for camera permission. You can cancel or choose a file.');$('[data-camera-cancel]',o).focus();
+    try{
+      const result=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});
+      if(token!==generation||!active()){result.getTracks().forEach(track=>track.stop());return}
+      stream=result;video.srcObject=result;await video.play();
+      if(token!==generation||!active())return;
+      capture.disabled=false;say('Camera ready. Frame your assembled set and capture a photo.');capture.focus();
+    }catch(error){
+      if(token!==generation||!active())return;
+      stopCamera();fallback.hidden=false;
+      const messages={NotAllowedError:'Camera permission denied. Allow camera access in your browser settings or choose a file.',NotFoundError:'No camera found. Connect a camera or choose a file.',NotReadableError:'Camera is busy or unavailable. Close other camera apps and try again, or choose a file.',OverconstrainedError:'No suitable camera found. Choose a file or try the device camera.'};
+      say(messages[error?.name]||'Camera could not start. Try again, choose a file, or try the device camera.');
+    }
+  }
+  start.onclick=startCamera;retake.onclick=startCamera;
+  capture.onclick=()=>{
+    if(!active()||!stream||capture.disabled||saving)return;
+    const width=video.videoWidth,height=video.videoHeight;
+    if(!width||!height){say('Camera image is not ready yet. Wait a moment and try Capture photo again.');return}
+    const canvas=document.createElement('canvas'),scale=Math.min(1,1600/Math.max(width,height));canvas.width=Math.max(1,Math.round(width*scale));canvas.height=Math.max(1,Math.round(height*scale));
+    try{const context=canvas.getContext('2d');if(!context)throw new Error('Canvas unavailable');context.drawImage(video,0,0,canvas.width,canvas.height);
+      stopCamera();const token=++generation;cameraBusy=true;panel.hidden=false;sync();capture.disabled=true;say('Preparing photo…');$('[data-camera-cancel]',o).focus();
+      canvas.toBlob(blob=>{if(token!==generation||!active())return;stopCamera();if(!blob||!blob.size){say('Could not capture the photo. Retake it or choose a file.');return}select(new File([blob],'owner-camera.jpg',{type:'image/jpeg'}),true)},'image/jpeg',0.85);
+    }catch(_){stopCamera();say('Could not capture the photo. Retake it or choose a file.')}
+  };
+  $('#bc-owner-photo-form',o).onsubmit=async event=>{
+    event.preventDefault();if(saving||cameraBusy||!active())return;
+    const file=selected,error=ownerPhotoValidation(file);if(error){say(error);return}
+    try{owner.assert()}catch(error){say(error.message);return}
+    saving=true;stopCamera();sync();submit.textContent='Uploading…';say('Uploading your selected photo…');
+    try{await onSave(file,owner);if(active()&&document.getElementById('bc-overlay')===o)closeOverlay()}
+    catch(error){if(!active())return;say(error?.message||'Could not save the photo. Please try again.');toast(error?.message||'Could not save the photo. Please try again.');saving=false;submit.textContent=saveLabel;sync()}
+  };
 }
-function addOwnedSetWithPhoto(set){const details=S.browse.rows.find(row=>row.set_number===set)||S.sets[set]||{};ownerPhotoPicker({title:`Add ${details.name||`Set ${set}`} to My Sets`,copy:'Upload a clear photo of your assembled set. This helps the other collector understand the set’s visible condition and completeness.',onSave:async file=>{const path=await uploadOwnerPhoto(file),{error}=await db.from('collection_items').insert({user_id:S.user.id,set_number:set,owner_photo_path:path});if(error){await cleanupOwnerPhoto(path);throw error}track('collection_item_added',{set_number:set,owner_photo:true});await refreshCore();await renderRoute();toast('Added to My Sets with your owner photo.')}})}
-function addLegacyOwnerPhoto(item){ownerPhotoPicker({title:`Add a photo for set ${item.set_number}`,copy:'This legacy set needs a photo of the assembled model before it can be made available to exchange.',saveLabel:'Upload photo',onSave:async file=>{const path=await uploadOwnerPhoto(file),{error}=await db.from('collection_items').update({owner_photo_path:path,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',S.user.id);if(error){await cleanupOwnerPhoto(path);throw error}await refreshCore();renderSetsBody();toast('Photo added. You can now make this set available to exchange.')}})}
+function addOwnedSetWithPhoto(set){const details=S.browse.rows.find(row=>row.set_number===set)||S.sets[set]||{};ownerPhotoPicker({title:`Add ${details.name||`Set ${set}`} to My Sets`,copy:'Upload a clear photo of your assembled set. This helps the other collector understand the set’s visible condition and completeness.',onSave:async(file,owner)=>{const path=await uploadOwnerPhoto(file,owner);try{owner.assert();const {error}=await db.from('collection_items').insert({user_id:owner.id,set_number:set,owner_photo_path:path});if(error)throw error}catch(error){await cleanupOwnerPhoto(path);throw error}owner.assert();track('collection_item_added',{set_number:set,owner_photo:true});await refreshCore();owner.assert();await renderRoute();owner.assert();toast('Added to My Sets with your owner photo.')}})}
+function addLegacyOwnerPhoto(item){ownerPhotoPicker({title:`Add a photo for set ${item.set_number}`,copy:'This legacy set needs a photo of the assembled model before it can be made available to exchange.',saveLabel:'Upload photo',onSave:async(file,owner)=>{const path=await uploadOwnerPhoto(file,owner);try{owner.assert();const {error}=await db.from('collection_items').update({owner_photo_path:path,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);if(error)throw error}catch(error){await cleanupOwnerPhoto(path);throw error}owner.assert();await refreshCore();owner.assert();renderSetsBody();toast('Photo added. You can now make this set available to exchange.')}})}
 function replaceOwnerPhoto(item){
   if(!item||!S.user)return;
   const oldPath=item.owner_photo_path||'',details=item.lego_sets||S.sets[item.set_number]||{};
-  ownerPhotoPicker({title:`Change photo for ${details.name||`Set ${item.set_number}`}`,copy:'Choose a new clear photo of your assembled LEGO set. The existing photo will be replaced only after the new photo is saved successfully.',saveLabel:'Save new photo',onSave:async file=>{
-    const newPath=await uploadOwnerPhoto(file);
-    const {error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',S.user.id);
-    if(error){await cleanupOwnerPhoto(newPath);throw error}
+  ownerPhotoPicker({title:`Change photo for ${details.name||`Set ${item.set_number}`}`,copy:'Choose a new clear photo of your assembled LEGO set. The existing photo will be replaced only after the new photo is saved successfully.',saveLabel:'Save new photo',onSave:async(file,owner)=>{
+    const newPath=await uploadOwnerPhoto(file,owner);
+    try{owner.assert();const {error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);if(error)throw error}catch(error){await cleanupOwnerPhoto(newPath);throw error}
+    owner.assert();
     if(oldPath&&oldPath!==newPath){ownerPhotoUrls.delete(oldPath);await cleanupOwnerPhoto(oldPath)}
+    owner.assert();
     ownerPhotoUrls.delete(newPath);
     track('collection_owner_photo_changed',{set_number:item.set_number});
-    await refreshCore();renderSetsBody();toast('Set photo updated.');
+    await refreshCore();owner.assert();renderSetsBody();toast('Set photo updated.');
   }});
 }
 async function signedOwnerPhoto(path){const epoch=authEpoch;if(!path||logoutLocked)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(epoch!==authEpoch||logoutLocked)return '';if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
@@ -1394,7 +1477,7 @@ async function signOut(useAnother=false){
   useAnother=useAnother===true;
   clearPendingVerification();if(verificationFlight)verificationFlight.abandoned=true;
   const user=S.user;
-  if(!logoutLocked){closeOverlay();authEpoch++;logoutEpoch++;refreshGeneration++;S.renderToken++;pendingAuthChange=null;$('#bc-collector-proposal')?.replaceChildren();pendingMatchProposal=null;explicitLogout=true;if(user?.id)retiredAccounts.add(user.id);try{window.bcWebPush?.pause?.()}catch(_){}}
+  if(!logoutLocked){closeOverlay();ownerPhotoIdentityGeneration++;authEpoch++;logoutEpoch++;refreshGeneration++;S.renderToken++;pendingAuthChange=null;$('#bc-collector-proposal')?.replaceChildren();pendingMatchProposal=null;explicitLogout=true;if(user?.id)retiredAccounts.add(user.id);try{window.bcWebPush?.pause?.()}catch(_){}}
   logoutLocked=true;
   const o=document.getElementById('bc-overlay')||modal('<h2>Signing out</h2><p role="status" id="bc-logout-status">Confirming sign out on this device…</p><button class="bc-btn" id="bc-logout-retry" disabled>Retry sign out</button>');
   if(!o.bcAuthCleanup)prepareAuthOverlay(o);
@@ -2337,6 +2420,7 @@ function handleAuthChange(event,session,confirmedInteractive=false){
   if(logoutLocked||retiredAccounts.has(session?.user?.id)||(!confirmedInteractive&&explicitLogout&&session?.user))return;
   if(!S.booted){pendingAuthChange=[event,session];return}
   if(explicitLogout&&(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'))return;
+  if(event==='SIGNED_OUT'||event==='CONFIRMED_SIGNED_OUT'||session?.user?.id!==S.user?.id){ownerPhotoIdentityGeneration++;if(document.getElementById('bc-overlay')?.bcDispose)closeOverlay()}
   const epoch=++authEpoch,current=()=>epoch===authEpoch&&!logoutLocked;
   if(event==='SIGNED_OUT'&&!explicitLogout&&isResumeWindow()){setTimeout(async()=>{if(!current())return;const recovered=await recoverSession();if(!current())return;if(recovered)handleAuthChange('TOKEN_REFRESHED',recovered);else handleAuthChange('CONFIRMED_SIGNED_OUT',null)},350);return}
   const prev=S.user?.id;
@@ -2360,7 +2444,7 @@ function handleAuthChange(event,session,confirmedInteractive=false){
   },0)
 }
 db.auth.onAuthStateChange(handleAuthChange);
-window.addEventListener('hashchange',()=>{if(S.booted)renderRoute()});
+window.addEventListener('hashchange',()=>{if(document.getElementById('bc-overlay')?.bcDispose)closeOverlay();if(S.booted)renderRoute()});
 document.addEventListener('visibilitychange',()=>{if(document.hidden){lastHiddenAt=Date.now();rememberRoute();return}lastVisibleAt=Date.now();validateResume().catch(()=>{});reconcileNotifications().catch(()=>{})});
 window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();rememberRoute()});
 window.addEventListener('pageshow',event=>{lastVisibleAt=Date.now();if(event.persisted)validateResume().catch(()=>{})});

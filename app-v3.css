@@ -88,3 +88,13 @@
 .bc-verification-email{overflow-wrap:anywhere}
 #bc-email-verify [data-verification-status]:empty{display:none}
 #bc-email-verify .bc-field small{line-height:1.5}
+/* Owner camera/file picker: bounded previews and touch targets, including short screens. */
+.bc-owner-photo-form button,.bc-modal:has(.bc-owner-photo-form) .bc-close{min-height:44px;min-width:44px}
+.bc-photo-actions{display:flex;flex-wrap:wrap;gap:10px}
+.bc-photo-actions .bc-btn{flex:1 1 140px}
+.bc-owner-photo-form video,.bc-owner-photo-form #bc-owner-photo-preview img{display:block;width:100%;max-height:min(330px,35dvh);object-fit:contain;border-radius:12px;background:#111}
+.bc-owner-photo-form [data-camera-panel] .bc-photo-actions{margin-top:10px}
+.bc-owner-photo-form [hidden]{display:none!important}
+.bc-photo-status{margin:0;overflow-wrap:anywhere}
+.bc-modal:has(.bc-owner-photo-form){max-height:calc(100dvh - 24px);overflow-y:auto}
+@media(max-width:480px){.bc-owner-photo-form .bc-form-actions{flex-wrap:wrap}.bc-owner-photo-form .bc-form-actions .bc-btn{flex:1 1 140px}}
