@@ -429,5 +429,12 @@ async function run(env=process.env) {
 }
 
 if(process.argv[1] && pathToFileURL(resolve(process.argv[1])).href===import.meta.url){
-  (process.argv.includes('--offline')?offline():run()).catch(()=>{console.error('Browser harness failed; diagnostics withheld.');process.exitCode=1;});
+  (process.argv.includes('--offline')?offline():run()).catch(async()=>{
+    // Signal a failed synthetic replay to triage without leaking browser errors.
+    if(process.argv.includes('--offline')){
+      await mkdir('ux-report/synthetic',{recursive:true});
+      await writeFile('ux-report/synthetic/failure.json',JSON.stringify({phase:'three-collector-synthetic',failed:true}));
+    }
+    console.error('Browser harness failed; diagnostics withheld.');process.exitCode=1;
+  });
 }
