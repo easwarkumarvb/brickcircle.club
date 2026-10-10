@@ -54,6 +54,8 @@ The server is the existing `scripts/serve-isolated.mjs` on a dedicated port. Sup
 
 Follow-up validation: the three affected test files passed **18/18 Chromium tests**, without retries, on port 4187 after the test-only corrections. Typecheck and `git diff --check` also passed. Hosted CI validates the updated head independently.
 
+The existing landing specs now also explicitly assert Saturn V/Discovery mutual interest and that the other collector wants Discovery. A focused **Chromium + Firefox + WebKit** run of `phase-2d-guided-home`, `phase-2e-landing` and `landing-pairings`, with actual images enabled and `--retries=0`, completed: **69/69 passed (23 per browser, 4.8 minutes)**. This includes 30 actual-image/layout/a11y matrix cases (10 per browser). No full local-suite rerun, runtime changes or PNG changes were made for these test corrections.
+
 Tracked PNGs include full landing pages and hero crops at all five widths, normal and enlarged text. Fixed bottom navigation is hidden **only during screenshots** so it does not obscure stitched page/element evidence. Normal navigation remains visible during assertions and axe checks. Browser-preview integration was unavailable (no connected desktop); screenshots were inspected directly as image files.
 
 - [Desktop hero](landing-1440-hero.png) · [Desktop page](landing-1440.png)

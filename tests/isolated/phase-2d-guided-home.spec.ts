@@ -8,6 +8,8 @@ test('signed-out homepage explains Own Want Match Exchange with the requested en
   await expect(page.getByRole('button',{name:'How it works'})).toBeVisible();
   await expect(page.locator('#how-it-works')).toContainText('NASA Space Shuttle Discovery');
   await expect(page.locator('#how-it-works')).toContainText('NASA Apollo Saturn V');
+  await expect(page.locator('#how-it-works')).toContainText('Another collector owns Saturn V and wants your Discovery');
+  await expect(page.locator('#how-it-works')).toContainText('MUTUAL INTEREST');
   await expect(page.locator('.bc-landing-workflow')).toContainText('Add your LEGO sets');
   await expect(page.locator('.bc-landing-workflow')).toContainText('Pick your next experience');
   await expect(page.locator('.bc-example-match')).toContainText('Reciprocal Match');
