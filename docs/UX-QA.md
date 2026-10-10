@@ -35,3 +35,44 @@ An administrator must make UX quality gates a required check in GitHub Settings 
 
 ## Automated issue triage
 GitHub Actions now runs `node scripts/ux-triage.mjs` after browser checks and after the Lighthouse audit. Its outputs `ux-report/triage.md` and `ux-report/triage.json` prioritize failed browser journeys as P1 and Lighthouse advisory findings as P2. They are archived as CI artifacts. The Lighthouse thresholds are **advisory**, not enforced performance budgets, and the CI jobs currently produce separate partial summaries. Review both artifacts together. A passing run does not certify authenticated user journeys.
+
+## Three-collector mobile UX coverage (PR #134)
+
+The PR UX workflow now invokes `node scripts/hosted-pr125-browser.mjs --offline`
+with `BC_HOSTED_CANDIDATE_PATH=.` and `BC_UX_SYNTHETIC_ONLY=1`. This
+reuses the existing disposable three-actor HTTP and Supabase SDK fixtures
+without contacting an actual hosted Supabase project. It verifies a complete
+synthetic proposal/meetup/handoff/return lifecycle, collector messaging,
+draft separation, outsider isolation, mobile width and completion behaviour.
+Additional read-only UX checkpoints use `scripts/ux-mobile-journey.mjs`.
+Browser screenshots are captured **only** with the synthetic-only flag,
+and are archived privately as CI artifacts under
+`ux-report/synthetic/`. The metrics JSON never contains identities,
+message contents, session tokens, URLs or request bodies.
+
+The existing hosted PR125 staging run is intentionally locked to its exact
+reviewed PR number and commit. Instrumentation has been added to its
+existing script, **but PR #134 is not authorized to run that hosted workflow**.
+Do not relax the exact SHA, branch or target-project checks just to run a
+new PR. Before any new staged run, prepare a separately reviewed, trusted
+dispatch mechanism with its own disposable accounts, host allowlist,
+outbox-only delivery, isolated project, and required environment approval.
+
+### Scope matrix
+
+| Journey | PR #134 status |
+| --- | --- |
+| Public landing, join modal, catalogue, a11y, mobile | Browser CI |
+| Three synthetic actors, proposal, messaging, exchange completion | Offline mocked browser harness |
+| Checkpoint metrics for preproposal, messaging, unauthorized, completed | Synthetic and guarded hosted harness code |
+| Real hosted staging execution of PR #134 | Not authorized / not executed |
+| Email verification and Google OAuth redirects | Pending dedicated safe fixtures |
+| Camera/photo upload and admin authorization | Pending dedicated safe fixtures |
+| Cancel/unlock physical set in UI | Pending synthetic coverage |
+| Cross-run pixel-approved screenshot baselines | Pending baseline review |
+| AI reviewer and autonomous OpenCode/Codex changes | Pending controlled agent setup |
+
+Do not interpret a successful synthetic run as certification of physical
+custody or hosted infrastructure. Keep agent-generated fixes in human-reviewed
+draft pull requests. Only enable required status checks after confirming
+the full branch policy and CI stability.
