@@ -32,3 +32,6 @@ Issues must include URL/route, device and browser, reproducible steps, screensho
 
 ## Branch protection
 An administrator must make UX quality gates a required check in GitHub Settings > Branches or Rulesets. The workflow cannot enforce required status checks by itself. Never auto-merge or deploy substantive fixes.
+
+## Automated issue triage
+GitHub Actions now runs `node scripts/ux-triage.mjs` after browser checks and after the Lighthouse audit. Its outputs `ux-report/triage.md` and `ux-report/triage.json` prioritize failed browser journeys as P1 and Lighthouse advisory findings as P2. They are archived as CI artifacts. The Lighthouse thresholds are **advisory**, not enforced performance budgets, and the CI jobs currently produce separate partial summaries. Review both artifacts together. A passing run does not certify authenticated user journeys.
