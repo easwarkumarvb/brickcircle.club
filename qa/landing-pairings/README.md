@@ -48,9 +48,11 @@ The server is the existing `scripts/serve-isolated.mjs` on a dedicated port. Sup
 - `npm run release:sync` and `npm run release:check` — synchronized release `20261010-landing-pairings-r1`; check passed after final edits.
 - `npm run test:static` — 9/9 passed.
 - `git diff --check` — passed.
-- Full isolated Chromium suite was started before the final scoped CSS/screenshot changes and continues in the background at PR creation. Its result will be reported separately; no full-suite pass is claimed here. No unnecessary full rerun requested.
+- Full isolated Chromium suite finished: **388 passed, 3 failed (11.0 minutes)**. It was started before the final scoped CSS/screenshot changes. Two failures were stale landing-copy expectations (Ferrari in the now-space-themed story, and the old overlap caption); one was a test hardcoding port 4173 instead of the dedicated 4187 test origin. Updated only those test expectations: the OAuth assertion still requires loopback and an exact same-origin callback. Reviewed application source and screenshot PNGs remain unchanged. Targeted rerun results are reported on the PR; no full-suite pass or unnecessary full rerun is claimed.
 
 ## Screenshots
+
+Follow-up validation: the three affected test files passed **18/18 Chromium tests**, without retries, on port 4187 after the test-only corrections. Typecheck and `git diff --check` also passed. Hosted CI validates the updated head independently.
 
 Tracked PNGs include full landing pages and hero crops at all five widths, normal and enlarged text. Fixed bottom navigation is hidden **only during screenshots** so it does not obscure stitched page/element evidence. Normal navigation remains visible during assertions and axe checks. Browser-preview integration was unavailable (no connected desktop); screenshots were inspected directly as image files.
 

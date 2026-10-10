@@ -1,13 +1,15 @@
 import {test,expect} from './fixtures';
 
-test('Google auth uses the supported OAuth contract and stays on loopback',async({page})=>{
+test('Google auth uses the supported OAuth contract and stays on loopback',async({page,baseURL})=>{
+  const origin=new URL(baseURL!).origin;
+  expect(new URL(origin).hostname).toBe('127.0.0.1');
   await page.goto('/v2.html?isolated=signed-out');
   await page.locator('[data-auth]').first().click();
   await page.locator('[data-oauth="google"]').click();
-  await expect(page).toHaveURL(/127\.0\.0\.1:4173\/v2\.html\?isolated=oauth-complete/);
+  await expect(page).toHaveURL(`${origin}/v2.html?isolated=oauth-complete`);
   const options=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('bc_isolated_oauth')||'null'));
   expect(options).toMatchObject({provider:'google',options:{skipBrowserRedirect:true,queryParams:{prompt:'select_account'}}});
-  expect(options.options.redirectTo).toBe('http://127.0.0.1:4173/v2.html');
+  expect(options.options.redirectTo).toBe(`${origin}/v2.html`);
 });
 
 test('new collector completes onboarding through the canonical reliability layer',async({page})=>{
