@@ -1,0 +1,56 @@
+name: UX quality gates
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 2 * * 1,4'
+permissions:
+  contents: read
+jobs:
+  ux-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit firefox
+      - name: UX browser, screenshot, accessibility and navigation gates
+        run: npx playwright test --config playwright.ux.config.ts
+      - name: Upload evidence even when tests fail
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-quality-evidence
+          path: ux-report/
+          retention-days: 14
+          if-no-files-found: ignore
+  lighthouse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Install Lighthouse CLI
+        run: npm install --no-save lighthouse@12
+      - name: Run isolated site and audit
+        shell: bash
+        run: |
+          node scripts/serve-isolated.mjs 4188 > /tmp/brickcircle-ux-server.log 2>&1 &
+          for i in {1..30}; do curl --fail --silent http://127.0.0.1:4188/ >/dev/null && break; sleep 1; done
+          mkdir -p ux-lighthouse
+          npx lighthouse http://127.0.0.1:4188/ --chrome-flags="--headless --no-sandbox" --output=json --output-path=ux-lighthouse/home.json
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ux-lighthouse-evidence
+          path: ux-lighthouse/
+          retention-days: 14
+          if-no-files-found: ignore
