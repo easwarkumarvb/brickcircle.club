@@ -58,7 +58,20 @@ export async function inspectConversationUx(page, { phase, mode = 'page' }) {
       buttonHeight: visible(action) ? Math.round(action.getBoundingClientRect().height) : null
     };
   });
-  return verifyUxMetrics(metrics, { phase, mode });
+  try {
+    return verifyUxMetrics(metrics, { phase, mode });
+  } catch {
+    // Safe telemetry only: values are fixed labels, geometry and boolean flags.
+    // Never include DOM text, URLs, credentials, messages or browser errors.
+    const summary = 'UX '+phase+' metrics: width='+metrics.width+
+      ' overflow='+metrics.overflow+' composer='+!!metrics.composerVisible+
+      ' guide='+!!metrics.guideVisible+' closed='+!!metrics.guideClosed+
+      ' unavailable='+!!metrics.unavailableVisible+
+      ' actions='+metrics.caseActionCount;
+    const error = new Error(summary);
+    error.code = 'BC_UX_SAFE_METRICS';
+    throw error;
+  }
 }
 
 // Only call against wholly synthetic, locally mocked test sessions. Do not call
