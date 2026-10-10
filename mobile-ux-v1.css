@@ -54,10 +54,10 @@
   .bc-pager .bc-btn{min-width:0;padding-inline:8px}
 
   .bc-landing-section,.bc-workflow,.bc-guided-progress{padding:18px;border-radius:18px}
-  .bc-landing-showcase{min-height:330px;padding:8px}
-  .bc-showcase-card{width:70%;padding:10px;border-radius:17px}
+  .bc-landing-showcase{padding:8px}
+  .bc-showcase-card{padding:10px;border-radius:17px}
   .bc-showcase-card .bc-set-image{height:145px}
-  .bc-showcase-link{left:8%;right:8%;font-size:11px}
+  .bc-showcase-link{font-size:12px}
   .bc-story-flow{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
   .bc-story-flow>i{transform:rotate(90deg);justify-self:center}
   .bc-landing-workflow{grid-template-columns:1fr!important}
@@ -84,7 +84,6 @@
   .bc-page-head h1{font-size:26px}
   .bc-set-grid{grid-template-columns:1fr!important}
   .bc-checklist{grid-template-columns:1fr}
-  .bc-showcase-card{width:76%}
   .bc-mobile-nav button{font-size:9.5px}
 }
 
