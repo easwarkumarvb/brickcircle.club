@@ -1,7 +1,7 @@
 # PR125 protected hosted staging
 
 Status: **prepared and locally tested, not hosted execution evidence**. Product PR125
-remains at `1eb64e59f000f3a93f55906ff55e9a194a70eee0`. This bootstrap changes only
+is pinned to `e12eac9244360c5b6e616484b73c3492b8ee3922`. This harness changes only
 test/workflow infrastructure and documentation; it does not change application,
 database, Auth, grants, publication, delivery-worker or environment configuration.
 Do not merge PR125 on the strength of offline/mock results.
@@ -123,12 +123,12 @@ Proposed dispatch (not yet executed):
 ```sh
 gh workflow run hosted-supabase-pr125.yml --ref main \
   -f pull_request_number=125 \
-  -f expected_head_sha=1eb64e59f000f3a93f55906ff55e9a194a70eee0 \
+  -f expected_head_sha=e12eac9244360c5b6e616484b73c3492b8ee3922 \
   -f confirmation=RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE
 ```
 
 Dispatch ref: **main**. Tested ref: **opencode/conversation-first-exchanges**.
-Tested SHA: **1eb64e59f000f3a93f55906ff55e9a194a70eee0**.
+Selected candidate SHA: **e12eac9244360c5b6e616484b73c3492b8ee3922**.
 Only target: **tteyypklldgwwicrgjzt** (Mumbai staging).
 Forbidden target: **nsxtromjdpdscknadxez** (production).
 
@@ -199,7 +199,7 @@ Protected hosted run [37935226399](https://github.com/easwarkumarvb/brickcircle.
 used trusted main `c8095c43b5e64f6957efba16256956ac0f050195` after PR129. All
 three real-form browser logins passed; the browser failed at the broad inline
 proposal/no-reservation stage. Server smoke and the final provider-attempt audit
-passed again. PR125 remains `1eb64e59f000f3a93f55906ff55e9a194a70eee0`.
+passed again. At that run PR125 remained `1eb64e59f000f3a93f55906ff55e9a194a70eee0`.
 
 The candidate really renders `Set <number>` alongside catalogue names. Offline
 real-form/pinned-SDK reproduction with Millennium Falcon (75192-1), Eiffel Tower
@@ -227,6 +227,38 @@ three-actor messaging checks, syntax, typecheck, release and diff checks passed.
 No product/workflow/dependency/guard/security/secret changes, fixture cleanup or
 hosted mutations occurred. These results are **not a hosted browser pass**; the
 reviewed trusted-main fix still requires a separately approved protected rerun.
+
+## Lifecycle completion follow-up (2026-10-10)
+
+Protected run 37939050340 on trusted main
+`3c547f9c0ebd597c97af8408cd80c424e6594295` passed browser login, proposal,
+messages/drafts/retries, notification deep links/watermarks and outsider/RLS,
+then failed the broad lifecycle stage. Server 19 checks and final zero-provider
+audit passed. The broad stage does not establish the precise failing assertion.
+
+Real-form/pinned-SDK offline replay against the original head reproduced a
+product defect: after all 19 actions, the case and guide were closed but the
+composer/context remained stale. The separately authorized PR125 repair is
+`e12eac9244360c5b6e616484b73c3492b8ee3922`; only this new SHA is now selected.
+It reapplies existing selected-case state on refresh, preserves unchanged
+draft/caret values, and retains pending-send picker state.
+
+The shared lifecycle helper preserves strict hidden-composer/Closed-guide/archive
+body checks and fixed safe substages. It verifies exact canonical event identity,
+full count/order/actors/state versions and the single resulting COMPLETED event.
+Canonical transition events are action names: final `return_confirm` renders
+`Return confirm`, while `exchange_completed` is a notification kind. Rendered
+timeline labels/count must match all 20 server events, not an assumed Completed
+label or a synthetic snapshot. No post-completion reselect workaround is used.
+
+The positive offline workflow passed against an archive of the exact new product
+head, with both actual sign-in forms and pinned SDK, trusted HTTP fixtures, all
+19 actions, closed archive and case2 still PROPOSED. The original-head negative
+replay accepts only the precise old closed-composer failure. See
+[reproduction and evidence](hosted-pr125-lifecycle-diagnosis.md). Both immutable
+PR heads still require review before the protected repeat; **hosted browser
+success has not yet been established**. No workflow, secret, staging target,
+reviewer, fresh-trio, outbox-only, environment/security or data policy changed.
 
 ## Supabase semantics and current documentation
 
