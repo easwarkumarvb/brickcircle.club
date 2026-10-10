@@ -42,7 +42,7 @@ export async function inspectConversationUx(page, { phase, mode = 'page' }) {
     };
     const composer = document.querySelector('#bc-msg-form');
     const editor = document.querySelector('#bc-msg-form textarea');
-    const guide = document.querySelector('[role="region"][aria-label="Exchange next step"]');
+    const guide = document.querySelector('section[aria-label="Exchange next step"], [role="region"][aria-label="Exchange next step"]');
     const action = composer?.querySelector('button[type="submit"]');
     const buttons = [...document.querySelectorAll('[data-thread-case-action]')];
     const unavailable = [...document.querySelectorAll('h1,h2,h3')].some(el => visible(el) && el.textContent?.trim() === 'Conversation unavailable');
