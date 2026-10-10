@@ -141,14 +141,18 @@ for(const mode of ['error','success'])test(`delayed private proposal and capture
     db.rpc=(name:string,args:any)=>name==='exchange_peer_reputation_summary'?Promise.resolve({data:null,error:null}):rpc(name,args);
   });
   await page.locator('[data-nav="matches"]').first().click();await expect(page.locator('[data-propose]')).toBeVisible();
-  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated,db=w.BC_SUPABASE,rpc=db.rpc.bind(db);db.rpc=(name:string,args:any)=>name==='exchange_peer_reputation_summary'?new Promise(resolve=>s.releaseProposal=()=>resolve({data:{},error:null})):rpc(name,args)});
-  await page.locator('[data-propose]').click();await expect.poll(()=>page.evaluate(()=>!!window.__bcIsolated.releaseProposal)).toBe(true);
+  await page.locator('[data-propose]').click();await expect(page.locator('#bc-inline-proposal')).toBeVisible();
+  await page.evaluate(()=>{const w=window as any,s=w.__bcIsolated,db=w.BC_SUPABASE,rpc=db.rpc.bind(db);db.rpc=(name:string,args:any)=>name==='create_exchange_case'?new Promise(resolve=>s.releaseProposal=()=>rpc(name,args).then(resolve)):rpc(name,args)});
+  await page.locator('#bc-inline-proposal').getByRole('button',{name:'Send proposal'}).click();
+  await expect.poll(()=>page.evaluate(()=>!!window.__bcIsolated.releaseProposal)).toBe(true);
+  const thread=await page.evaluate(()=>decodeURIComponent(location.hash));
   await page.evaluate(mode=>{const w=window as any;w.__bcIsolated.logoutMode=mode;w.bcSwitchAccount()},mode);
   if(mode==='error'){
     await expect(page.locator('#bc-logout-status')).toContainText('not confirmed');
     await page.evaluate(()=>{const s=window.__bcIsolated;s.oldModal();s.oldDrawer();s.releaseProposal()});
-    await expect(page.locator('#bc-overlay')).toHaveCount(1);await expect(page.locator('#bc-logout-status')).toBeVisible();await expect(page.locator('#bc-profile-form,#bc-proposal,#bc-drawer-overlay')).toHaveCount(0);
-  }else{await blankEmail(page);await page.evaluate(()=>window.__bcIsolated.releaseProposal());await expect(page.locator('#bc-proposal')).toHaveCount(0);await expect(page.locator('#bc-email-signin')).toBeVisible()}
+    await expect(page.locator('#bc-overlay')).toHaveCount(1);await expect(page.locator('#bc-logout-status')).toBeVisible();await expect(page.locator('#bc-profile-form,#bc-inline-proposal,#bc-drawer-overlay')).toHaveCount(0);
+    await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe(thread);
+  }else{await blankEmail(page);await page.evaluate(()=>window.__bcIsolated.releaseProposal());await expect(page.locator('#bc-inline-proposal')).toHaveCount(0);await expect(page.locator('#bc-email-signin')).toBeVisible();await expect(page).toHaveURL(/#home$/)}
 });
 
 const pushSource=fs.readFileSync('web-push-v1.js','utf8');

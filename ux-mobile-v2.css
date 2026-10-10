@@ -1027,6 +1027,29 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
 
 /* Keep short conversations compact and their navigation controls fully visible. */
 .bc-msg-chat{align-content:start}
+.bc-collector-entry{display:grid;gap:3px;min-width:0}
+.bc-conversation-guide{padding:14px!important;margin-bottom:10px}
+.bc-conversation-guide h2{font-size:1.15rem;margin:6px 0}
+.bc-conversation-guide .bc-guide-note{display:none}
+.bc-conversation-guide p{margin:5px 0}
+.bc-collector-inputbar{min-width:0;background:#fff}
+.bc-msg-compose[hidden]{display:none!important}
+.bc-case-source{justify-self:start;border:0;background:#f4f1e8;color:#413b2a;border-radius:9px;padding:6px 10px;font-size:12px;font-weight:750;text-align:left;overflow-wrap:anywhere;cursor:pointer}
+.bc-collector-event{padding:10px 12px;border:1px solid var(--bc-line);border-radius:12px;background:#faf9f6;font-size:12px;overflow-wrap:anywhere}
+.bc-collector-event summary{cursor:pointer;font-weight:750}
+.bc-collector-destination{display:grid;gap:6px;font-size:12px;font-weight:800;margin-top:12px;min-width:0}
+.bc-collector-destination select{max-width:100%;min-width:0}
+.bc-collector-match-options{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px}
+.bc-collector-match-options .bc-btn{white-space:normal;text-align:left}
+.bc-messages-thread-pane>*{min-width:0}
+@media(max-width:820px){
+  .bc-messages-layout[data-view="thread"] .bc-msg-chat{max-height:none;min-height:0;overflow:visible;overscroll-behavior:auto}
+  .bc-messages-layout[data-view="thread"] .bc-msg-thread-card{display:flex;flex-direction:column;padding-bottom:210px}
+  .bc-messages-layout[data-view="thread"] .bc-collector-inputbar{position:fixed;left:max(12px,env(safe-area-inset-left,0px));right:max(12px,env(safe-area-inset-right,0px));bottom:calc(78px + env(safe-area-inset-bottom,0px));z-index:9;padding:5px 10px;background:#fff;border:1px solid var(--bc-line);border-radius:15px;box-shadow:0 -8px 24px #0f172a18}
+  .bc-messages-layout[data-view="thread"] .bc-msg-compose{padding:0}
+  .bc-messages-layout[data-view="thread"] .bc-msg-compose .bc-textarea{min-height:44px}
+  .bc-case-source,.bc-collector-event summary{min-height:44px}
+}
 .bc-msg-hero h1{font-size:clamp(1.25rem,3vw,1.75rem)!important;line-height:1.25!important}
 .bc-msg-filters{flex-wrap:wrap;overflow:visible;row-gap:6px}
 .bc-msg-filters .bc-msg-refresh{margin-left:0}

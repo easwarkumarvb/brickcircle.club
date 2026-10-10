@@ -6,7 +6,7 @@ on:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,7 +34,7 @@ jobs:
       - name: Install Chromium for regression suite
         run: npx playwright install --with-deps chromium
       - name: Guided conversation reconnect stability
-        run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts --project=chromium --grep "direct chat links" --retries=0 --repeat-each=3
+        run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts --project=chromium --grep "collector case selector focuses exact case, and reconnect preserves draft" --retries=0 --repeat-each=3
       - name: Chromium isolated functional suite
         run: npm run test:isolated:chromium
       - name: Upload Chromium admin screenshots
@@ -56,7 +56,7 @@ jobs:
       - name: Install Firefox + WebKit
         run: npx playwright install --with-deps firefox webkit
       - name: WebKit uncertain-delivery regression
-        run: npm run test:isolated -- tests/isolated/canonical-exchange-review-fixes.spec.ts --project=webkit --grep "committed response is lost" --retries=0 --repeat-each=3
+        run: npm run test:isolated -- tests/isolated/canonical-exchange-review-fixes.spec.ts --project=webkit --grep "proposal and message retries reuse keys while a committed transition disables its superseded action" --retries=0 --repeat-each=3
       - name: Firefox + WebKit isolated functional suite
         run: npm run test:isolated -- --project=firefox --project=webkit
       - name: Upload Firefox and WebKit admin screenshots

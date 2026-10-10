@@ -91,7 +91,7 @@ function visibleRows(table,query){
 }
 function chain(table){
   const query={filters:[],ins:[],mode:'select',patch:null,selected:false,
-    select(){query.selected=true;return query},eq(key,value){query.filters.push([key,value]);return query},in(key,values){query.ins.push([key,values]);return query},or(){return query},order(){return query},limit(){return query},range(){return query},is(key,value){query.filters.push([key,value]);return query},
+    select(){query.selected=true;return query},eq(key,value){query.filters.push([key,value]);return query},in(key,values){query.ins.push([key,values]);return query},or(value){query.orFilter=value;return query},order(key,options){if(key==='created_at')query.descending=options?.ascending===false;return query},limit(value){query.limitValue=value;return query},range(){return query},is(key,value){query.filters.push([key,value]);return query},
     update(patch){query.mode='update';query.patch=patch;return query},delete(){query.mode='delete';return query},
     upsert(patch){const profile=data.profiles.find(row=>row.id===patch.id);if(profile)Object.assign(profile,patch);else data.profiles.push({...patch,created_at:NOW});persist();return Promise.resolve({data:[patch],error:null})},
     insert(value){
@@ -108,6 +108,11 @@ function chain(table){
     then(resolve){
       const matches=row=>query.filters.every(([key,value])=>row[key]===value)&&query.ins.every(([key,values])=>values.includes(row[key]));
       let result=visibleRows(table,query);
+      if(query.mode==='select'&&query.limitValue&&['messages','exchange_case_messages','exchange_cases'].includes(table)){
+        const earlier=query.orFilter?.match(/created_at\.lt\.([^,)]+)/)?.[1],tie=query.orFilter?.match(/id\.lt\.([^,)]+)/)?.[1];
+        if(earlier)result=result.filter(row=>row.created_at<earlier||(row.created_at===earlier&&String(row.id)<tie));
+        result=result.sort((a,b)=>(query.descending?String(b.created_at).localeCompare(String(a.created_at)):String(a.created_at).localeCompare(String(b.created_at)))||String(b.id).localeCompare(String(a.id))).slice(0,query.limitValue);
+      }
       if(query.mode==='update'){
         const source=table==='collection_items'?data.collection:table==='wishlists'?data.wishlist:table==='notifications'?data.notifications:table==='profiles'?data.profiles:[];
         const changed=source.filter(matches);changed.forEach(row=>Object.assign(row,query.patch));persist();result=query.selected?changed.map(row=>({...row})):null;
@@ -147,7 +152,7 @@ const db={
   auth:{
     getSession:async()=>({data:{session:signedOut?null:{user:user()}}}),getUser:async()=>signedOut?{data:{user:null},error:{name:'AuthSessionMissingError',message:'Auth session missing!'}}:{data:{user:user()},error:null},
     onAuthStateChange:listener=>{authListeners.push(listener);return {data:{subscription:{unsubscribe(){const index=authListeners.indexOf(listener);if(index>=0)authListeners.splice(index,1)}}}} },
-    signOut:async()=>{signedOut=true;emitAuth('SIGNED_OUT',null);return {error:null}},signInWithPassword:async()=>{signedOut=false;emitAuth('SIGNED_IN',{user:user()});return {error:null}},signUp:async()=>({data:{session:null},error:null}),resetPasswordForEmail:async()=>({error:null}),updateUser:async()=>({data:{user:user()},error:null}),signInWithOAuth:async()=>({data:{url:location.href},error:null})
+    signOut:async()=>{signedOut=true;emitAuth('SIGNED_OUT',null);return {error:null}},signInWithPassword:async()=>{signedOut=false;const session={user:user()};emitAuth('SIGNED_IN',session);return {data:{session,user:session.user},error:null}},signUp:async()=>({data:{session:null},error:null}),resetPasswordForEmail:async()=>({error:null}),updateUser:async()=>({data:{user:user()},error:null}),signInWithOAuth:async()=>({data:{url:location.href},error:null})
   },
   realtime:{setAuth:async()=>{}},
   from:chain,
@@ -221,9 +226,14 @@ const db={
       else if(action==='accept_return'){exchange.state='RETURN_INSPECTION';exchange.return_accepted_by=active().id}
       else if(action==='return_arrive'){const suffix=active().id===exchange.user_a?'a':'b';exchange[`return_arrived_${suffix}_at`]=NOW}
       else if(action==='return_inspect'){const suffix=active().id===exchange.user_a?'a':'b';if(!exchange.return_arrived_a_at||!exchange.return_arrived_b_at)return {data:null,error:{message:'Both collectors must arrive before return inspection'}};exchange[`return_inspected_${suffix}_at`]=NOW}
+      else if(action==='return_confirm'){
+        if(exchange.state!=='RETURN_INSPECTION'||!exchange.return_inspected_a_at||!exchange.return_inspected_b_at)return {data:null,error:{message:'Both returned sets must be inspected first'}};
+        const suffix=active().id===exchange.user_a?'a':'b';exchange[`return_confirmed_${suffix}_at`]=NOW;
+        if(exchange.return_confirmed_a_at&&exchange.return_confirmed_b_at){exchange.state='COMPLETED';exchange.completed_at=NOW}
+      }
       else return {data:null,error:{message:`Unsupported isolated transition: ${action}`}};
       exchange.state_version+=1;exchange.updated_at=NOW;
-      data.events.push({id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:`exchange_${action}`,resulting_state:exchange.state,actor_id:active().id,idempotency_key:args.p_idempotency_key,created_at:NOW});
+      data.events.push({id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:action==='return_confirm'?action:`exchange_${action}`,resulting_state:exchange.state,actor_id:active().id,idempotency_key:args.p_idempotency_key,created_at:NOW});
       persist();if(state.lostResponses.delete(name))return {data:null,error:{message:'Network response was lost after commit',status:0}};return {data:{ok:true,case:exchange},error:null};
     }
     if(name==='cancel_exchange_case_before_mutual_handoff'){

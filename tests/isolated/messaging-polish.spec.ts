@@ -15,7 +15,7 @@ async function seed(page:Page,count=3,stateName='PROPOSED'){
     s.exchanges=[{id:caseId,user_a:uid,user_b:peer,proposer_id:uid,recipient_id:peer,item_a:'c1',item_b:'other-item-1',duration_days:60,state:stateName,state_version:1,created_at:'2026-09-03T12:00:00.000Z',updated_at:'2026-09-03T12:00:00.000Z'}];
     location.hash='messages';
   },{uid:UID,peer:PEER,other:OTHER,caseId:CASE,count,stateName});
-  await expect(page.locator('.bc-msg-row')).toHaveCount(count?2:1);
+  await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await expect(page.locator('#bc-first-match-coach')).toHaveCount(0);
   await expect(page.locator('.bc-match-login-notice')).toHaveCount(0);
 }
@@ -26,22 +26,23 @@ async function openDirect(page:Page){
 async function noOverflow(page:Page){
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
 }
-test('mobile conversations separate direct and exchange chats with incoming unread badges',async({page})=>{
+test('mobile conversations combine direct and exchange messages with exact unread badges',async({page})=>{
   await page.setViewportSize({width:390,height:844});await seed(page);
   await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveText('4');
   await page.getByRole('button',{name:'Collectors',exact:true}).click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
-  await expect(page.locator('.bc-msg-row')).toContainText('Direct 0002');
+  await expect(page.locator('.bc-msg-row')).toContainText('Exchange meetup plan');
   await page.locator('[data-msg-filter="exchanges"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await expect(page.locator('.bc-msg-row')).toContainText('Exchange meetup plan');
   await page.locator('[data-msg-filter="all"]').click();
   await openDirect(page);
-  await expect(page.locator('#bc-msg-chat')).not.toContainText('Exchange meetup plan');
-  await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveText('1');
+  await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
+  await expect(page.locator('#bc-case-destination option')).toHaveCount(2);
+  await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveCount(0);
   await page.getByRole('button',{name:'Back to Messages'}).click();
   await page.locator('[data-msg-filter="unread"]').click();
-  await expect(page.locator('.bc-msg-row')).toHaveCount(1);
+  await expect(page.locator('.bc-msg-row')).toHaveCount(0);
   await noOverflow(page);
   await page.screenshot({path:'test-results/messages-mobile-list.png',fullPage:true});
 });
@@ -63,12 +64,12 @@ test('direct sends restore composer and failures preserve the unsent draft',asyn
 });
 test('history uses timestamp ordering, cursor ties and keeps loaded messages after sending',async({page})=>{
   await seed(page,60);await openDirect(page);
-  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(50);
-  await expect(page.locator('#bc-msg-chat .bc-msg').first()).toContainText('Direct 0010');
-  await page.getByRole('button',{name:'Load earlier messages'}).click();
-  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(60);
-  await page.locator('#bc-msg-form textarea').fill('History stays');await page.locator('#bc-msg-form button').click();
   await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(61);
+  await expect(page.locator('#bc-msg-chat .bc-msg').first()).toContainText('Direct 0000');
+  await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
+  await expect(page.locator('#bc-msg-chat [data-load-earlier]')).toHaveCount(0);
+  await page.locator('#bc-msg-form textarea').fill('History stays');await page.locator('#bc-msg-form button').click();
+  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(62);
   await expect(page.locator('#bc-msg-chat .bc-msg').first()).toContainText('Direct 0000');
 });
 test('older collectors remain discoverable behind more than 1000 recent messages',async({page})=>{
@@ -77,14 +78,14 @@ test('older collectors remain discoverable behind more than 1000 recent messages
     (window as any).__bcIsolated.messages.push({id:'oldest-peer',sender_id:other,recipient_id:uid,exchange_id:null,body:'Older conversation',created_at:'2026-09-01T00:00:00.000Z'});
   },{uid:UID,other:OTHER});
   await page.locator('[data-refresh-messages-list]').click();
-  await expect(page.locator('.bc-msg-row')).toHaveCount(3);
+  await expect(page.locator('.bc-msg-row')).toHaveCount(2);
   await expect(page.locator('[data-message-open="direct:'+OTHER+'"]')).toContainText('Older conversation');
 });
 test('closed exchanges keep history read-only and expose recoverable load failures',async({page})=>{
   await seed(page,3,'COMPLETED');
   await page.evaluate(id=>{location.hash='messages/case:'+id},CASE);
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
-  await expect(page.locator('#bc-msg-form')).toHaveCount(0);
+  await expect(page.locator('#bc-msg-form')).toBeHidden();
   await page.evaluate(()=>{(window as any).__bcIsolated.failTables=['exchange_case_messages']});
   await page.locator('[data-refresh-thread]').click();
   await expect(page.locator('#bc-msg-error')).toBeVisible();
@@ -95,7 +96,8 @@ test('closed exchanges keep history read-only and expose recoverable load failur
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
 });
 test('refresh preserves draft, focus, caret and loaded history',async({page})=>{
-  await seed(page,60);await openDirect(page);await page.getByRole('button',{name:'Load earlier messages'}).click();
+  await seed(page,60);await openDirect(page);
+  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(61);
   const input=page.locator('#bc-msg-form textarea');
   await input.fill('Unsent multiline\nreply');await input.focus();
   await input.evaluate((e:HTMLTextAreaElement)=>e.setSelectionRange(4,9));
@@ -103,7 +105,7 @@ test('refresh preserves draft, focus, caret and loaded history',async({page})=>{
   await expect(page.locator('#bc-msg-chat')).toContainText('New remote reply');
   await expect(input).toHaveValue('Unsent multiline\nreply');await expect(input).toBeFocused();
   expect(await input.evaluate((e:HTMLTextAreaElement)=>[e.selectionStart,e.selectionEnd])).toEqual([4,9]);
-  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(61);
+  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(62);
 });
 test('delayed send survives back navigation without duplicate insertion or a stuck composer',async({page})=>{
   await page.setViewportSize({width:390,height:844});await seed(page);await openDirect(page);
@@ -158,12 +160,10 @@ test('equal-timestamp history uses the id cursor without losing or duplicating m
     for(let i=0;i<55;i++)s.messages.push({id:'tie-'+String(i).padStart(3,'0'),sender_id:peer,recipient_id:uid,exchange_id:null,body:'Tie '+String(i).padStart(3,'0'),created_at:'2026-09-03T12:00:00.000Z'});
   },{uid:UID,peer:PEER});
   await openDirect(page);
-  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(50);
-  await expect(page.locator('#bc-msg-chat .bc-msg').first()).toContainText('Tie 005');
-  await page.getByRole('button',{name:'Load earlier messages'}).click();
-  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(55);
+  await expect(page.locator('#bc-msg-chat .bc-msg')).toHaveCount(56);
+  await expect(page.locator('#bc-msg-chat [data-load-earlier]')).toHaveCount(0);
   await expect(page.locator('#bc-msg-chat .bc-msg').first()).toContainText('Tie 000');
-  await expect(page.locator('#bc-msg-chat .bc-msg').last()).toContainText('Tie 054');
+  await expect(page.locator('#bc-msg-chat .bc-msg').filter({hasText:'Tie 054'})).toHaveCount(1);
 });
 
 test('a send from a previous login cannot unlock a newer send in the same conversation',async({page})=>{
@@ -178,7 +178,7 @@ test('a send from a previous login cannot unlock a newer send in the same conver
   await authDialog.getByRole('textbox',{name:'Password',exact:true}).fill('isolated-password');
   await authDialog.locator('button[type="submit"]').click();
   await expect(authDialog).toHaveCount(0);
-  await expect(page.getByRole('button',{name:'View my match'}).first()).toBeVisible();
+  await expect(page.locator('[data-nav="profile"]').first()).toBeVisible();
   await openDirect(page);
   await page.evaluate(()=>{(window as any).__bcIsolated.messageSendDelayMs=6000});
   await page.locator('#bc-msg-form textarea').fill('Current login send');

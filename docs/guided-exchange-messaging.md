@@ -1,6 +1,6 @@
 # Guided exchange conversations
 
-Each canonical exchange has one participant-only conversation. Direct collector chat is for introductions. Its active-exchange links lead to the conversation that owns the meetup and confirmations. The exchange detail page remains available for the full history, peer issues, reviews and support.
+Messages is the collector-wise inbox: one row per counterparty, sorted by latest direct message, exchange message, or case activity. The row combines unread counts and shows the latest snippet. Opening it presents a single chronological timeline of direct and case messages and durable case events. Every case entry retains its ID and can focus that case without changing collectors. The destination selector defaults to general chat for a collector-row entry; an exact case link selects that case, never an arbitrary newest case. Per-destination drafts survive switching and retries. A case action reads the selected server row; text never advances custody or the lifecycle. Matched-item proposals, counters, meetup and return forms appear within Messages. Legacy exchange URLs and lifecycle notifications resolve to an exact Messages case; a message notification also focuses its exact message when available. Unauthenticated links remain in the URL for post-login resumption; unavailable cases show no participant detail. The older exchange-detail renderer is retained only for compatibility, not reached by normal navigation.
 
 The guide derives its primary action from the current server record and signed-in participant. It shows either **Your turn**, **Waiting for partner**, or **Closed**. Messages never accept terms, confirm inspection or change custody.
 
@@ -15,7 +15,7 @@ The guide derives its primary action from the current server record and signed-i
 | Experience | Agree a normal or early return | Sets stay reserved |
 | Return meetup | One proposes; the other accepts | Proposer waits for agreement |
 | Return | Both arrive, inspect, then confirm their sets are back | Completion waits for both return confirmations |
-| Closed | Read-only conversation | Reviews and owner re-enabling remain in details/My LEGO |
+| Closed | Read-only conversation | Peer review remains available inline; owners re-enable sets in My LEGO |
 
 Agreed venue/time appears next to the next step. A collapsed checklist shows the two independent confirmations. Other options are separate from the primary action. The complete journey is available under a disclosure rather than competing with the current action.
 
@@ -35,7 +35,7 @@ Apply `20261005173802_guided_exchange_messaging.sql` **before** releasing the fr
 
 The new direct writer uses invoker security and existing message RLS. The existing canonical writer keeps its required fixed-search-path definer implementation, verifies the real participant, and rejects new messages in terminal cases. An exact replay of an already committed message remains available after closure; it does not create a new message or notification. Anonymous execution is denied. Direct table TRUNCATE/TRIGGER/REFERENCES privileges are removed from client roles.
 
-Validation: `supabase/tests/guided_exchange_messaging.sql` is a staging-only rollback suite with real roles, RLS and notifications. The isolated browser suite checks both collectors at every normal stage, third-collector denial, acceptance/meetup from chat, retained drafts, reconnect, mobile overflow and both lost-response retries. Existing lifecycle/peer-trust and all cross-browser regressions remain required.
+Validation: `supabase/tests/guided_exchange_messaging.sql` is a staging-only rollback suite with real roles, RLS and notifications. The isolated browser suite covers both collectors at each stage, third-collector denial, exact-case notifications and login resume, pagination/colliding IDs, displayed-message unread watermarks, drafts/reconnect, mobile overflow and both lost-response retries. Hosted three-user and staging SQL checks remain separate release prerequisites.
 
 ## Three-user smoke test
 

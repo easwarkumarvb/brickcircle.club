@@ -321,7 +321,13 @@ function modal(html,wide=false){
   });
   applyA11y(o);controls()[0]?.focus();announceRender(o);return o;
 }
-function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();if(opener?.isConnected)opener.focus()}
+function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcAuthCleanup?.();overlay?.remove();const inline=$('#bc-collector-form');if(inline)inline.replaceChildren();if(opener?.isConnected)opener.focus()}
+function caseFormSurface(html){
+  const host=!logoutLocked&&routeName()==='messages'&&collectorFocus?.uid===S.user?.id?$('#bc-collector-form'):null;
+  if(!host)return modal(html);
+  host.innerHTML=`<section class="bc-card bc-pad bc-form" aria-label="Exchange action">${html}</section>`;
+  applyA11y(host);host.scrollIntoView({block:'nearest'});return host;
+}
 function drawer(html){
   if(logoutLocked){const detached=document.createElement('div');detached.innerHTML=`<aside class="bc-drawer">${html}</aside>`;return detached}
   document.getElementById('bc-drawer-overlay')?.remove();const o=document.createElement('div');o.className='bc-drawer-overlay';o.id='bc-drawer-overlay';o.innerHTML=`<aside class="bc-drawer">${html}</aside>`;document.body.appendChild(o);o.addEventListener('click',e=>{if(e.target===o)o.remove()});applyA11y(o);announceRender(o);return o;
@@ -382,6 +388,15 @@ function cleanRecoveryUrl(){
 
 function navigate(page,id=''){
   const next='#'+page+(id?'/'+encodeURIComponent(id):'');
+  if(page==='messages'&&$('#bc-msg-chat')&&collectorFocus?.uid===S.user?.id&&id){
+    const [kind,value]=id.split(':'),messageId=kind==='case'?id.split(':message:')[1]:null;
+    const group=kind==='case'?messageIndexByUid.get(S.user.id)?.cases.get(value):null;
+    if((kind==='direct'&&value===collectorFocus.peerId)||(group?.case&&otherId(group.case)===collectorFocus.peerId)){
+      history.pushState({},'',next);selectCollectorCase(collectorFocus.peerId,kind==='case'?value:null);
+      if(kind==='case')$('#bc-msg-chat')?.querySelector(messageId?`[data-timeline-case="${CSS.escape(value)}"][data-timeline-message="${CSS.escape(messageId)}"]`:`[data-timeline-case="${CSS.escape(value)}"]`)?.scrollIntoView({block:'nearest'});
+      renderMessagesListPane();return;
+    }
+  }
   if(location.hash===next){renderRoute();return}
   location.hash=next;
 }
@@ -575,7 +590,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -656,7 +671,7 @@ async function openNotification(notification){
   document.getElementById('bc-drawer-overlay')?.remove();
   if(isProposalNotification(notification)){
     await refreshCore();
-    navigate('exchange',notificationRequestId(notification));
+    navigate('messages',`case:${notificationRequestId(notification)}`);
     return;
   }
   if(isReciprocalMatchNotification(notification)){navigate('matches');return}
@@ -667,10 +682,10 @@ async function openNotification(notification){
   }
   if(notification?.kind==='exchange_message'){
     const caseId=notification?.exchange_case_id||notification?.metadata?.exchange_case_id;
-    if(caseId){navigate('messages',`case:${caseId}`);return}
+    if(caseId){navigate('messages',`case:${caseId}${notification.exchange_case_message_id?`:message:${notification.exchange_case_message_id}`:''}`);return}
   }
   const exchangeId=notification?.exchange_case_id||notification?.metadata?.exchange_case_id||notification?.metadata?.exchange_id;
-  if(exchangeId){navigate('exchange',exchangeId);return}
+  if(exchangeId){navigate('messages',`case:${exchangeId}`);return}
   shell();await renderRoute();
 }
 function stopNotificationRealtime(){
@@ -735,7 +750,7 @@ function showUnreadProposalNotice(){
 function notificationExchangeId(notification){return notification?.exchange_case_id||notification?.metadata?.exchange_case_id||notification?.metadata?.exchange_id}
 function lifecyclePresentation(notification){
   if(notification.kind==='reciprocal_match')return {label:'New local match',fallback:'A nearby collector has a reciprocal LEGO match with you.',action:'View matches',route:'matches'};
-  if(notification.kind==='exchange_accepted')return {label:'Exchange accepted',fallback:'Your BrickCircle exchange has been accepted.',action:'Open exchanges',route:'exchanges'};
+  if(notification.kind==='exchange_accepted')return {label:'Exchange accepted',fallback:'Your BrickCircle exchange has been accepted.',action:'Open conversation',route:'messages',thread:`case:${notificationExchangeId(notification)}`};
   if(notification.kind==='exchange_declined')return {label:'Proposal declined',fallback:'Your BrickCircle proposal was declined.',action:'Open exchanges',route:'exchanges'};
   if(notification.kind==='exchange_cancelled')return {label:'Proposal cancelled',fallback:'Your BrickCircle exchange was cancelled.',action:'Open exchanges',route:'exchanges'};
   if(notification.kind==='message_received'){
@@ -745,7 +760,7 @@ function lifecyclePresentation(notification){
   }
   if(notification.kind==='exchange_message'){
     const caseId=notification?.exchange_case_id||notification?.metadata?.exchange_case_id;
-    if(caseId)return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages',thread:`case:${caseId}`};
+    if(caseId)return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages',thread:`case:${caseId}${notification.exchange_case_message_id?`:message:${notification.exchange_case_message_id}`:''}`};
     return {label:'New message',fallback:'A collector sent you a BrickCircle message.',action:'Open conversation',route:'messages'};
   }
   if(notification.kind==='exchange_issue_reported')return {label:'Issue reported',fallback:'A peer reported an issue on your BrickCircle exchange.',action:'Open issue',route:'exchange',exchangeId:notificationExchangeId(notification)};
@@ -758,7 +773,7 @@ function showLifecycleNotification(notification){
   try{sessionStorage.setItem(`bc_lifecycle_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}
   const view=lifecyclePresentation(notification),root=document.createElement('section');root.id='bc-exchange-lifecycle-notice';root.className='bc-lifecycle-notice';root.setAttribute('role','status');
   root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(notification.title||view.label)}</h2><p>${esc(notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
-  document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.thread)navigate('messages',view.thread);else if(view.exchangeId)navigate('exchange',view.exchangeId);else navigate(view.route)};return true;
+  document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.thread)navigate('messages',view.thread);else if(view.exchangeId)navigate('messages',`case:${view.exchangeId}`);else if(notificationExchangeId(notification))navigate('messages',`case:${notificationExchangeId(notification)}`);else navigate(view.route)};return true;
 }
 function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
 function showNextUnreadNotificationNotice(){
@@ -842,7 +857,7 @@ async function renderRoute(){
   if(r==='sets'||r==='collection'||r==='wishlist')return renderSets(token,r);
   if(r==='matches')return renderMatches(token);
   if(r==='exchanges'||r==='requests'||r==='returns'||r==='meetup')return renderExchanges(token,r);
-  if(r==='exchange')return renderExchangeDetail(routeId(),token);
+  if(r==='exchange')return navigate('messages',`case:${routeId()}`);
   if(r==='messages')return renderMessages(token);
   if(r==='profile')return renderProfile(token);
   return navigate('home');
@@ -1112,7 +1127,7 @@ async function renderMatches(token){
   if(!S.user){showAuth();return navigate('home')}const rd=readiness();if(rd.score<40&&!S.matches.length){page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div></div>${empty('⇄','Finish your match setup','Add owned sets, mark exchangeable copies and build a wishlist. BrickCircle can only create a reciprocal match when both sides line up.','Continue setup','sets')}`);return}
   const ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);if(!current())return;(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
   if(!current())return;
-  page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>showProposal(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
+  page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>openMatchInMessages(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
 }
 function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
 async function showProposal(i){
@@ -1159,7 +1174,7 @@ async function respondRequest(id,action){
   }
   renderExchangeBody();
 }
-function showCounterProposal(exchange){const o=modal(`<div class="bc-modal-head"><div><h2>Counterproposal</h2><p class="bc-muted">Update the duration without creating another exchange case.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-counter"><div class="bc-field"><label>Temporary exchange period</label><select class="bc-select" name="days">${[30,60,90].map(days=>`<option value="${days}" ${days===exchange.duration_days?'selected':''}>${days} days</option>`).join('')}</select></div><div class="bc-field"><label>Message</label><textarea class="bc-textarea" name="message">${esc(exchange.opening_message||'')}</textarea></div><button type="submit" class="bc-btn primary">Send counterproposal</button></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-counter',o).onsubmit=async event=>{event.preventDefault();const form=new FormData(event.currentTarget),button=$('button[type="submit"]',event.currentTarget),payload={duration_days:Number(form.get('days')),message:String(form.get('message')||'')},intent={case_id:exchange.id,version:exchange.state_version,action:'counter',payload};if(button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:exchange.id,p_expected_version:exchange.state_version,p_action:'counter',p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not send the counterproposal.')}closeOverlay();await refreshCore();messagesThreadGuard('case',exchange.id)?await reloadCaseView(exchange.id):navigate('exchange',exchange.id);toast('Counterproposal sent in the same exchange case.')}}
+function showCounterProposal(exchange){const o=caseFormSurface(`<div class="bc-modal-head"><div><h2>Counterproposal</h2><p class="bc-muted">Update the duration without creating another exchange case.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-counter"><div class="bc-field"><label>Temporary exchange period</label><select class="bc-select" name="days">${[30,60,90].map(days=>`<option value="${days}" ${days===exchange.duration_days?'selected':''}>${days} days</option>`).join('')}</select></div><div class="bc-field"><label>Message</label><textarea class="bc-textarea" name="message">${esc(exchange.opening_message||'')}</textarea></div><button type="submit" class="bc-btn primary">Send counterproposal</button></form>`);const current=caseFormCurrent(o);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-counter',o).onsubmit=async event=>{event.preventDefault();if(!current())return;const form=new FormData(event.currentTarget),button=$('button[type="submit"]',event.currentTarget),payload={duration_days:Number(form.get('days')),message:String(form.get('message')||'')},intent={case_id:exchange.id,version:exchange.state_version,action:'counter',payload};if(button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:exchange.id,p_expected_version:exchange.state_version,p_action:'counter',p_payload:payload},intent);if(!current())return;if(error){button.disabled=false;return fail(error,'Could not send the counterproposal.')}closeOverlay();await refreshCore();if(!current(false))return;messagesThreadGuard('case',exchange.id)?await reloadCaseView(exchange.id):navigate('exchange',exchange.id);toast('Counterproposal sent in the same exchange case.')}}
 function exchangeStageLabel(e){return {PROPOSED:'Proposal pending',ACCEPTED:'Plan meetup',MEETUP_PLANNING:'Review meetup',MEETUP_CONFIRMED:'Safety checklist',INSPECTION:'Meet and inspect',HANDOFF_PENDING:'Confirm handoff',HANDOFF_ISSUE:'Legacy custody review',ACTIVE:e.return_due_at&&new Date(e.return_due_at)<new Date()?'Return overdue':'Temporary exchange active',EARLY_RETURN:'Early return requested',RETURN_PLANNING:'Plan return',RETURN_INSPECTION:'Inspect returned sets',DISPUTED:'Legacy issue',DECLINED:'Declined',WITHDRAWN:'Withdrawn',EXPIRED:'Expired',CANCELLED:'Cancelled',COMPLETED:'Completed'}[e.state]||'In progress'}
 function exchangeCard(e){const p=otherProfile(e),a=itemName(e.item_a),b=itemName(e.item_b),stage=stageForExchange(e),closed=terminalCaseStates.has(e.state),next=caseNextAction(e);return `<article class="bc-card bc-ex-card"><div class="bc-ex-top"><div><span class="bc-pill ${e.state==='DISPUTED'||e.state==='HANDOFF_ISSUE'?'red':e.state==='COMPLETED'?'green':e.state==='ACTIVE'?'blue':'gold'}">${esc(exchangeStageLabel(e))}</span><h3>${esc(a)} ⇄ ${esc(b)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${e.duration_days} days${e.return_due_at?` · return ${fmtDate(e.return_due_at)}`:''}</div></div><button class="bc-btn ${closed?'':'primary'}" data-exchange="${e.id}">${closed?'View history':'Continue →'}</button></div>${closed?'':`<div class="bc-ex-next"><span>Next</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>`}<div class="bc-ex-progress">${[1,2,3,4,5].map(n=>`<i class="bc-ex-step ${n<stage?'done':n===stage?'current':''}"></i>`).join('')}</div><div class="bc-small">Proposal → Meetup → Handoff → Experience → Return</div></article>`}
 
@@ -1218,7 +1233,7 @@ function caseNextAction(e){const mine=S.user.id,recipient=e.recipient_id===mine,
   if(e.state==='RETURN_INSPECTION'&&!caseParticipantValue(e,'return_inspected'))return {action:'return_inspect',label:'I inspected my returned set',copy:'Check condition, parts and completeness before confirming.'};
   if(e.state==='RETURN_INSPECTION'&&!caseParticipantValue(e,'return_confirmed'))return {action:'return_confirm',label:'Confirm set returned',copy:'Confirm only after your physical set is back.'};
   if(legacyIssueCase(e))return {action:null,label:'',copy:'This is a legacy case, so the new issue tools are not available here. Keep communicating with the other collector and contact BrickCircle support for help with custody.'};
-  if(e.state==='COMPLETED')return {action:null,label:'Exchange complete',copy:'Both sets are back. Open exchange details to review your collector and re-enable your set in My LEGO.'};
+  if(e.state==='COMPLETED')return {action:null,label:'Exchange complete',copy:'Both sets are back. Review your collector here, then re-enable your own set in My LEGO after checking it.'};
   if(terminalCaseStates.has(e.state))return {action:null,label:'Exchange closed',copy:'This exchange is closed. Its conversation remains available as a record.'};
   return {action:null,label:'Waiting for their confirmation',copy:'Your step is recorded. The other collector must confirm before the exchange can move on.'};
 }
@@ -1237,7 +1252,7 @@ function reviewMarkup(e,p,reviews){
   return `<section class="bc-card bc-flow-card" style="margin-top:14px"><h2>Peer review</h2><p class="bc-small">Double-blind: each collector reviews the other privately, and reviews stay hidden until both are submitted or the reveal window opens.</p>${body}</section>`
 }
 function bindExchangeDetail(e,p){$$('[data-case-action]',app()).forEach(button=>button.onclick=()=>runCaseAction(e,button.dataset.caseAction,button));bindCaseIssues(e);$$('[data-open-messages-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.openMessagesCase}`));const review=$('[data-review]',app());if(review)review.onclick=()=>showReview(e,p);const form=$('#bc-chat-form');if(form)form.onsubmit=async event=>{event.preventDefault();const data=new FormData(form),body=String(data.get('message')||'').trim(),button=$('button',form),intent={case_id:e.id,body};if(!body||button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('send_exchange_case_message',{p_case_id:e.id,p_body:body},intent);if(error){button.disabled=false;return fail(error,'Message was not sent. Please retry.')}form.reset();await refreshCore();await reloadCaseView(e.id)}}
-function scheduleCaseMeetup(e,returning=false){const title=returning?'Plan return meetup':'Plan public meetup',o=modal(`<div class="bc-modal-head"><div><h2>${title}</h2><p class="bc-muted">The other collector must accept the same public place and future time.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-meetup"><div class="bc-field"><label>Public venue</label><input class="bc-input" name="venue" value="${attr(returning?e.return_venue_name||'':e.meetup_venue_name||'')}" required></div><div class="bc-field"><label>Area / neighbourhood</label><input class="bc-input" name="area" value="${attr(returning?e.return_venue_area||'':e.meetup_venue_area||'')}"></div><div class="bc-field"><label>Date & time</label><input class="bc-input" name="when" type="datetime-local" required></div><button type="submit" class="bc-btn primary">Share proposal</button></form>`);$$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);$('#bc-case-meetup',o).onsubmit=async event=>{event.preventDefault();const data=new FormData(event.currentTarget),date=new Date(String(data.get('when'))),button=$('button[type="submit"]',event.currentTarget),action=returning?'propose_return':'propose_meetup';if(Number.isNaN(date.getTime())||date<=new Date())return toast('Choose a future date and time.');if(button.disabled)return;const payload={venue_name:String(data.get('venue')||'').trim(),venue_area:String(data.get('area')||'').trim(),meetup_at:date.toISOString()},intent={case_id:e.id,version:e.state_version,action,payload};button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){button.disabled=false;return fail(error,'Could not save the meetup proposal.')}closeOverlay();await refreshCore();await reloadCaseView(e.id)}}
+function scheduleCaseMeetup(e,returning=false){const title=returning?'Plan return meetup':'Plan public meetup',o=caseFormSurface(`<div class="bc-modal-head"><div><h2>${title}</h2><p class="bc-muted">The other collector must accept the same public place and future time.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-meetup"><div class="bc-field"><label>Public venue</label><input class="bc-input" name="venue" value="${attr(returning?e.return_venue_name||'':e.meetup_venue_name||'')}" required></div><div class="bc-field"><label>Area / neighbourhood</label><input class="bc-input" name="area" value="${attr(returning?e.return_venue_area||'':e.meetup_venue_area||'')}"></div><div class="bc-field"><label>Date & time</label><input class="bc-input" name="when" type="datetime-local" required></div><button type="submit" class="bc-btn primary">Share proposal</button></form>`);const current=caseFormCurrent(o);$$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);$('#bc-case-meetup',o).onsubmit=async event=>{event.preventDefault();if(!current())return;const data=new FormData(event.currentTarget),date=new Date(String(data.get('when'))),button=$('button[type="submit"]',event.currentTarget),action=returning?'propose_return':'propose_meetup';if(Number.isNaN(date.getTime())||date<=new Date())return toast('Choose a future date and time.');if(button.disabled)return;const payload={venue_name:String(data.get('venue')||'').trim(),venue_area:String(data.get('area')||'').trim(),meetup_at:date.toISOString()},intent={case_id:e.id,version:e.state_version,action,payload};button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(!current())return;if(error){button.disabled=false;return fail(error,'Could not save the meetup proposal.')}closeOverlay();await refreshCore();if(!current(false))return;await reloadCaseView(e.id)}}
 async function runCaseAction(e,action,button){if(action==='counter')return showCounterProposal(e);if(action==='propose_meetup')return scheduleCaseMeetup(e,false);if(action==='propose_return')return scheduleCaseMeetup(e,true);if(action==='report_issue'){if(!canReportCaseIssue(e))return toast('Issues can be reported once a handoff has been confirmed on this exchange.');return showCaseIssueForm(e)}if(action==='request_support')return showCaseSupportForm(e);if(action==='cancel_before_handoff')return cancelCaseBeforeMutualHandoff(e,button);if(action==='handoff'&&!confirm('Confirm only after the physical set has changed custody and you are satisfied with inspection. Continue?'))return;if(action==='return_confirm'&&!confirm('Confirm only after your own physical LEGO set is back and inspected. Continue?'))return;return performCaseTransition(e,action,{},button)}
 async function cancelCaseBeforeMutualHandoff(e,button){
   const oneSided=e.handoff_a_at||e.handoff_b_at;
@@ -1311,38 +1326,48 @@ async function setCaseIssueStatus(e,issueId,action,button){
   await refreshCore();await reloadCaseView(e.id);toast(action==='resolve'?'Resolution acknowledgement recorded.':'Issue left unresolved for the record.');
 }
 function showCaseIssueForm(e){
-  const o=modal(`<div class="bc-modal-head"><div><h2>Report an issue</h2><p class="bc-muted">Describe what happened in your own words. The other collector can respond, and either of you can mark the issue resolved.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-issue"><div class="bc-field"><label>What happened?</label><select class="bc-select" name="category" required>${CASE_ISSUE_CATEGORY_OPTIONS.map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></div><div class="bc-field"><label>Description</label><textarea class="bc-textarea" name="description" maxlength="4000" required placeholder="What is missing, damaged, different or overdue? Include the set number and what you checked."></textarea></div><div class="bc-notice"><b>Recording an issue does not decide fault.</b><br>Keep coordinating in the conversation. For platform, safety or technical help use “Need BrickCircle support?”.</div><button class="bc-btn primary" type="submit">Report issue</button></form>`);
+  const o=caseFormSurface(`<div class="bc-modal-head"><div><h2>Report an issue</h2><p class="bc-muted">Describe what happened in your own words. The other collector can respond, and either of you can mark the issue resolved.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-issue"><div class="bc-field"><label>What happened?</label><select class="bc-select" name="category" required>${CASE_ISSUE_CATEGORY_OPTIONS.map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></div><div class="bc-field"><label>Description</label><textarea class="bc-textarea" name="description" maxlength="4000" required placeholder="What is missing, damaged, different or overdue? Include the set number and what you checked."></textarea></div><div class="bc-notice"><b>Recording an issue does not decide fault.</b><br>Keep coordinating in the conversation. For platform, safety or technical help use “Need BrickCircle support?”.</div><button class="bc-btn primary" type="submit">Report issue</button></form>`);
+  const current=caseFormCurrent(o);
   $$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);
-  $('#bc-case-issue',o).onsubmit=async event=>{event.preventDefault();const data=new FormData(event.currentTarget),category=String(data.get('category')||'other'),description=String(data.get('description')||'').trim(),button=$('button[type="submit"]',event.currentTarget);
+  $('#bc-case-issue',o).onsubmit=async event=>{event.preventDefault();if(!current())return;const data=new FormData(event.currentTarget),category=String(data.get('category')||'other'),description=String(data.get('description')||'').trim(),button=$('button[type="submit"]',event.currentTarget);
     if(!description)return toast('Add a description so the other collector understands.');
     button.disabled=true;
     const {error}=await canonicalRpc('report_exchange_case_issue',{p_case_id:e.id,p_category:category,p_description:description,p_evidence:[]},{case_id:e.id,category,description});
+    if(!current())return;
     if(error){button.disabled=false;return fail(error,'Could not report the issue. Please retry.')}
-    closeOverlay();await refreshCore();await reloadCaseView(e.id);toast('Issue reported. The other collector can respond here.')};
+    closeOverlay();await refreshCore();if(!current(false))return;await reloadCaseView(e.id);if(current(false))toast('Issue reported. The other collector can respond here.')};
 }
 function showCaseSupportForm(e){
-  const o=modal(`<div class="bc-modal-head"><div><h2>Need BrickCircle support?</h2><p class="bc-muted">Support helps with platform, safety and technical matters.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-support"><div class="bc-field"><label>What do you need help with?</label><select class="bc-select" name="category" required>${[['technical','Technical problem'],['safety','Safety concern'],['account','Account question'],['other','Something else']].map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></div><div class="bc-field"><label>Note</label><textarea class="bc-textarea" name="note" maxlength="2000" required placeholder="What happened, and what would help?"></textarea></div><div class="bc-notice"><b>Support does not choose a winner.</b><br>BrickCircle support helps with platform, safety and technical matters, but does not decide fault or who is right. We reply at <a href="mailto:${attr(SUPPORT_EMAIL)}">${esc(SUPPORT_EMAIL)}</a>.</div><button class="bc-btn primary" type="submit">Send to support</button></form>`);
+  const o=caseFormSurface(`<div class="bc-modal-head"><div><h2>Need BrickCircle support?</h2><p class="bc-muted">Support helps with platform, safety and technical matters.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-case-support"><div class="bc-field"><label>What do you need help with?</label><select class="bc-select" name="category" required>${[['technical','Technical problem'],['safety','Safety concern'],['account','Account question'],['other','Something else']].map(([value,label])=>`<option value="${value}">${label}</option>`).join('')}</select></div><div class="bc-field"><label>Note</label><textarea class="bc-textarea" name="note" maxlength="2000" required placeholder="What happened, and what would help?"></textarea></div><div class="bc-notice"><b>Support does not choose a winner.</b><br>BrickCircle support helps with platform, safety and technical matters, but does not decide fault or who is right. We reply at <a href="mailto:${attr(SUPPORT_EMAIL)}">${esc(SUPPORT_EMAIL)}</a>.</div><button class="bc-btn primary" type="submit">Send to support</button></form>`);
+  const current=caseFormCurrent(o);
   $$('[data-close]',o).forEach(button=>button.onclick=closeOverlay);
-  $('#bc-case-support',o).onsubmit=async event=>{event.preventDefault();const data=new FormData(event.currentTarget),category=String(data.get('category')||'other'),note=String(data.get('note')||'').trim(),button=$('button[type="submit"]',event.currentTarget);
+  $('#bc-case-support',o).onsubmit=async event=>{event.preventDefault();if(!current())return;const data=new FormData(event.currentTarget),category=String(data.get('category')||'other'),note=String(data.get('note')||'').trim(),button=$('button[type="submit"]',event.currentTarget);
     if(!note)return toast('Add a short note so support can help.');
     button.disabled=true;
     const {error}=await canonicalRpc('request_exchange_case_support',{p_case_id:e.id,p_category:category,p_note:note},{case_id:e.id,category,note});
+    if(!current())return;
     if(error){button.disabled=false;return fail(error,'Could not send your request. Please retry.')}
     closeOverlay();toast(`Support request sent. We reply at ${SUPPORT_EMAIL}.`)};
 }
+function caseFormCurrent(surface){
+  const uid=S.user?.id,route=routeId(),token=S.renderToken,form=surface.querySelector('form');
+  return (requireSurface=true)=>S.user?.id===uid&&routeId()===route&&S.renderToken===token&&(!requireSurface||surface.isConnected&&surface.contains(form));
+}
 function showReview(e,p){
   const scale=[5,4,3,2,1].map(n=>`<option value="${n}">${n} · ${['Very poor','Poor','Okay','Good','Excellent'][n-1]}</option>`).join('');
-  const o=modal(`<div class="bc-modal-head"><div><h2>Review ${esc(p.display_name||'collector')}</h2><p class="bc-muted">Double-blind review. Your ratings stay hidden until both collectors submit or the reveal window opens.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-peer-review-form"><div class="bc-field"><label>Overall experience</label><select class="bc-select" name="overall_rating" required>${scale}</select></div><div class="bc-field"><label>Return reliability</label><select class="bc-select" name="return_reliability" required>${scale}</select></div><div class="bc-field"><label>Set accuracy</label><select class="bc-select" name="set_accuracy" required>${scale}</select></div><div class="bc-field"><label>Communication</label><select class="bc-select" name="communication" required>${scale}</select></div><div class="bc-field"><label>Condition accuracy</label><select class="bc-select" name="condition_accuracy" required>${scale}</select></div><div class="bc-field"><label>Would you exchange with them again?</label><select class="bc-select" name="would_exchange_again" required><option value="yes">Yes</option><option value="no">No</option></select></div><div class="bc-field"><label>Comment (optional)</label><textarea class="bc-textarea" name="comment" maxlength="2000" placeholder="What should another collector know?"></textarea></div><button class="bc-btn primary" type="submit">Submit review</button></form>`);
+  const o=caseFormSurface(`<div class="bc-modal-head"><div><h2>Review ${esc(p.display_name||'collector')}</h2><p class="bc-muted">Double-blind review. Your ratings stay hidden until both collectors submit or the reveal window opens.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-peer-review-form"><div class="bc-field"><label>Overall experience</label><select class="bc-select" name="overall_rating" required>${scale}</select></div><div class="bc-field"><label>Return reliability</label><select class="bc-select" name="return_reliability" required>${scale}</select></div><div class="bc-field"><label>Set accuracy</label><select class="bc-select" name="set_accuracy" required>${scale}</select></div><div class="bc-field"><label>Communication</label><select class="bc-select" name="communication" required>${scale}</select></div><div class="bc-field"><label>Condition accuracy</label><select class="bc-select" name="condition_accuracy" required>${scale}</select></div><div class="bc-field"><label>Would you exchange with them again?</label><select class="bc-select" name="would_exchange_again" required><option value="yes">Yes</option><option value="no">No</option></select></div><div class="bc-field"><label>Comment (optional)</label><textarea class="bc-textarea" name="comment" maxlength="2000" placeholder="What should another collector know?"></textarea></div><button class="bc-btn primary" type="submit">Submit review</button></form>`);
+  const current=caseFormCurrent(o);
   $$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);
   $('#bc-peer-review-form',o).onsubmit=async ev=>{
-    ev.preventDefault();const f=new FormData(ev.currentTarget),btn=$('button[type="submit"]',ev.currentTarget);
+    ev.preventDefault();if(!current())return;const f=new FormData(ev.currentTarget),btn=$('button[type="submit"]',ev.currentTarget);
     if(btn.disabled)return;
     const args={p_case_id:e.id,p_overall_rating:Number(f.get('overall_rating')),p_return_reliability:Number(f.get('return_reliability')),p_set_accuracy:Number(f.get('set_accuracy')),p_communication:Number(f.get('communication')),p_condition_accuracy:Number(f.get('condition_accuracy')),p_would_exchange_again:String(f.get('would_exchange_again'))==='yes',p_comment:String(f.get('comment')||'').trim()};
     btn.disabled=true;
     const intent={case_id:e.id,overall:args.p_overall_rating,reliability:args.p_return_reliability,accuracy:args.p_set_accuracy,communication:args.p_communication,condition:args.p_condition_accuracy,again:args.p_would_exchange_again,comment:args.p_comment};
     const {data,error}=await canonicalRpc('submit_peer_exchange_review',args,intent);
+    if(!current())return;
     if(error||data?.ok===false){fail(error||new Error('Could not submit your review.'),'Could not submit your review. Please retry.');btn.disabled=false;return}
-    S.submittedPeerReviews.add(e.id);rememberPeerReviewSubmitted(e.id);closeOverlay();toast('Review submitted. It stays hidden until both reviews are in or the reveal window opens.');await refreshCore();await reloadCaseView(e.id)
+    S.submittedPeerReviews.add(e.id);rememberPeerReviewSubmitted(e.id);closeOverlay();toast('Review submitted. It stays hidden until both reviews are in or the reveal window opens.');await refreshCore();if(current(false))await reloadCaseView(e.id)
   }
 }
 
@@ -1369,7 +1394,7 @@ async function signOut(useAnother=false){
   useAnother=useAnother===true;
   clearPendingVerification();if(verificationFlight)verificationFlight.abandoned=true;
   const user=S.user;
-  if(!logoutLocked){closeOverlay();authEpoch++;logoutEpoch++;refreshGeneration++;S.renderToken++;pendingAuthChange=null;explicitLogout=true;if(user?.id)retiredAccounts.add(user.id);try{window.bcWebPush?.pause?.()}catch(_){}}
+  if(!logoutLocked){closeOverlay();authEpoch++;logoutEpoch++;refreshGeneration++;S.renderToken++;pendingAuthChange=null;$('#bc-collector-proposal')?.replaceChildren();pendingMatchProposal=null;explicitLogout=true;if(user?.id)retiredAccounts.add(user.id);try{window.bcWebPush?.pause?.()}catch(_){}}
   logoutLocked=true;
   const o=document.getElementById('bc-overlay')||modal('<h2>Signing out</h2><p role="status" id="bc-logout-status">Confirming sign out on this device…</p><button class="bc-btn" id="bc-logout-retry" disabled>Retry sign out</button>');
   if(!o.bcAuthCleanup)prepareAuthOverlay(o);
@@ -1402,13 +1427,21 @@ function showNotifications(){
   $$('[data-note]',o).forEach(element=>element.onclick=()=>openNotification(S.notifications.find(notification=>notification.id===element.dataset.note)));
 }
 /* --- Messages: conversation list + direct/case threads --- */
-function messagesThreadGuard(kind,id){return !!S.user&&routeName()==='messages'&&routeId()===`${kind}:${id}`}
+let collectorFocus=null;
+function messagesThreadGuard(kind,id){
+  if(!S.user||routeName()!=='messages')return false;
+  if(routeId()===`${kind}:${id}`||(kind==='case'&&routeId().startsWith(`case:${id}:message:`)))return true;
+  return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct';
+}
 function parseMessagesTarget(){
   const raw=routeId(),separator=raw.indexOf(':');
   if(separator<1)return raw?{kind:'invalid'}:null;
   const kind=raw.slice(0,separator).toLowerCase(),value=raw.slice(separator+1);
   if(kind==='direct')return value?{kind:'direct',peerId:value}:{kind:'invalid'};
-  if(kind==='case')return value?{kind:'case',caseId:value}:{kind:'invalid'};
+  if(kind==='case'){
+    const [caseId,messageId]=value.split(':message:');
+    return caseId?{kind:'case',caseId,messageId:messageId||null}:{kind:'invalid'};
+  }
   return {kind:'invalid'};
 }
 const MESSAGE_INDEX_PAGE_SIZE=100;
@@ -1533,7 +1566,7 @@ async function loadMessageIndex(uid,token){
     group.messages.sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)||String(a.id).localeCompare(String(b.id)));
     const last=group.messages[group.messages.length-1]||null;
     group.last=last;
-    group.stamp=last?new Date(last.created_at).getTime():(group.case&&group.case.created_at?new Date(group.case.created_at).getTime():0);
+    group.stamp=last?new Date(last.created_at).getTime():(group.case?new Date(group.case.updated_at||group.case.created_at||0).getTime():0);
   });
   index.loadedAt=Date.now();
   const people=new Set();
@@ -1558,21 +1591,38 @@ function filteredConversationGroups(){
   const uid=S.user?.id;
   const index=uid?messageIndexByUid.get(uid):null;
   if(!index)return[];
-  const groups=[...index.direct.values(),...index.cases.values()];
-  const filtered=groups.filter(group=>{
-    if(messagesFilter==='unread')return conversationUnread(uid,group)>0;
-    if(messagesFilter==='exchanges')return group.kind==='case';
-    if(messagesFilter==='collectors')return group.kind==='direct';
-    return true;
-  });
-  return filtered.sort((a,b)=>b.stamp-a.stamp);
+  // Messages has one inbox entry per counterparty. Case identity remains on
+  // each case card in the thread; it is never inferred from whichever is newest.
+  const peers=new Map();
+  const add=(peerId,group)=>{
+    if(!peerId||peerId===uid)return;
+    if(!peers.has(peerId))peers.set(peerId,{kind:'peer',peerId,direct:null,cases:[],messages:[],stamp:0,unread:0});
+    const peer=peers.get(peerId);
+    if(group.kind==='case')peer.cases.push(group);else peer.direct=group;
+    peer.messages.push(...group.messages);
+    peer.stamp=Math.max(peer.stamp,group.stamp||0);
+    peer.unread+=conversationUnread(uid,group);
+  };
+  index.direct.forEach(group=>add(group.peerId,group));
+  index.cases.forEach(group=>{const e=group.case;if(e)add(otherId(e),group)});
+  let groups=[...peers.values()];
+  if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
+  if(messagesFilter==='exchanges')groups=groups.filter(group=>group.cases.length>0);
+  if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
+  return groups.sort((a,b)=>b.stamp-a.stamp);
 }
 function messagesFilterBarMarkup(){
   return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
 }
 function messageRow(group,uid,selected){
-  const unread=conversationUnread(uid,group);
+  const unread=group.kind==='peer'?group.unread:conversationUnread(uid,group);
   const unreadBadge=unread?`<span class="bc-msg-unread" title="Unread on this device" aria-label="${unread} unread on this device">${unread>9?'9+':unread}</span>`:'';
+  if(group.kind==='peer'){
+    const p=S.profiles[group.peerId]||{},latest=group.messages.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
+    const caseMessage=latest?.case_id||latest?.exchange_case_id;
+    const prefix=caseMessage?(group.cases.find(c=>c.caseId===caseMessage)?.case||null):null,snippet=latest?.body||'Start the conversation';
+    return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${latest?fmtDateTime(latest.created_at):''}</span></span><span class="bc-msg-row-preview">${prefix?`${esc(itemName(prefix.item_a))} ⇄ ${esc(itemName(prefix.item_b))} · `:''}${esc(snippet)}</span></span>${group.cases.length?pill(`${group.cases.length} exchange${group.cases.length===1?'':'s'}`,'gold'):pill('Collector','blue')}${unreadBadge}</button>`;
+  }
   if(group.kind==='direct'){
     const p=S.profiles[group.peerId]||{};
     return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.last?fmtDateTime(group.last.created_at):''}</span></span><span class="bc-msg-row-preview">${esc(group.last?.body||'Start the conversation')}</span></span>${pill('Direct','blue')}${unreadBadge}</button>`;
@@ -1583,9 +1633,10 @@ function messageRow(group,uid,selected){
   return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="case:${attr(group.caseId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.last?fmtDateTime(group.last.created_at):fmtDateTime(e.created_at)}</span></span><span class="bc-msg-row-preview">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}${group.last?` — ${esc(group.last.body)}`:''}</span></span>${pill(closed?`Closed · ${exchangeStageLabel(e)}`:exchangeStageLabel(e),closed?'':'gold')}${unreadBadge}</button>`;
 }
 function messagesListPaneMarkup(){
-  const uid=S.user?.id,groups=filteredConversationGroups(),selected=currentConversationKey();
+  const uid=S.user?.id,groups=filteredConversationGroups(),route=parseMessagesTarget();
+  const selected=route?.kind==='direct'?`peer:${route.peerId}`:route?.kind==='case'?`peer:${otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{})}`:'';
   const count=groups.length;
-  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} conversation${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
+  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
 }
 function reconcileMessageIndex(uid,kind,id){
   const index=messageIndex(uid);
@@ -1612,6 +1663,21 @@ function advanceThreadWatermark(uid,kind,id){
   const threadKey=`${kind}:${id}`;
   if(newest>readMessageWatermark(uid,threadKey))writeMessageWatermark(uid,threadKey,newest);
   renderMessagesListPane();
+}
+function advanceCollectorWatermarks(peerId,uid){
+  if(S.user?.id!==uid||collectorFocus?.uid!==uid||collectorFocus.peerId!==peerId||!$('#bc-msg-chat'))return;
+  const index=messageIndexByUid.get(uid);
+  const direct=index?.direct.get(peerId);
+  const groups=[...(index?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
+  const advance=(key,messages)=>{
+    const newest=messages.reduce((stamp,row)=>Math.max(stamp,new Date(row.created_at).getTime()||0),0);
+    if(newest>readMessageWatermark(uid,key))writeMessageWatermark(uid,key,newest);
+  };
+  // Only rows belonging to this collector and already represented in the
+  // rendered timeline qualify. No watermark is inferred from a case timestamp.
+  advance(`direct:${peerId}`,[...(direct?.messages||[]),...(threadCaches.direct.get(`${uid}:${peerId}`)?.messages||[])]);
+  groups.forEach(group=>advance(`case:${group.caseId}`,[...group.messages,...(threadCaches.case.get(`${uid}:${group.caseId}`)?.messages||[])]));
+  renderMessagesListPane();updateMessageBadge();
 }
 function renderMessagesListPane(){
   const pane=$('.bc-messages-list-pane',app());
@@ -1724,15 +1790,55 @@ function threadChatMarkup(messages,fallback,senderName,hasOlder){
   });
   return markup;
 }
+function collectorTimelineMarkup(peerId,uid){
+  const index=messageIndexByUid.get(uid),direct=threadCaches.direct.get(`${uid}:${peerId}`);
+  const cases=[...(index?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
+  const rows=new Map();
+  const insert=(message,caseId)=>{if(message?.id)rows.set(`${caseId||'direct'}:${message.id}`,{message,caseId})};
+  (index?.direct.get(peerId)?.messages||[]).forEach(m=>insert(m,null));
+  (direct?.messages||[]).forEach(m=>insert(m,null));
+  cases.forEach(group=>{group.messages.forEach(m=>insert(m,group.caseId));threadCaches.case.get(`${uid}:${group.caseId}`)?.messages.forEach(m=>insert(m,group.caseId));(group.events||[]).forEach(event=>rows.set(`event:${group.caseId}:${event.id}`,{event,caseId:group.caseId}))});
+  cases.filter(group=>!group.events?.length).forEach(group=>{const e=group.case;rows.set(`snapshot:${e.id}`,{snapshot:e,caseId:e.id})});
+  const timeline=[...rows.values()].sort((a,b)=>{
+    const source=row=>row.message||row.event||row.snapshot;
+    const stamp=row=>row.snapshot?(row.snapshot.updated_at||row.snapshot.created_at):source(row).created_at;
+    return new Date(stamp(a))-new Date(stamp(b))||`${a.snapshot?'snapshot':a.event?'event':a.caseId?'case-message':'direct-message'}:${a.caseId||''}:${source(a).id}`.localeCompare(`${b.snapshot?'snapshot':b.event?'event':b.caseId?'case-message':'direct-message'}:${b.caseId||''}:${source(b).id}`);
+  });
+  let day='',markup='';
+  timeline.forEach(({message:m,event,snapshot,caseId})=>{
+    const row=m||event||snapshot,createdAt=snapshot?(snapshot.updated_at||snapshot.created_at):row.created_at,next=new Date(createdAt).toDateString();
+    if(day!==next){day=next;markup+=`<div class="bc-msg-day" role="separator">${esc(fmtDate(createdAt))}</div>`}
+    const e=cases.find(group=>group.caseId===caseId)?.case;
+    markup+=event||snapshot?`<details class="bc-collector-event" data-timeline-case="${attr(caseId)}"><summary>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(event?String(event.event_type||'Exchange update').replace(/^exchange_/,'').replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()):exchangeStageLabel(e))}</summary><small>${fmtDateTime(createdAt)} · Case ${esc(caseId)}</small></details>`:`<div class="bc-collector-entry" data-timeline-message="${attr(m.id)}" ${caseId?`data-timeline-case="${attr(caseId)}"`:''}>${e?`<button type="button" class="bc-case-source" data-open-messages-case="${attr(caseId)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}</button>`:''}${messageBubble(m,S.profiles[peerId]?.display_name)}</div>`;
+  });
+  return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>';
+}
+async function loadCollectorEvents(peerId,uid,token){
+  const groups=[...(messageIndexByUid.get(uid)?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
+  const results=await Promise.all(groups.map(group=>settledTimeout(db.from('exchange_case_events').select('*').eq('case_id',group.caseId).order('created_at',{ascending:true}),10000)));
+  if(S.user?.id!==uid||S.renderToken!==token)return false;
+  if(results.some(result=>result.error))return false;
+  groups.forEach((group,i)=>{group.events=[...new Map((results[i].data||[]).filter(event=>event.case_id===group.caseId).map(event=>[event.id,event])).values()]});
+  return true;
+}
+async function loadCollectorOverdue(caseId,uid,token){
+  const e=messageIndexByUid.get(uid)?.cases.get(caseId)?.case;
+  if(!e?.return_due_at||!['ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION'].includes(e.state))return;
+  const {data,error}=await settledTimeout(db.rpc('exchange_case_overdue_days',{p_case_id:caseId,p_as_of:new Date().toISOString()}),10000);
+  if(error||S.user?.id!==uid||S.renderToken!==token)return;
+  S.caseOverdue[caseId]=Math.max(0,Number(data)||0);
+}
 function updateThreadChat(cache,options={}){
   const chat=$('#bc-msg-chat');if(!chat)return;
   const {fallback='',senderName='',scrollMode='jump'}=options;
   const prevTop=chat.scrollTop,prevHeight=chat.scrollHeight;
-  chat.innerHTML=threadChatMarkup(cache.messages,fallback,senderName,cache.hasOlder);
+  chat.innerHTML=collectorFocus?.peerId===cache.id&&collectorFocus.uid===cache.uid?collectorTimelineMarkup(cache.id,cache.uid):threadChatMarkup(cache.messages,fallback,senderName,cache.hasOlder);
   if(scrollMode==='prepend')chat.scrollTop=Math.max(0,prevTop+(chat.scrollHeight-prevHeight));
   else if(scrollMode==='keep')chat.scrollTop=prevTop;
   else requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight});
+  if(collectorFocus?.peerId===cache.id)bindCollectorCaseLinks(chat);
 }
+function bindCollectorCaseLinks(root){$$('[data-open-messages-case]',root).forEach(b=>b.onclick=()=>navigate('messages',`case:${b.dataset.openMessagesCase}`))}
 function bindThreadCompose(form,kind,id,senderName){
   if(!form)return;
   const uid=S.user?.id;
@@ -1740,8 +1846,8 @@ function bindThreadCompose(form,kind,id,senderName){
   const input=$('textarea[name="message"]',form);
   if(input){
     const saved=threadDrafts.get(key);
-    if(saved)input.value=saved;
-    input.addEventListener('input',()=>{threadDrafts.set(key,input.value)});
+    if(saved&&input.value!==saved)input.value=saved;
+    input.oninput=()=>{threadDrafts.set(key,input.value)};
   }
   if(pendingSends.has(key)){
     const button=$('button[type="submit"]',form);
@@ -1769,6 +1875,7 @@ function bindThreadCompose(form,kind,id,senderName){
     const sendOperation={};
     pendingSends.set(sendKey,sendOperation);
     button.disabled=true;if(input)input.disabled=true;
+    const destination=$('#bc-case-destination');if(destination)destination.disabled=true;
     showThreadStatus('Sending…');
     const restore=()=>{if(stillCurrent()){button.disabled=false;if(input){input.disabled=false;input.focus()}}};
     try{
@@ -1788,9 +1895,9 @@ function bindThreadCompose(form,kind,id,senderName){
         return;
       }
       if(!stillCurrent())return;
-      updateThreadChat(threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
+      updateThreadChat(collectorFocus?threadCache('direct',collectorFocus.peerId,submitUid):threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
       reconcileMessageIndex(submitUid,kind,id);
-      advanceThreadWatermark(submitUid,kind,id);
+      if(collectorFocus)advanceCollectorWatermarks(collectorFocus.peerId,submitUid);else advanceThreadWatermark(submitUid,kind,id);
       updateMessageBadge();
       restore();
       toast('Message sent.');
@@ -1802,6 +1909,7 @@ function bindThreadCompose(form,kind,id,senderName){
         clearThreadStatus();
         const liveButton=$('button[type="submit"]',liveForm);
         const liveInput=$('textarea[name="message"]',liveForm);
+        const liveDestination=$('#bc-case-destination');if(liveDestination)liveDestination.disabled=false;
         if(liveButton)liveButton.disabled=false;
         if(liveInput)liveInput.disabled=false;
       }
@@ -1852,7 +1960,7 @@ function clearThreadStatus(){
 function activeThreadForm(uid,kind,id){
   if(S.user?.id!==uid)return null;
   const ctx=$('#bc-msg-chat')?.bcThread;
-  if(!ctx||ctx.kind!==kind||String(ctx.id)!==String(id))return null;
+  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(collectorFocus?.uid===uid&&collectorFocus.caseId===id&&kind==='case'))return null;
   return $('#bc-msg-form');
 }
 async function loadEarlierThreadMessages(chat){
@@ -1885,7 +1993,8 @@ function caseConversationGuide(e){
   const prefixes=returning?[['Arrival','return_arrived'],['Inspection','return_inspected'],['Set returned','return_confirmed']]:[['Safety','safety_ack'],['Arrival','arrived'],['Inspection','inspected'],['Handoff','handoff']];
   const showChecks=returning?e.state==='RETURN_INSPECTION':['MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(e.state);
   const venue=returning?e.return_venue_name:e.meetup_venue_name,area=returning?e.return_venue_area:e.meetup_venue_area,when=returning?e.return_meetup_at:e.meetup_at;
-  return `<section class="bc-conversation-guide bc-card" aria-label="Exchange next step"><div class="bc-guide-heading"><span class="bc-pill ${closed?'':next.action?'gold':'blue'}">${closed?'Closed':next.action?'Your turn':'Waiting for partner'}</span><span class="bc-small">${esc(exchangeStageLabel(e))}</span></div><h2>${esc(next.label||exchangeStageLabel(e))}</h2><p>${esc(next.copy)}</p>${when?`<div class="bc-guide-meetup"><b>${returning?'Return meetup':'Meetup'}${e.state==='MEETUP_PLANNING'||e.state==='RETURN_PLANNING'?' · awaiting agreement':''}</b><span>${esc(venue||'Public venue')}${area?' · '+esc(area):''}</span><time>${fmtDateTime(when)}</time></div>`:''}${showChecks?`<details class="bc-guide-checks"><summary>Both collectors’ confirmations</summary><table><thead><tr><th scope="col">Step</th><th scope="col">You</th><th scope="col">Partner</th></tr></thead><tbody>${prefixes.map(([label,prefix])=>`<tr><th scope="row">${label}</th><td>${caseParticipantValue(e,prefix)?'Confirmed':'Not yet'}</td><td>${caseParticipantValue(e,prefix,false)?'Confirmed':'Not yet'}</td></tr>`).join('')}</tbody></table></details>`:''}<div class="bc-guide-actions">${!closed&&next.action?`<button class="bc-btn primary" type="button" data-thread-case-action="${attr(next.action)}">${esc(next.label)}</button>`:''}${!closed&&e.state==='PROPOSED'&&e.recipient_id===S.user.id?'<button class="bc-btn" type="button" data-thread-case-action="counter">Suggest another duration</button>':''}${!closed&&secondary?`<details class="bc-guide-options"><summary>Other options</summary><button class="bc-btn" type="button" data-thread-case-action="${attr(secondary.action)}">${esc(secondary.label)}</button></details>`:''}</div><p class="bc-guide-note">Messages help you coordinate. Use the confirmation button to record an agreed step.</p></section>`;
+  const markup=`<section class="bc-conversation-guide bc-card" aria-label="Exchange next step"><div class="bc-guide-heading"><span class="bc-pill ${closed?'':next.action?'gold':'blue'}">${closed?'Closed':next.action?'Your turn':'Waiting for partner'}</span><span class="bc-small">${esc(exchangeStageLabel(e))}</span></div><h2>${esc(next.label||exchangeStageLabel(e))}</h2><p>${esc(next.copy)}</p>${when?`<div class="bc-guide-meetup"><b>${returning?'Return meetup':'Meetup'}${e.state==='MEETUP_PLANNING'||e.state==='RETURN_PLANNING'?' · awaiting agreement':''}</b><span>${esc(venue||'Public venue')}${area?' · '+esc(area):''}</span><time>${fmtDateTime(when)}</time></div>`:''}${showChecks?`<details class="bc-guide-checks"><summary>Both collectors’ confirmations</summary><table><thead><tr><th scope="col">Step</th><th scope="col">You</th><th scope="col">Partner</th></tr></thead><tbody>${prefixes.map(([label,prefix])=>`<tr><th scope="row">${label}</th><td>${caseParticipantValue(e,prefix)?'Confirmed':'Not yet'}</td><td>${caseParticipantValue(e,prefix,false)?'Confirmed':'Not yet'}</td></tr>`).join('')}</tbody></table></details>`:''}${Number(S.caseOverdue[e.id]||0)>0?`<p class="bc-small"><b>Return overdue by ${Number(S.caseOverdue[e.id])} day${Number(S.caseOverdue[e.id])===1?'':'s'}</b></p>`:''}<div class="bc-guide-actions">${!closed&&next.action?`<button class="bc-btn primary" type="button" data-thread-case-action="${attr(next.action)}">${esc(next.label)}</button>`:''}${e.state==='COMPLETED'&&!S.submittedPeerReviews.has(e.id)&&!peerReviewSubmitted(e.id)?'<button class="bc-btn primary" type="button" data-thread-case-action="review">Leave review</button>':''}${!closed&&e.state==='PROPOSED'&&e.recipient_id===S.user.id?'<button class="bc-btn" type="button" data-thread-case-action="counter">Suggest another duration</button>':''}${!closed&&secondary?`<details class="bc-guide-options"><summary>Other options</summary><button class="bc-btn" type="button" data-thread-case-action="${attr(secondary.action)}">${esc(secondary.label)}</button></details>`:''}${canReportCaseIssue(e)?'<details class="bc-guide-options"><summary>Help and issues</summary><button class="bc-btn" type="button" data-thread-case-action="report_issue">Report an issue</button><button class="bc-btn" type="button" data-thread-case-action="request_support">Need BrickCircle support?</button></details>':''}</div></section>`;
+  return e.state==='COMPLETED'&&(S.submittedPeerReviews.has(e.id)||peerReviewSubmitted(e.id))?markup.replace('</section>',`<p class="bc-small">You reviewed ${esc(S.profiles[otherId(e)]?.display_name||'this collector')}. Your review remains private until both reviews arrive or the reveal window opens.</p></section>`):markup;
 }
 const threadCaseActions=new Set();
 function bindThreadCaseActions(e){
@@ -1895,7 +2004,7 @@ function bindThreadCaseActions(e){
       if(threadCaseActions.has(e.id)||!messagesThreadGuard('case',e.id))return;
       threadCaseActions.add(e.id);
       $$('[data-thread-case-action]',app()).forEach(b=>b.disabled=true);
-      try{await runCaseAction(e,button.dataset.threadCaseAction,button)}
+      try{if(button.dataset.threadCaseAction==='review')showReview(e,S.profiles[otherId(e)]||{});else await runCaseAction(e,button.dataset.threadCaseAction,button)}
       finally{threadCaseActions.delete(e.id);if(messagesThreadGuard('case',e.id))$$('[data-thread-case-action]',app()).forEach(b=>b.disabled=false)}
     };
   });
@@ -1907,11 +2016,6 @@ async function reloadCaseView(id){
     return refreshThread(chat);
   }
   if(routeName()==='exchange'&&routeId()===id)return renderExchangeDetail(id,S.renderToken);
-}
-function directExchangeLinks(peerId){
-  const cases=S.exchanges.filter(e=>[e.user_a,e.user_b].includes(S.user.id)&&[e.user_a,e.user_b].includes(peerId)&&!terminalCaseStates.has(e.state));
-  if(!cases.length)return '<p class="bc-small bc-direct-explanation">Use this chat to get acquainted. A proposal creates a separate conversation for that exchange.</p>';
-  return `<section class="bc-direct-exchange-links bc-card" aria-label="Exchanges with this collector"><b>Continue your exchange here</b><p>Meetup plans and confirmations belong in the exchange conversation.</p>${cases.map(e=>`<button type="button" class="bc-btn" data-open-messages-case="${attr(e.id)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}</button>`).join('')}</section>`;
 }
 let threadSyncTimer=null;
 function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;}
@@ -1977,11 +2081,26 @@ async function refreshThread(chat){
   if(button){button.disabled=true;button.textContent='Refreshing…'}
   ctx.refreshing=true;
   try{
-  const [caseResult,messageFailure]=await Promise.all([
+   const [caseResult,messageFailure]=await Promise.all([
     kind==='case'?settledTimeout(db.from('exchange_cases').select('*').eq('id',id).maybeSingle(),10000):Promise.resolve({data:null,error:null}),
     (async()=>{try{await mergeThreadLatest(kind,id,uid,stillCurrent);return null}catch(error){return error}})()
   ]);
-  if(!stillCurrent())return;
+   if(!stillCurrent())return;
+   if(collectorFocus?.peerId===id){
+     try{await loadMessageIndex(uid,token);if(!await loadCollectorEvents(id,uid,token))throw new Error('Events unavailable')}catch(error){showThreadError('Conversation could not be refreshed.',()=>refreshThread(chat));return}
+      if(!stillCurrent())return;
+      const selected=collectorFocus.caseId;
+      if(selected)await loadCollectorOverdue(selected,uid,token);
+      if(!stillCurrent())return;
+      const picker=$('#bc-case-destination');
+      if(picker){picker.parentElement.outerHTML=collectorDestinationMarkup(id,selected);$('#bc-case-destination').onchange=event=>{const caseId=event.target.value;navigate('messages',caseId?`case:${caseId}`:`direct:${id}`)}}
+      const e=selected?messageIndexByUid.get(uid)?.cases.get(selected)?.case:null;
+     if(selected&&!e)return renderMessagesUnavailable('Conversation unavailable.');
+      selectCollectorCase(id,selected);
+      updateThreadChat(threadCache('direct',id,uid),{senderName,scrollMode:'keep'});
+      advanceCollectorWatermarks(id,uid);
+     renderMessagesListPane();
+   }
   if(button){button.disabled=false;button.textContent='↻ Refresh'}
   if(kind==='case'&&!caseResult.error&&(!caseResult.data||![caseResult.data.user_a,caseResult.data.user_b].includes(uid)))return renderMessagesUnavailable('This exchange conversation is no longer available.');
   if(kind==='case'&&caseResult.data){
@@ -2025,71 +2144,89 @@ function renderMessagesUnavailable(message,retry){
   page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button>${empty('⚠️','Conversation unavailable',message,retry?'Retry':'Back to messages',retry?'retry-thread-load':'messages')}`);
   if(retry)$('[data-action="retry-thread-load"]',app()).onclick=retry;
 }
-async function renderDirectThread(token,peerId){
+let pendingMatchProposal=null;
+function openMatchInMessages(index){
+  const m=S.matches[index];if(!m||!S.user)return;
+  pendingMatchProposal={uid:S.user.id,peerId:m.match_user,offered:m.offered_item,requested:m.requested_item};
+  navigate('messages',`direct:${m.match_user}`);
+  if(collectorFocus?.peerId===m.match_user)renderInlineProposal(m.match_user);
+}
+function renderInlineProposal(peerId){
+  const host=$('#bc-collector-proposal');if(!host||S.user?.id!==collectorFocus?.uid)return;
+  const matches=S.matches.filter(m=>m.match_user===peerId);
+  const pending=pendingMatchProposal?.uid===S.user.id&&pendingMatchProposal.peerId===peerId?pendingMatchProposal:null;
+  host.innerHTML=`<div class="bc-collector-match-options">${matches.map(m=>`<button class="bc-btn" type="button" data-match-pair="${attr(m.offered_item)}:${attr(m.requested_item)}">Propose ${esc(m.offered_name)} ⇄ ${esc(m.requested_name)}</button>`).join('')}</div>${pending?`<form class="bc-card bc-pad bc-form" id="bc-inline-proposal"><h2>Propose an exchange</h2><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p><label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form>`:''}`;
+  $$('[data-match-pair]',host).forEach(button=>button.onclick=()=>{const m=matches.find(row=>`${row.offered_item}:${row.requested_item}`===button.dataset.matchPair);if(m){pendingMatchProposal={uid:S.user.id,peerId,offered:m.offered_item,requested:m.requested_item};renderInlineProposal(peerId)}});
+  const form=$('#bc-inline-proposal',host);if(form)form.onsubmit=async event=>{
+    event.preventDefault();const proposal=pendingMatchProposal;if(!proposal||proposal.uid!==S.user?.id||proposal.peerId!==peerId)return;
+    const uid=S.user.id,token=S.renderToken,stillCurrent=()=>S.user?.id===uid&&S.renderToken===token&&collectorFocus?.uid===uid&&collectorFocus.peerId===peerId&&form.isConnected&&pendingMatchProposal===proposal;
+    const data=new FormData(form),days=Number(data.get('days')),message=String(data.get('message')||''),button=$('button[type="submit"]',form);
+    button.disabled=true;
+    const result=await canonicalRpc('create_exchange_case',{p_offered_item_id:proposal.offered,p_requested_item_id:proposal.requested,p_duration_days:days,p_message:message},{offered_item_id:proposal.offered,requested_item_id:proposal.requested,duration_days:days,message});
+    if(!stillCurrent())return;
+    if(result.error||!result.data?.case?.id){button.disabled=false;return fail(result.error||new Error('Proposal unavailable'),'Could not send proposal.')}
+    pendingMatchProposal=null;await refreshCore();if(S.user?.id!==uid||collectorFocus?.peerId!==peerId||S.renderToken!==token)return;navigate('messages',`case:${result.data.case.id}`);
+  };
+}
+function collectorDestinationMarkup(peerId,selected){
+  const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
+  return `<label class="bc-collector-destination">Message destination <select id="bc-case-destination" class="bc-select"><option value="" ${selected===null?'selected':''}>Collector · general chat</option>${groups.map(g=>`<option value="${attr(g.caseId)}" ${selected===g.caseId?'selected':''}>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</option>`).join('')}</select></label>`;
+}
+function selectCollectorCase(peerId,caseId){
+  const uid=S.user?.id,group=messageIndexByUid.get(uid)?.cases.get(caseId);
+  if(caseId&&(!group?.case||otherId(group.case)!==peerId))return renderMessagesUnavailable('Conversation unavailable.');
+  const previous=collectorFocus;
+  if(previous&&(previous.uid!==uid||previous.peerId!==peerId||previous.caseId!==(caseId||null)))$('#bc-collector-form')?.replaceChildren();
+  collectorFocus={uid,peerId,caseId:caseId||null};
+  const host=$('#bc-collector-action'),e=group?.case;
+  if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">General chat does not change exchange terms. Select a case for its next step.</p>';
+  if(e)bindThreadCaseActions(e);
+  const form=$('#bc-msg-form');if(form){const current=form.dataset.destination||'',input=$('textarea',form);if(input&&form.dataset.bound)threadDrafts.set(`${uid}:${current?'case':'direct'}:${current||peerId}`,input.value);form.dataset.destination=caseId||'';form.dataset.bound='true';const draft=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';if(input&&input.value!==draft)input.value=draft;bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name)}
+  const picker=$('#bc-case-destination');if(picker){picker.value=caseId||'';picker.disabled=pendingSends.has(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)}
+  if(e){const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b]}
+  const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
+  if(e&&terminalCaseStates.has(e.state)&&form){form.hidden=true}else if(form)form.hidden=false;
+}
+async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=null){
   page(loading('Opening conversation…'));
   const uid=S.user?.id;
+  collectorFocus=null;
+  const current=()=>token===S.renderToken&&S.user?.id===uid&&routeName()==='messages'&&routeId()===(focusedCase?`case:${focusedCase}${focusedMessage?`:message:${focusedMessage}`:''}`:`direct:${peerId}`);
   const indexPromise=uid?loadMessageIndex(uid,token).catch(()=>null):Promise.resolve(null);
   const {data:peer,error:peerError}=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').eq('id',peerId).maybeSingle(),10000);
-  if(token!==S.renderToken||S.user?.id!==uid||!messagesThreadGuard('direct',peerId))return;
+  if(!current())return;
   if(peerError)return renderMessagesUnavailable('Collector details could not be loaded. Please retry.',()=>renderDirectThread(S.renderToken,peerId));
   if(!peer)return renderMessagesUnavailable('This collector could not be found or no longer has a public profile.');
   const {data:rows,error:messageError}=await settledTimeout(threadLatestQuery('direct',peerId,uid),10000);
-  if(token!==S.renderToken||S.user?.id!==uid||!messagesThreadGuard('direct',peerId))return;
+  if(!current())return;
   if(messageError)return renderMessagesUnavailable('Your messages could not be loaded. Please retry.',()=>renderDirectThread(S.renderToken,peerId));
   await indexPromise;
-  if(token!==S.renderToken||S.user?.id!==uid||!messagesThreadGuard('direct',peerId))return;
+  if(!current())return;
+  if(!await loadCollectorEvents(peerId,uid,token))return renderMessagesUnavailable('Conversation history could not be loaded. Please retry.');
+  if(focusedCase)await loadCollectorOverdue(focusedCase,uid,token);
+  if(!current())return;
   S.profiles[peerId]=peer;
   const cache=threadCache('direct',peerId,uid);
   cache.pair=[uid,peerId];cache.participants=null;
   const firstLoad=cache.ids.size===0;
   mergeThreadHistory(cache,validateThreadRows(cache,rows));
   if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
+  if(focusedCase&&!messageIndexByUid.get(uid)?.cases.get(focusedCase))return renderMessagesUnavailable('Conversation unavailable.');
+  collectorFocus={uid,peerId,caseId:focusedCase};
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill blue">Direct message</span><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p>${reputationTrustContext(peerId)}</div></div></section>${directExchangeLinks(peerId)}<div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,DIRECT_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,focusedCase)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
-  bindThreadCompose($('#bc-msg-form'),'direct',peerId,p.display_name);
-  advanceThreadWatermark(uid,'direct',peerId);
-  updateMessageBadge();
-}
-async function renderCaseThread(token,caseId){
-  page(loading('Opening exchange conversation…'));
-  const uid=S.user?.id;
-  const stillCurrent=()=>token===S.renderToken&&S.user?.id===uid&&messagesThreadGuard('case',caseId);
-  const indexPromise=uid?loadMessageIndex(uid,token).catch(()=>null):Promise.resolve(null);
-  const {data:e,error:caseError}=await settledTimeout(db.from('exchange_cases').select('*').eq('id',caseId).maybeSingle(),10000);
-  if(!stillCurrent())return;
-  if(caseError)return renderMessagesUnavailable('This exchange conversation could not be loaded. Please retry.',()=>renderCaseThread(S.renderToken,caseId));
-  if(!e||![e.user_a,e.user_b].includes(S.user.id))return renderMessagesUnavailable('This exchange conversation is unavailable or belongs to another collector.');
-  if(!await hydrateExchangeItems([e],stillCurrent))return;
-  if(!stillCurrent())return;
-  const oid=otherId(e);
-  const {data:peer}=await settledTimeout(oid?db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').eq('id',oid).maybeSingle():Promise.resolve({data:null,error:null}),10000);
-  if(!stillCurrent())return;
-  if(peer)S.profiles[oid]=peer;
-  const {data:rows,error:messageError}=await settledTimeout(threadLatestQuery('case',caseId,uid),10000);
-  if(!stillCurrent())return;
-  if(messageError)return renderMessagesUnavailable('Your exchange messages could not be loaded. Please retry.',()=>renderCaseThread(S.renderToken,caseId));
-  await indexPromise;
-  if(!stillCurrent())return;
-  const cache=threadCache('case',caseId,uid);
-  cache.participants=[e.user_a,e.user_b];cache.pair=null;
-  const firstLoad=cache.ids.size===0;
-  mergeThreadHistory(cache,validateThreadRows(cache,rows));
-  if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
-  const p=S.profiles[oid]||{},closed=terminalCaseStates.has(e.state),next=caseNextAction(e),firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><span class="bc-pill ${closed?'':'gold'}" data-msg-stage-pill>${esc(exchangeStageLabel(e))}</span><h1 data-msg-case-title>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h1><p data-msg-case-sub>With ${esc(p.display_name||'Collector')} · ${Number(e.duration_days)||30}-day exchange${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${reputationTrustContext(oid)}</div></div><button class="bc-btn" type="button" data-open-exchange="${attr(e.id)}">Exchange details</button></section>${caseConversationGuide(e)}<details class="bc-guide-journey"><summary>Exchange journey</summary>${exchangeTimeline(e)}</details><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${threadChatMarkup(cache.messages,CASE_THREAD_FALLBACK,p.display_name,cache.hasOlder)}</div>${closed?'<div class="bc-notice"><b>Case closed.</b> This exchange conversation is read-only.</div>':`<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form>`}</section></section></div>`);
-  const chat=$('#bc-msg-chat');
-  if(chat)chat.bcThread={kind:'case',id:caseId,senderName:p.display_name,fallback:CASE_THREAD_FALLBACK,caseRow:e};
-  bindMessagesPage();
-  bindThreadCaseActions(e);
-  bindThreadCompose($('#bc-msg-form'),'case',e.id,p.display_name);
-  advanceThreadWatermark(uid,'case',caseId);
+  $('#bc-case-destination').onchange=event=>{const id=event.target.value;navigate('messages',id?`case:${id}`:`direct:${peerId}`)};
+  selectCollectorCase(peerId,focusedCase);
+  renderInlineProposal(peerId);
+  advanceCollectorWatermarks(peerId,uid);
+  if(focusedCase){const target=focusedMessage?`[data-timeline-case="${CSS.escape(focusedCase)}"][data-timeline-message="${CSS.escape(focusedMessage)}"]`:`[data-timeline-case="${CSS.escape(focusedCase)}"]`;$('#bc-msg-chat').querySelector(target)?.scrollIntoView({block:'nearest'})}
   updateMessageBadge();
 }
 async function renderMessages(token){
-  if(!S.user){showAuth();return navigate('home')}
+  if(!S.user){page(empty('🔒','Sign in to open Messages','Your conversation will open after sign-in.'));showAuth();return}
   document.querySelector('.bc-match-login-notice')?.remove();
   const target=parseMessagesTarget();
   if(!target)return renderMessagesList(token);
@@ -2097,7 +2234,13 @@ async function renderMessages(token){
     if(target.peerId===S.user.id)return renderMessagesUnavailable('You cannot open a direct conversation with yourself.');
     return renderDirectThread(token,target.peerId);
   }
-  if(target.kind==='case')return renderCaseThread(token,target.caseId);
+  if(target.kind==='case'){
+    page(loading('Opening conversation…'));
+    const {data:e,error}=await settledTimeout(db.from('exchange_cases').select('*').eq('id',target.caseId).maybeSingle(),10000);
+    if(token!==S.renderToken||routeId()!==`case:${target.caseId}${target.messageId?`:message:${target.messageId}`:''}`)return;
+    if(error||!e||![e.user_a,e.user_b].includes(S.user.id))return renderMessagesUnavailable('Conversation unavailable.');
+    return renderDirectThread(token,otherId(e),e.id,target.messageId);
+  }
   return renderMessagesUnavailable('This conversation link is not valid. Open Messages and pick a conversation.');
 }
 function showInbox(){if(!S.user){showAuth();return}navigate('messages')}

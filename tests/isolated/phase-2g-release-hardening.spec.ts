@@ -29,23 +29,27 @@ test('PASSWORD_RECOVERY validates, retries and preserves the signed-in session',
   expect(calls[1].attributes).toEqual({password:'password123'});
 });
 
-test('legacy disputed exchange keeps participant chat while progression stays paused',async({page})=>{
+test('legacy disputed exchange keeps participant conversation while progression stays paused',async({page})=>{
   await page.goto('/v2.html?isolated=disputed#exchange/ex1');
-  await expect(page.locator('#bc-flow')).toContainText('Legacy issue');
-  const chat=page.locator('#bc-chat-form');
+  const guide=page.getByRole('region',{name:'Exchange next step'});
+  await expect(guide).toContainText('Legacy issue');
+  await expect(page.locator('#bc-case-destination')).toHaveValue('ex1');
+  const chat=page.locator('#bc-msg-form');
   await expect(chat).toBeVisible();
-  await expect(page.locator('[data-schedule],[data-flow-action],[data-cancel-exchange]')).toHaveCount(0);
+  await expect(guide.locator('[data-thread-case-action]')).toHaveCount(0);
   await chat.locator('[name="message"]').fill('I have documented the issue.');
   await chat.evaluate((element:HTMLFormElement)=>element.requestSubmit());
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.messages.length)).toBe(1);
   expect(await page.evaluate(()=>window.__bcIsolated.messages[0])).toMatchObject({case_id:'ex1',body:'I have documented the issue.'});
 });
 
-test('completed exchange remains terminal and hides participant messaging',async({page})=>{
+test('completed exchange remains terminal with read-only participant history',async({page})=>{
   await page.goto('/v2.html?isolated=completed#exchange/ex1');
-  await expect(page.locator('#bc-flow')).toContainText('Completed');
-  await expect(page.locator('#bc-chat-form')).toHaveCount(0);
-  await expect(page.locator('[data-schedule],[data-flow-action],[data-cancel-exchange]')).toHaveCount(0);
+  const guide=page.getByRole('region',{name:'Exchange next step'});
+  await expect(guide).toContainText('Completed');
+  await expect(page.locator('#bc-case-destination')).toHaveValue('ex1');
+  await expect(page.locator('#bc-msg-form')).toBeHidden();
+  await expect(guide.locator('[data-thread-case-action]:not([data-thread-case-action="review"])')).toHaveCount(0);
 });
 
 test('transient getUser failure preserves the last confirmed signed-in view',async({page})=>{
