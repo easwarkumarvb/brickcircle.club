@@ -251,6 +251,9 @@ async function offline() {
           await p.locator('#bc-msg-form').evaluate(f=>f.requestSubmit());await expect(input).toHaveValue('');
           assert.equal(await p.evaluate(()=>window.__bcThreeUser.data.messages.find(m=>m.body==='First destination draft').case_id),'first-case');
           await p.evaluate(()=>window.bcNav('messages'));await expect(p.locator('.bc-msg-row')).toHaveCount(1);
+          // UX inspector must examine a specific thread, not the inbox landing page.
+          await p.evaluate(()=>window.bcNav('messages','case:first-case'));
+          await expect(p.locator('#bc-msg-form')).toBeVisible();
         }
         syntheticStage='synthetic-'+actor+'-ux-checkpoint';
         uxCheckpoints.push(await inspectConversationUx(p,{phase:'synthetic-'+actor,mode:actor==='dhyan'?'outsider':'composer'}));
