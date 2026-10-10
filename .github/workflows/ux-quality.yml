@@ -20,6 +20,9 @@ jobs:
       - run: npx playwright install --with-deps chromium webkit firefox
       - name: UX browser, screenshot, accessibility and navigation gates
         run: npx playwright test --config playwright.ux.config.ts
+      - name: Generate initial UX triage
+        if: always()
+        run: node scripts/ux-triage.mjs
       - name: Upload evidence even when tests fail
         if: always()
         uses: actions/upload-artifact@v4
@@ -47,10 +50,16 @@ jobs:
           for i in {1..30}; do curl --fail --silent http://127.0.0.1:4188/ >/dev/null && break; sleep 1; done
           mkdir -p ux-lighthouse
           npx lighthouse http://127.0.0.1:4188/ --chrome-flags="--headless --no-sandbox" --output=json --output-path=ux-lighthouse/home.json
+      - name: Generate Lighthouse triage
+        if: always()
+        run: node scripts/ux-triage.mjs
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ux-lighthouse-evidence
-          path: ux-lighthouse/
+          path: |
+            ux-lighthouse/
+            ux-report/triage.md
+            ux-report/triage.json
           retention-days: 14
           if-no-files-found: ignore
