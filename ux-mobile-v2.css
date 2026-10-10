@@ -322,8 +322,7 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,te
     gap:9px!important;
   }
   .bc-hero-actions .bc-btn{width:100%!important}
-  .bc-landing-showcase{min-height:300px!important;margin-top:4px!important}
-  .bc-showcase-card{width:72%!important}
+  .bc-landing-showcase{margin-top:4px!important}
   .bc-showcase-card .bc-set-image{height:132px!important}
 
   .bc-dashboard-hero,.bc-dashboard-grid{grid-template-columns:1fr!important}

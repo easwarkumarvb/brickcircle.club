@@ -12,18 +12,24 @@ html.bc-collector :is(button,a,input,textarea,select):focus-visible{outline:3px 
 html.bc-collector :is(.bc-card,.bc-guided-progress,.bc-readiness,.bc-home-next){border:1px solid #dde3eb!important;border-radius:20px!important;box-shadow:0 5px 18px #17202d08!important}
 html.bc-collector .bc-landing-hero{background:#17202d!important;color:#fff!important;border:0!important;border-radius:28px!important;min-height:550px!important;padding:48px!important;gap:32px!important;overflow:hidden}
 html.bc-collector .bc-landing-hero h1{font-size:clamp(44px,5.5vw,76px)!important;line-height:1.04!important;letter-spacing:-.055em!important;color:#fff!important}
+html.bc-collector .bc-landing-hero::before{content:none}
 html.bc-collector .bc-landing-hero h1 em{background:none!important;-webkit-text-fill-color:#ffd500!important;color:#ffd500!important;font-style:normal}
 html.bc-collector .bc-landing-hero p{color:#d7dee8!important;font-size:18px!important;line-height:1.65!important;max-width:470px}
 html.bc-collector .bc-landing-hero .bc-pill.gold{background:#ffd500!important;border:0!important;color:#17202d!important;padding:8px 13px!important}
 html.bc-collector .bc-hero-actions{gap:10px!important}
 html.bc-collector .bc-hero-actions .bc-btn:not(.primary){background:#fff!important;border-color:#fff!important;color:#17202d!important}
 html.bc-collector .bc-hero-actions .bc-btn.ghost{background:transparent!important;border-color:#738096!important;color:#fff!important}
-html.bc-collector .bc-landing-showcase{height:420px!important}
+html.bc-collector .bc-landing-showcase{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;height:auto!important;min-height:0!important;min-width:0;padding:0}
 html.bc-collector .bc-showcase-card{background:#fff!important;border:1px solid #dde3eb!important;box-shadow:0 18px 35px #0003!important;border-radius:20px!important;padding:16px!important;color:#17202d!important}
-html.bc-collector .bc-showcase-card img{height:190px!important;object-fit:contain!important;background:#fff!important}
+html.bc-collector .bc-showcase-card{position:static;width:100%!important;transform:none!important;min-width:0}
+html.bc-collector .bc-showcase-card img{height:100%!important;object-fit:contain!important;background:#fff!important}
 html.bc-collector .bc-showcase-card span{color:#556171!important;font-size:10px!important;letter-spacing:.1em!important}
 html.bc-collector .bc-showcase-card strong{color:#17202d!important;font-size:17px!important}
-html.bc-collector .bc-showcase-link{background:#ffd500!important;color:#17202d!important;border:0!important;box-shadow:0 8px 20px #0002!important}
+html.bc-collector .bc-showcase-link{position:static;justify-self:center;max-width:100%!important;background:#ffd500!important;color:#17202d!important;border:0!important;box-shadow:0 8px 20px #0002!important;line-height:1.5;overflow-wrap:anywhere}
+html.bc-collector .bc-pair-note{color:#d7dee8;text-align:center;line-height:1.5}
+html.bc-collector :is(.bc-showcase-card,.bc-story-flow article,.bc-example-sets article){overflow-wrap:anywhere}
+html.bc-collector :is(.bc-landing-hero-copy,.bc-example-copy,.bc-example-sets){min-width:0}
+html.bc-collector .bc-example-copy h2{color:#fff!important}
 html.bc-collector .bc-showcase-link b{color:#17202d!important}
 html.bc-collector .bc-landing-heading h2{font-size:clamp(26px,3vw,38px)!important}
 html.bc-collector :is(.bc-story-flow article,.bc-trust-grid article,.bc-landing-workflow article){background:#fff!important;border:1px solid #dde3eb!important;border-radius:20px!important}
@@ -78,13 +84,10 @@ html.bc-collector .bc-mobile-nav{background:#fff!important;border-color:#dde3eb!
  html.bc-collector .bc-landing-hero{grid-template-columns:1fr!important;padding:26px 22px!important;gap:18px!important;border-radius:22px!important;min-height:auto!important}
  html.bc-collector .bc-landing-hero h1{font-size:46px!important}
  html.bc-collector .bc-landing-hero p{font-size:16px!important;line-height:1.55!important}
- html.bc-collector .bc-landing-showcase{height:355px!important}
  html.bc-collector .bc-showcase-card{padding:12px!important}
- html.bc-collector .bc-landing-showcase{min-height:355px!important}
  html.bc-collector .bc-showcase-card .bc-set-image{height:145px!important}
- html.bc-collector .bc-showcase-card img{height:145px!important}
  html.bc-collector .bc-showcase-card strong{font-size:14px!important}
- html.bc-collector .bc-showcase-link{font-size:11px!important;max-width:90%!important}
+ html.bc-collector .bc-showcase-link{font-size:12px!important}
  html.bc-collector .bc-first-match-head{flex-direction:row!important;align-items:center!important;gap:10px!important}
  html.bc-collector .bc-first-match-head .bc-btn{width:auto!important;flex-shrink:0;font-size:12px!important;padding:8px!important}
  html.bc-collector .bc-first-match-steps{grid-template-columns:repeat(2,minmax(0,1fr))!important}

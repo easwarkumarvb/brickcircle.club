@@ -7,7 +7,8 @@ test('desktop landing tells the complete exchange story with minimal copy',async
   await expect(page.locator('.bc-story-flow article')).toHaveCount(4);
   await expect(page.locator('.bc-story-flow')).toContainText('YOU OWN');
   await expect(page.locator('.bc-story-flow')).toContainText('YOU WANT');
-  await expect(page.locator('.bc-story-flow')).toContainText('Finds the overlap');
+  await expect(page.locator('.bc-story-flow')).toContainText('Both wishlists line up');
+  await expect(page.locator('.bc-story-flow')).toContainText('THEY WANT YOUR DISCOVERY');
   await expect(page.locator('.bc-story-flow')).toContainText('Reciprocal Match');
   await expect(page.locator('.bc-landing-workflow article')).toHaveCount(4);
   await expect(page.locator('.bc-example-match')).toContainText('Illustrative example');
