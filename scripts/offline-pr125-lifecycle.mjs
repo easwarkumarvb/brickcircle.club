@@ -65,7 +65,8 @@ export async function reproduceLifecycle(browser,candidate,pa,fixture,lifecycle,
     afterLogin:async pb=>{
       let stage='start';
       try { await run({pa,pb,case1,a:{id:fixture.A,client},b:{id:fixture.B}},detail=>{stage=detail}); }
-      catch {
+      catch (failure) {
+        if(failure?.code==='BC_UX_SAFE_METRICS')console.log(failure.message);
         console.log('Offline lifecycle reproduction stopped at fixed substage: '+stage);
         console.log(JSON.stringify({completed:fixture.cases.find(row=>row.id===case1).state==='COMPLETED',
           canonicalCompletedEvents:fixture.events.filter(event=>event.case_id===case1&&event.event_type==='return_confirm'&&event.resulting_state==='COMPLETED').length,
