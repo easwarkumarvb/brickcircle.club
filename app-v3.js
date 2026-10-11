@@ -1161,7 +1161,14 @@ async function hydrateMatchPhotos(root){
     try{
       const {data,error}=await db.from('collection_items').select('owner_photo_path').eq('id',match.requested_item).eq('user_id',match.match_user).eq('available_for_exchange',true).limit(1),path=data?.[0]?.owner_photo_path;
       if(error||!path)continue;const url=await signedOwnerPhoto(path);
-      if(url)side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof"><img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy"><div class="bc-small">Owner photo · inspect the physical set in person before exchange</div></div>`);
+      if(url){
+        let angles=[];
+        try{angles=await bcLoadPhotoAngles(match.requested_item)}catch(_){}
+        const photos=[{angle:'front',url}];
+        for(const entry of angles){try{const signed=await signedOwnerPhoto(entry.storage_path);if(signed)photos.push({angle:entry.angle,url:signed})}catch(_){}}
+        const tiles=photos.map(p=>`<a class="bc-match-photo-tile" href="${attr(p.url)}" target="_blank" rel="noopener noreferrer" aria-label="View large ${p.angle==='front'?'front':bcAngleNames[p.angle]} owner photo"><img src="${attr(p.url)}" alt="Owner-supplied ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo of LEGO set ${attr(match.requested_set)}" loading="lazy"><span>${p.angle==='front'?'Front':bcAngleNames[p.angle]}</span></a>`).join('');
+        side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof bc-match-photo-gallery"><strong>Photos of this collector’s actual set</strong><div class="bc-match-photo-grid">${tiles}</div><div class="bc-small">${photos.length} of 3 views · Open an image to inspect details. Confirm condition and completeness together at handoff.</div></div>`);
+      }
     }catch(_){}
   }
 }
