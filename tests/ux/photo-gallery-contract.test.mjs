@@ -48,3 +48,8 @@ test('all three upload slots appear even before supplementary photos exist',()=>
   assert.match(app,/Photo not added yet/);
   assert.match(app,/data-photo-angle/);
 });
+
+test('My Sets wires gallery and replacement buttons using collection selectors',()=>{
+  assert.match(app,/\$\$\('\[data-photo-gallery\]',host\)\.forEach/);
+  assert.match(app,/\$\$\('\[data-change-photo\]',host\)\.forEach/);
+});
