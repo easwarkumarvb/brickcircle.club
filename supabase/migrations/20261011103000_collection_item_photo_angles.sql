@@ -58,10 +58,24 @@ using (
     exists (
       select 1 from public.collection_items ci
       where ci.owner_photo_path = storage.objects.name
+        and (
+          ci.user_id = (select auth.uid())
+          or exists (
+            select 1 from public.find_matches((select auth.uid())) m
+            where m.offered_item = ci.id or m.requested_item = ci.id
+          )
+        )
     )
     or exists (
       select 1 from public.collection_item_photo_angles a
       where a.storage_path = storage.objects.name
+        and (
+          a.owner_id = (select auth.uid())
+          or exists (
+            select 1 from public.find_matches((select auth.uid())) m
+            where m.offered_item = a.item_id or m.requested_item = a.item_id
+          )
+        )
     )
   )
 );
