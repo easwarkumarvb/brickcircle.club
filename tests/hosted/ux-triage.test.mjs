@@ -2,11 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
 
 const script=resolve('scripts/ux-triage.mjs');
 async function report(input,required='0'){
-  const cwd=await mkdtemp('/tmp/opencode/ux-triage-');
+  const cwd=await mkdtemp(join(tmpdir(),'brickcircle-ux-triage-'));
   try {
     await mkdir(cwd+'/ux-report');
     if(input)await writeFile(cwd+'/ux-report/results.json',JSON.stringify(input));
