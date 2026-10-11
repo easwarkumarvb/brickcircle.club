@@ -26,3 +26,10 @@ test('photo metadata owner writes and reciprocal reads are scoped',()=>{
   assert.match(sql,/ci\.owner_photo_path = storage\.objects\.name/);
   assert.match(sql,/angle in \('side','rear'\)/);
 });
+
+test('gallery uses exchange language and opens owner photos securely',()=>{
+  assert.doesNotMatch(app,/Buyers should inspect the physical set/);
+  assert.match(app,/Both collectors should inspect the physical set/);
+  assert.match(app,/aria-label="Open large/);
+  assert.match(app,/target="_blank" rel="noopener noreferrer"/);
+});
