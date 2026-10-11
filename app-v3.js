@@ -1116,7 +1116,7 @@ function bcOwnerGallery(item){
   const refresh=async()=>{
     if(!document.contains(o))return;
     let angles;try{angles=await bcLoadPhotoAngles(item.id)}catch(error){gallery.textContent='Unable to read photos. Ensure the gallery migration is applied in this environment.';return}
-    const all=[{angle:'front',storage_path:item.owner_photo_path},...angles];
+    const all=[{angle:'front',storage_path:item.owner_photo_path},...['side','rear'].map(angle=>({angle,storage_path:angles.find(p=>p.angle===angle)?.storage_path||''}))];
     gallery.innerHTML=all.map(p=>`<section class="bc-angle-panel" data-angle-panel="${p.angle}"><h3>${p.angle==='front'?'Front / main photo':bcAngleNames[p.angle]}</h3><div class="bc-angle-preview" data-angle-preview="${p.angle}">Loading photo…</div><button type="button" class="bc-btn" data-photo-angle="${p.angle}">${p.storage_path?'Replace photo':'Add photo'}</button></section>`).join('');
     for(const p of all){
       const holder=gallery.querySelector(`[data-angle-preview="${p.angle}"]`);
