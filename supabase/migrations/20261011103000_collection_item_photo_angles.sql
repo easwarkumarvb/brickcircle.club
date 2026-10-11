@@ -37,6 +37,13 @@ using (
   exists (
     select 1 from public.collection_items ci
     where ci.id = item_id and ci.user_id = owner_id
+      and (
+        ci.user_id = (select auth.uid())
+        or exists (
+          select 1 from public.find_matches((select auth.uid())) m
+          where m.offered_item = ci.id or m.requested_item = ci.id
+        )
+      )
   )
 );
 
