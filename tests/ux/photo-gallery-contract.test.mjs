@@ -42,3 +42,9 @@ test('private storage reads independently enforce owner or reciprocal match',()=
   assert.match(storage,/a\.storage_path = storage\.objects\.name[\s\S]*a\.owner_id = \(select auth\.uid\(\)\)/);
   assert.equal((storage.match(/public\.find_matches\(\(select auth\.uid\(\)\)\)/g)||[]).length,2);
 });
+
+test('all three upload slots appear even before supplementary photos exist',()=>{
+  assert.match(app,/\.\.\.\['side','rear'\]\.map\(angle=>\(\{angle,storage_path:angles\.find/);
+  assert.match(app,/Photo not added yet/);
+  assert.match(app,/data-photo-angle/);
+});
