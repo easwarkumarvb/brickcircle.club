@@ -37,7 +37,7 @@ assert.doesNotMatch(migration,/bc_can_read_collection_photo/);
 assert.match(client,/hydrateMatchPhotos/);
 assert.match(client,/\.from\('collection_items'\)/);
 assert.match(client,/createSignedUrl\(path,900\)/);
-assert.match(client,/Owner photo · inspect the physical set in person before exchange/);
+assert.match(client,/Both collectors should inspect the physical set at handoff/);
 
 assert.match(html,/\/app-v3\.js/);
 assert.doesNotMatch(html,/\/collection-owner-photo\.js/);
