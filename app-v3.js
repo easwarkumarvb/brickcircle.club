@@ -897,7 +897,7 @@ function homeOnboarding(progress){
 }
 async function renderHome(token){
   if(!S.user){
-    const policy=membershipPolicy();page(`${landingHero()}${policy?`<aside class="bc-membership-policy"><b>Free during beta:</b> ${esc(policy.body)}</aside>`:''}${landingExchangeStory()}${landingWorkflow()}${landingMatchExample()}${landingTrust()}${landingFinalCta()}`);bindCommon(app());$$('[data-auth]',app()).forEach(b=>b.onclick=showAuth);$('[data-scroll="how-it-works"]',app()).onclick=()=>document.getElementById('how-it-works')?.scrollIntoView({behavior:'smooth'});return;
+    const policy=membershipPolicy();page(`${landingHero()}${policy?`<aside class="bc-membership-policy"><b>Free during beta:</b> ${esc(policy.body)}</aside>`:''}${landingExchangeStory()}${landingWorkflow()}${landingMatchExample()}${landingTrust()}${landingFounderStory()}${landingFinalCta()}`);bindCommon(app());$$('[data-auth]',app()).forEach(b=>b.onclick=showAuth);$('[data-scroll="how-it-works"]',app()).onclick=()=>document.getElementById('how-it-works')?.scrollIntoView({behavior:'smooth'});return;
   }
   const progress=guidedProgress(),active=activeExchanges(),pending=pendingRequests(),matches=S.matches||[],l=S.liquidity||{};
   const name=(S.profile?.display_name||S.user.email||'Collector').split(' ')[0];
@@ -908,7 +908,7 @@ async function renderHome(token){
 }
 // Verified catalogue examples, not listings, availability or value comparisons.
 const landingPairs={
-  hero:[['42143-1','Ferrari Daytona SP3'],['42141-1','McLaren Formula 1 Race Car']],
+  hero:[['42143-1','Ferrari Daytona SP3'],['42115-1','Lamborghini Sián FKP 37']],
   story:[['10283-1','NASA Space Shuttle Discovery'],['21309-1','NASA Apollo Saturn V']],
   match:[['10214-1','Tower Bridge'],['10276-1','Colosseum']]
 };
@@ -918,6 +918,7 @@ function landingExchangeStory(){const [own,want]=landingPairs.story;return `<sec
 function landingWorkflow(){return `<section class="bc-landing-section" aria-labelledby="landing-workflow-title"><div class="bc-landing-heading"><span>ONE CLEAR PATH</span><h2 id="landing-workflow-title">Own → Want → Match → Exchange</h2></div><div class="bc-landing-workflow"><article><b>01</b><span>OWN</span><h3>Add your LEGO sets</h3><p>Choose which sets you could exchange.</p></article><article><b>02</b><span>WANT</span><h3>Pick your next experience</h3><p>Save the sets you genuinely want to try.</p></article><article><b>03</b><span>MATCH</span><h3>Find a reciprocal collector</h3><p>BrickCircle reveals the mutual overlap.</p></article><article><b>04</b><span>EXCHANGE</span><h3>Meet, inspect, swap</h3><p>Enjoy the set temporarily, then return it.</p></article></div></section>`}
 function landingMatchExample(){const [own,want]=landingPairs.match;return `<section class="bc-example-match" aria-labelledby="example-match-title"><div class="bc-example-copy"><span class="bc-pill green">Illustrative example · Reciprocal Match</span><h2 id="example-match-title">Both collectors get a set they want.</h2><p>You own Tower Bridge and want Colosseum. The other collector owns Colosseum and wants your Tower Bridge. Both sides independently want the exchange.</p><div class="bc-example-trust"><span>📍 Local</span><span>🤝 In person</span><span>✓ Inspection-first</span></div></div><div class="bc-example-sets"><article>${landingPairImage(own)}<small>YOU OWN · THEY WANT</small><strong>${own[1]}</strong></article><div class="bc-example-swap" aria-hidden="true">⇄</div><article>${landingPairImage(want)}<small>THEY OWN · YOU WANT</small><strong>${want[1]}</strong></article></div></section>`}
 function landingTrust(){return `<section class="bc-landing-section bc-trust" aria-labelledby="trust-title"><div class="bc-landing-heading"><span>EXCHANGE WITH CONFIDENCE</span><h2 id="trust-title">Simple, local and inspection-first</h2></div><div class="bc-trust-grid"><span>⌖<b>Local exchanges</b></span><span>🤝<b>Meet in person</b></span><span>✓<b>Inspect before handoff</b></span><span>↩<b>Temporary exchange</b></span><span>□<b>No shipping required</b></span><span>◉<b>You choose what’s available</b></span></div></section>`}
+function landingFounderStory(){return `<section class="bc-founder-story" id="why-i-built-brickcircle" aria-labelledby="bc-founder-title"><div class="bc-founder-inner"><span class="bc-founder-kicker">A NOTE FROM THE FOUNDER</span><h2 id="bc-founder-title">Why I Built BrickCircle</h2><p class="bc-founder-byline">By Easwar Kumar | Founder, BrickCircle.club</p><div class="bc-founder-prose"><p>My fascination with LEGO goes beyond collecting bricks. I've always been drawn to the ingenuity behind complex builds — from intricate Technic supercars and Formula 1 machines to spacecraft and engineering marvels.</p><p>Over time, one thought kept coming back to me: <strong>Why should the joy of building be limited to the sets we can afford to own?</strong></p><p>A beautiful LEGO creation often spends much of its life sitting on a shelf after being built. Meanwhile, another enthusiast somewhere nearby may be dreaming of building that very set.</p><p>What if we could connect these two people?</p><p>That simple thought inspired BrickCircle — a community where adult LEGO enthusiasts can meet, exchange sets, discover new builds and share their passion for bricks.</p><p>I believe the real magic of LEGO lies in the experience of building, the engineering we discover and the connections we make along the way.</p><p class="bc-founder-motto"><strong>Buy Less. Build More.</strong></p><p class="bc-founder-signoff">— Easwar Kumar</p></div></div></section>`}
 function landingFinalCta(){return `<section class="bc-landing-final"><span>BUY LESS · BUILD MORE</span><h2>Your next great build may already belong to someone nearby.</h2><button class="bc-btn gold" data-auth>Join BrickCircle beta</button></section>`}
 function workflowGuide(){return `<section class="bc-workflow" id="how-it-works" aria-labelledby="workflow-title"><div class="bc-section-heading"><span class="bc-small">HOW IT WORKS</span><h2 id="workflow-title">Three steps to a reciprocal match</h2></div><div class="bc-workflow-grid"><article><span>1 · OWN</span><h3>Add your LEGO sets</h3><p>Tell us what you own and which sets you’re willing to exchange.</p></article><article><span>2 · WANT</span><h3>Build your wishlist</h3><p>Choose sets you genuinely want to experience.</p></article><article><span>3 · MATCH</span><h3>Get reciprocal matches</h3><p>When another collector wants one of yours and you want one of theirs, BrickCircle connects you.</p></article></div></section>`}
 function reassuranceStrip(){return `<section class="bc-reassurance" aria-label="How BrickCircle exchanges work"><b>Local · In-person · Inspection-first</b><span>No shipping</span><span>No anonymous hand-offs</span><span>No permanent sale required</span><span>You choose what becomes available to exchange</span></section>`}
@@ -1099,6 +1100,58 @@ function replaceOwnerPhoto(item){
     await refreshCore();owner.assert();renderSetsBody();toast('Set photo updated.');
   }});
 }
+const bcAngleNames={side:'Side view',rear:'Rear / detail view'};
+async function bcLoadPhotoAngles(itemId){
+  const {data,error}=await db.from('collection_item_photo_angles').select('angle,storage_path').eq('item_id',itemId);
+  if(error)throw error;
+  return (data||[]).filter(p=>Object.hasOwn(bcAngleNames,p.angle));
+}
+function bcOwnerGallery(item){
+  if(!S.user||!item||item.user_id!==S.user.id)return;
+  const name=item.lego_sets?.name||item.set_number;
+  const o=modal(`<div class="bc-modal-head"><div><h2>${esc(name)} · Photo angles</h2><p class="bc-muted">Share three clear photographs of your actual assembled set: front, side, and rear or detail. Both collectors should inspect the physical set at handoff.</p></div><button class="bc-close" data-close aria-label="Close photo gallery">×</button></div><div class="bc-angle-gallery" id="bc-angle-gallery" aria-live="polite">Loading photos…</div>`);
+  $('[data-close]',o).onclick=closeOverlay;
+  const gallery=$('#bc-angle-gallery',o);
+  const refresh=async()=>{
+    if(!document.contains(o))return;
+    let angles;try{angles=await bcLoadPhotoAngles(item.id)}catch(error){gallery.textContent='Unable to read photos. Ensure the gallery migration is applied in this environment.';return}
+    const all=[{angle:'front',storage_path:item.owner_photo_path},...angles];
+    gallery.innerHTML=all.map(p=>`<section class="bc-angle-panel" data-angle-panel="${p.angle}"><h3>${p.angle==='front'?'Front / main photo':bcAngleNames[p.angle]}</h3><div class="bc-angle-preview" data-angle-preview="${p.angle}">Loading photo…</div><button type="button" class="bc-btn" data-photo-angle="${p.angle}">${p.storage_path?'Replace photo':'Add photo'}</button></section>`).join('');
+    for(const p of all){
+      const holder=gallery.querySelector(`[data-angle-preview="${p.angle}"]`);
+      if(!holder)continue;
+      if(!p.storage_path){holder.textContent='Photo not added yet';continue}
+      try{
+        const url=await signedOwnerPhoto(p.storage_path);
+        if(document.contains(holder))holder.innerHTML=`<a href="${attr(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open large ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo"><img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy"></a>`;
+      }catch(_){holder.textContent='Unable to load this photo'}
+    }
+    $('[data-photo-angle]',gallery).forEach(button=>button.onclick=()=>{
+      const angle=button.dataset.photoAngle,prior=all.find(p=>p.angle===angle)?.storage_path||'';
+      ownerPhotoPicker({title:`Upload ${angle==='front'?'front view':bcAngleNames[angle]} for ${name}`,copy:'Use an actual photo of your assembled set. Show all visible details, including any defects.',saveLabel:'Save photo',onSave:async(file,owner)=>{
+        const newPath=await uploadOwnerPhoto(file,owner);
+        try{
+          owner.assert();
+          if(angle==='front'){
+            const {error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);
+            if(error)throw error;
+            item.owner_photo_path=newPath;
+          }else{
+            const {error}=await db.from('collection_item_photo_angles').upsert({item_id:item.id,owner_id:owner.id,angle,storage_path:newPath},{onConflict:'item_id,angle'});
+            if(error)throw error;
+          }
+        }catch(error){await cleanupOwnerPhoto(newPath);throw error}
+        ownerPhotoUrls.delete(newPath);
+        if(prior&&prior!==newPath){ownerPhotoUrls.delete(prior);await cleanupOwnerPhoto(prior)}
+        await refreshCore();renderSetsBody();
+        toast('Photo saved. Add the other angles for a clearer exchange.');
+        const updated=S.collection.find(x=>x.id===item.id)||item;
+        bcOwnerGallery(updated);
+      }});
+    });
+  };
+  refresh();
+}
 async function signedOwnerPhoto(path){const epoch=authEpoch;if(!path||logoutLocked)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(epoch!==authEpoch||logoutLocked)return '';if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
 async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.owner_photo_path)continue;const image=root.querySelector(`[data-edit-set="${CSS.escape(row.id)}"]`)?.closest('.bc-myset')?.querySelector('.bc-myset-visual img');if(!image)continue;try{const url=await signedOwnerPhoto(row.owner_photo_path);if(url){image.src=url;image.removeAttribute('data-set-image');image.alt='Owner photo of assembled LEGO set'}}catch(_){}}}
 async function hydrateMatchPhotos(root){
@@ -1108,7 +1161,14 @@ async function hydrateMatchPhotos(root){
     try{
       const {data,error}=await db.from('collection_items').select('owner_photo_path').eq('id',match.requested_item).eq('user_id',match.match_user).eq('available_for_exchange',true).limit(1),path=data?.[0]?.owner_photo_path;
       if(error||!path)continue;const url=await signedOwnerPhoto(path);
-      if(url)side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof"><img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy"><div class="bc-small">Owner photo · inspect the physical set in person before exchange</div></div>`);
+      if(url){
+        let angles=[];
+        try{angles=await bcLoadPhotoAngles(match.requested_item)}catch(_){}
+        const photos=[{angle:'front',url}];
+        for(const entry of angles){try{const signed=await signedOwnerPhoto(entry.storage_path);if(signed)photos.push({angle:entry.angle,url:signed})}catch(_){}}
+        const tiles=photos.map(p=>`<a class="bc-match-photo-tile" href="${attr(p.url)}" target="_blank" rel="noopener noreferrer" aria-label="View large ${p.angle==='front'?'front':bcAngleNames[p.angle]} owner photo"><img src="${attr(p.url)}" alt="Owner-supplied ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo of LEGO set ${attr(match.requested_set)}" loading="lazy"><span>${p.angle==='front'?'Front':bcAngleNames[p.angle]}</span></a>`).join('');
+        side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof bc-match-photo-gallery"><strong>Photos of this collector’s actual set</strong><div class="bc-match-photo-grid">${tiles}</div><div class="bc-small">${photos.length} of 3 views · Open an image to inspect details. Confirm condition and completeness together at handoff.</div></div>`);
+      }
     }catch(_){}
   }
 }
@@ -1135,9 +1195,9 @@ function renderSetsBody(){
     if(S.setTab==='available'&&!rows.length)host.innerHTML=empty('⇄','Nothing available yet','Choose one owned set and mark it Available to Exchange. Only sets you explicitly release can appear in matches.','Review owned sets','sets');
     else host.innerHTML=rows.length?`${S.setTab==='collection'?'<div class="bc-notice warn" style="margin-bottom:12px"><b>Availability is always your choice.</b> Only sets you explicitly make available can appear in reciprocal matches.</div>':''}<div class="bc-set-list">${rows.map(row=>mySetRow(row,false)).join('')}</div>`:empty('🧱','Start with the LEGO you already own','Add collectible sets you would be comfortable exchanging locally.','Add my first set','browse');
   }
-  bindCommon(host);$$('[data-exchangeable]',host).forEach(x=>x.onchange=()=>setExchangeable(x.dataset.exchangeable,x.checked));$$('[data-remove-wish]',host).forEach(b=>b.onclick=()=>removeWish(b.dataset.removeWish));$$('[data-change-photo]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.changePhoto);if(item)replaceOwnerPhoto(item)});$$('[data-release-set]',host).forEach(b=>b.onclick=()=>releaseSetFromWorkflow(b.dataset.releaseSet));$$('[data-clear-owner-review]',host).forEach(b=>b.onclick=()=>setExchangeable(b.dataset.clearOwnerReview,true));$$('[data-edit-set]',host).forEach(b=>b.onclick=()=>editCollectionItem(b.dataset.editSet));wireImages(host);if(S.setTab!=='wishlist')hydrateOwnerPhotos(host)
+  bindCommon(host);$$('[data-exchangeable]',host).forEach(x=>x.onchange=()=>setExchangeable(x.dataset.exchangeable,x.checked));$$('[data-remove-wish]',host).forEach(b=>b.onclick=()=>removeWish(b.dataset.removeWish));$('[data-photo-gallery]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.photoGallery);if(item)bcOwnerGallery(item)});$('[data-change-photo]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.changePhoto);if(item)replaceOwnerPhoto(item)});$$('[data-release-set]',host).forEach(b=>b.onclick=()=>releaseSetFromWorkflow(b.dataset.releaseSet));$$('[data-clear-owner-review]',host).forEach(b=>b.onclick=()=>setExchangeable(b.dataset.clearOwnerReview,true));$$('[data-edit-set]',host).forEach(b=>b.onclick=()=>editCollectionItem(b.dataset.editSet));wireImages(host);if(S.setTab!=='wishlist')hydrateOwnerPhotos(host)
 }
-function mySetRow(row,wish){const s=row.lego_sets||S.sets[row.set_number]||{},image=imageSetNumber(row.set_number),workflow=!wish&&workflowForItem(row.id),status=caseItemStatus(row,workflow),statusTone=status==='Available to Exchange'?'green':status==='On exchange'||status==='Return pending'?'blue':status==='Needs owner review'?'gold':'';return `<article class="bc-card bc-myset"> <div class="bc-myset-visual"><img src="https://images.brickset.com/sets/images/${attr(image)}.jpg" alt="" loading="lazy" data-set-image="${attr(row.set_number)}"><div hidden>🧱</div></div><div><h3>${esc(s.name||row.set_number)}</h3><div class="bc-myset-meta">Set ${esc(row.set_number)}${s.theme?` · ${esc(s.theme)}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-statusrow">${wish?pill('Sets I Want','blue'):pill(status,statusTone)}${!wish&&row.condition?pill(row.condition):''}${!wish&&row.completeness!=null?pill(`${row.completeness}% complete`):''}</div></div><div class="bc-myset-actions">${wish?`<button class="bc-btn" data-remove-wish="${attr(row.set_number)}" aria-label="Remove ${attr(s.name||row.set_number)} from Sets I Want">Remove</button>`:`<label class="bc-toggle"><input type="checkbox" data-exchangeable="${attr(row.id)}" ${row.available_for_exchange?'checked':''} ${workflow?'disabled':''}> Available to Exchange</label>${workflow?`<button class="bc-btn danger" data-release-set="${attr(row.id)}">${workflow.state==='PROPOSED'?(workflow.proposer_id===S.user?.id?'Cancel proposal & free set':'Decline proposal'):['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(workflow.state)?'Cancel before handoff':workflow.state==='ACTIVE'?'Request early return':'Open safe release options'}</button>`:''}${!workflow&&row.exchange_review_required?`<button class="bc-btn primary" data-clear-owner-review="${attr(row.id)}">Review complete · make available</button>`:''}<button class="bc-btn" data-change-photo="${attr(row.id)}">Change photo</button><button class="bc-btn" data-edit-set="${attr(row.id)}">Details</button>`}</div></article>`}
+function mySetRow(row,wish){const s=row.lego_sets||S.sets[row.set_number]||{},image=imageSetNumber(row.set_number),workflow=!wish&&workflowForItem(row.id),status=caseItemStatus(row,workflow),statusTone=status==='Available to Exchange'?'green':status==='On exchange'||status==='Return pending'?'blue':status==='Needs owner review'?'gold':'';return `<article class="bc-card bc-myset"> <div class="bc-myset-visual"><img src="https://images.brickset.com/sets/images/${attr(image)}.jpg" alt="" loading="lazy" data-set-image="${attr(row.set_number)}"><div hidden>🧱</div></div><div><h3>${esc(s.name||row.set_number)}</h3><div class="bc-myset-meta">Set ${esc(row.set_number)}${s.theme?` · ${esc(s.theme)}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-statusrow">${wish?pill('Sets I Want','blue'):pill(status,statusTone)}${!wish&&row.condition?pill(row.condition):''}${!wish&&row.completeness!=null?pill(`${row.completeness}% complete`):''}</div></div><div class="bc-myset-actions">${wish?`<button class="bc-btn" data-remove-wish="${attr(row.set_number)}" aria-label="Remove ${attr(s.name||row.set_number)} from Sets I Want">Remove</button>`:`<label class="bc-toggle"><input type="checkbox" data-exchangeable="${attr(row.id)}" ${row.available_for_exchange?'checked':''} ${workflow?'disabled':''}> Available to Exchange</label>${workflow?`<button class="bc-btn danger" data-release-set="${attr(row.id)}">${workflow.state==='PROPOSED'?(workflow.proposer_id===S.user?.id?'Cancel proposal & free set':'Decline proposal'):['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(workflow.state)?'Cancel before handoff':workflow.state==='ACTIVE'?'Request early return':'Open safe release options'}</button>`:''}${!workflow&&row.exchange_review_required?`<button class="bc-btn primary" data-clear-owner-review="${attr(row.id)}">Review complete · make available</button>`:''}<button class="bc-btn primary" data-photo-gallery="${attr(row.id)}">View / add 3 photos</button><button class="bc-btn" data-edit-set="${attr(row.id)}">Details</button>`}</div></article>`}
 async function releaseSetFromWorkflow(itemId){
   const item=S.collection.find(row=>row.id===itemId);if(!item||!S.user)return;
   const workflow=workflowForItem(itemId);if(!workflow)return setExchangeable(itemId,false);
