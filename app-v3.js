@@ -1100,6 +1100,58 @@ function replaceOwnerPhoto(item){
     await refreshCore();owner.assert();renderSetsBody();toast('Set photo updated.');
   }});
 }
+const bcAngleNames={side:'Side view',rear:'Rear / detail view'};
+async function bcLoadPhotoAngles(itemId){
+  const {data,error}=await db.from('collection_item_photo_angles').select('angle,storage_path').eq('item_id',itemId);
+  if(error)throw error;
+  return (data||[]).filter(p=>Object.hasOwn(bcAngleNames,p.angle));
+}
+function bcOwnerGallery(item){
+  if(!S.user||!item||item.user_id!==S.user.id)return;
+  const name=item.lego_sets?.name||item.set_number;
+  const o=modal(`<div class="bc-modal-head"><div><h2>${esc(name)} · Photo angles</h2><p class="bc-muted">Share three clear photographs of your actual assembled set: front, side, and rear or detail. Buyers should inspect the physical set at handoff.</p></div><button class="bc-close" data-close aria-label="Close photo gallery">×</button></div><div class="bc-angle-gallery" id="bc-angle-gallery" aria-live="polite">Loading photos…</div>`);
+  $('[data-close]',o).onclick=closeOverlay;
+  const gallery=$('#bc-angle-gallery',o);
+  const refresh=async()=>{
+    if(!document.contains(o))return;
+    let angles;try{angles=await bcLoadPhotoAngles(item.id)}catch(error){gallery.textContent='Unable to read photos. Ensure the gallery migration is applied in this environment.';return}
+    const all=[{angle:'front',storage_path:item.owner_photo_path},...angles];
+    gallery.innerHTML=all.map(p=>`<section class="bc-angle-panel" data-angle-panel="${p.angle}"><h3>${p.angle==='front'?'Front / main photo':bcAngleNames[p.angle]}</h3><div class="bc-angle-preview" data-angle-preview="${p.angle}">Loading photo…</div><button type="button" class="bc-btn" data-photo-angle="${p.angle}">${p.storage_path?'Replace photo':'Add photo'}</button></section>`).join('');
+    for(const p of all){
+      const holder=gallery.querySelector(`[data-angle-preview="${p.angle}"]`);
+      if(!holder)continue;
+      if(!p.storage_path){holder.textContent='Photo not added yet';continue}
+      try{
+        const url=await signedOwnerPhoto(p.storage_path);
+        if(document.contains(holder))holder.innerHTML=`<img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy">`;
+      }catch(_){holder.textContent='Unable to load this photo'}
+    }
+    $('[data-photo-angle]',gallery).forEach(button=>button.onclick=()=>{
+      const angle=button.dataset.photoAngle,prior=all.find(p=>p.angle===angle)?.storage_path||'';
+      ownerPhotoPicker({title:`Upload ${angle==='front'?'front view':bcAngleNames[angle]} for ${name}`,copy:'Use an actual photo of your assembled set. Show all visible details, including any defects.',saveLabel:'Save photo',onSave:async(file,owner)=>{
+        const newPath=await uploadOwnerPhoto(file,owner);
+        try{
+          owner.assert();
+          if(angle==='front'){
+            const {error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);
+            if(error)throw error;
+            item.owner_photo_path=newPath;
+          }else{
+            const {error}=await db.from('collection_item_photo_angles').upsert({item_id:item.id,owner_id:owner.id,angle,storage_path:newPath},{onConflict:'item_id,angle'});
+            if(error)throw error;
+          }
+        }catch(error){await cleanupOwnerPhoto(newPath);throw error}
+        ownerPhotoUrls.delete(newPath);
+        if(prior&&prior!==newPath){ownerPhotoUrls.delete(prior);await cleanupOwnerPhoto(prior)}
+        await refreshCore();renderSetsBody();
+        toast('Photo saved. Add the other angles for a clearer exchange.');
+        const updated=S.collection.find(x=>x.id===item.id)||item;
+        bcOwnerGallery(updated);
+      }});
+    });
+  };
+  refresh();
+}
 async function signedOwnerPhoto(path){const epoch=authEpoch;if(!path||logoutLocked)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(epoch!==authEpoch||logoutLocked)return '';if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
 async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.owner_photo_path)continue;const image=root.querySelector(`[data-edit-set="${CSS.escape(row.id)}"]`)?.closest('.bc-myset')?.querySelector('.bc-myset-visual img');if(!image)continue;try{const url=await signedOwnerPhoto(row.owner_photo_path);if(url){image.src=url;image.removeAttribute('data-set-image');image.alt='Owner photo of assembled LEGO set'}}catch(_){}}}
 async function hydrateMatchPhotos(root){
@@ -1136,9 +1188,9 @@ function renderSetsBody(){
     if(S.setTab==='available'&&!rows.length)host.innerHTML=empty('⇄','Nothing available yet','Choose one owned set and mark it Available to Exchange. Only sets you explicitly release can appear in matches.','Review owned sets','sets');
     else host.innerHTML=rows.length?`${S.setTab==='collection'?'<div class="bc-notice warn" style="margin-bottom:12px"><b>Availability is always your choice.</b> Only sets you explicitly make available can appear in reciprocal matches.</div>':''}<div class="bc-set-list">${rows.map(row=>mySetRow(row,false)).join('')}</div>`:empty('🧱','Start with the LEGO you already own','Add collectible sets you would be comfortable exchanging locally.','Add my first set','browse');
   }
-  bindCommon(host);$$('[data-exchangeable]',host).forEach(x=>x.onchange=()=>setExchangeable(x.dataset.exchangeable,x.checked));$$('[data-remove-wish]',host).forEach(b=>b.onclick=()=>removeWish(b.dataset.removeWish));$$('[data-change-photo]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.changePhoto);if(item)replaceOwnerPhoto(item)});$$('[data-release-set]',host).forEach(b=>b.onclick=()=>releaseSetFromWorkflow(b.dataset.releaseSet));$$('[data-clear-owner-review]',host).forEach(b=>b.onclick=()=>setExchangeable(b.dataset.clearOwnerReview,true));$$('[data-edit-set]',host).forEach(b=>b.onclick=()=>editCollectionItem(b.dataset.editSet));wireImages(host);if(S.setTab!=='wishlist')hydrateOwnerPhotos(host)
+  bindCommon(host);$$('[data-exchangeable]',host).forEach(x=>x.onchange=()=>setExchangeable(x.dataset.exchangeable,x.checked));$$('[data-remove-wish]',host).forEach(b=>b.onclick=()=>removeWish(b.dataset.removeWish));$('[data-photo-gallery]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.photoGallery);if(item)bcOwnerGallery(item)});$('[data-change-photo]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.changePhoto);if(item)replaceOwnerPhoto(item)});$$('[data-release-set]',host).forEach(b=>b.onclick=()=>releaseSetFromWorkflow(b.dataset.releaseSet));$$('[data-clear-owner-review]',host).forEach(b=>b.onclick=()=>setExchangeable(b.dataset.clearOwnerReview,true));$$('[data-edit-set]',host).forEach(b=>b.onclick=()=>editCollectionItem(b.dataset.editSet));wireImages(host);if(S.setTab!=='wishlist')hydrateOwnerPhotos(host)
 }
-function mySetRow(row,wish){const s=row.lego_sets||S.sets[row.set_number]||{},image=imageSetNumber(row.set_number),workflow=!wish&&workflowForItem(row.id),status=caseItemStatus(row,workflow),statusTone=status==='Available to Exchange'?'green':status==='On exchange'||status==='Return pending'?'blue':status==='Needs owner review'?'gold':'';return `<article class="bc-card bc-myset"> <div class="bc-myset-visual"><img src="https://images.brickset.com/sets/images/${attr(image)}.jpg" alt="" loading="lazy" data-set-image="${attr(row.set_number)}"><div hidden>🧱</div></div><div><h3>${esc(s.name||row.set_number)}</h3><div class="bc-myset-meta">Set ${esc(row.set_number)}${s.theme?` · ${esc(s.theme)}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-statusrow">${wish?pill('Sets I Want','blue'):pill(status,statusTone)}${!wish&&row.condition?pill(row.condition):''}${!wish&&row.completeness!=null?pill(`${row.completeness}% complete`):''}</div></div><div class="bc-myset-actions">${wish?`<button class="bc-btn" data-remove-wish="${attr(row.set_number)}" aria-label="Remove ${attr(s.name||row.set_number)} from Sets I Want">Remove</button>`:`<label class="bc-toggle"><input type="checkbox" data-exchangeable="${attr(row.id)}" ${row.available_for_exchange?'checked':''} ${workflow?'disabled':''}> Available to Exchange</label>${workflow?`<button class="bc-btn danger" data-release-set="${attr(row.id)}">${workflow.state==='PROPOSED'?(workflow.proposer_id===S.user?.id?'Cancel proposal & free set':'Decline proposal'):['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(workflow.state)?'Cancel before handoff':workflow.state==='ACTIVE'?'Request early return':'Open safe release options'}</button>`:''}${!workflow&&row.exchange_review_required?`<button class="bc-btn primary" data-clear-owner-review="${attr(row.id)}">Review complete · make available</button>`:''}<button class="bc-btn" data-change-photo="${attr(row.id)}">Change photo</button><button class="bc-btn" data-edit-set="${attr(row.id)}">Details</button>`}</div></article>`}
+function mySetRow(row,wish){const s=row.lego_sets||S.sets[row.set_number]||{},image=imageSetNumber(row.set_number),workflow=!wish&&workflowForItem(row.id),status=caseItemStatus(row,workflow),statusTone=status==='Available to Exchange'?'green':status==='On exchange'||status==='Return pending'?'blue':status==='Needs owner review'?'gold':'';return `<article class="bc-card bc-myset"> <div class="bc-myset-visual"><img src="https://images.brickset.com/sets/images/${attr(image)}.jpg" alt="" loading="lazy" data-set-image="${attr(row.set_number)}"><div hidden>🧱</div></div><div><h3>${esc(s.name||row.set_number)}</h3><div class="bc-myset-meta">Set ${esc(row.set_number)}${s.theme?` · ${esc(s.theme)}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-statusrow">${wish?pill('Sets I Want','blue'):pill(status,statusTone)}${!wish&&row.condition?pill(row.condition):''}${!wish&&row.completeness!=null?pill(`${row.completeness}% complete`):''}</div></div><div class="bc-myset-actions">${wish?`<button class="bc-btn" data-remove-wish="${attr(row.set_number)}" aria-label="Remove ${attr(s.name||row.set_number)} from Sets I Want">Remove</button>`:`<label class="bc-toggle"><input type="checkbox" data-exchangeable="${attr(row.id)}" ${row.available_for_exchange?'checked':''} ${workflow?'disabled':''}> Available to Exchange</label>${workflow?`<button class="bc-btn danger" data-release-set="${attr(row.id)}">${workflow.state==='PROPOSED'?(workflow.proposer_id===S.user?.id?'Cancel proposal & free set':'Decline proposal'):['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(workflow.state)?'Cancel before handoff':workflow.state==='ACTIVE'?'Request early return':'Open safe release options'}</button>`:''}${!workflow&&row.exchange_review_required?`<button class="bc-btn primary" data-clear-owner-review="${attr(row.id)}">Review complete · make available</button>`:''}<button class="bc-btn primary" data-photo-gallery="${attr(row.id)}">View / add 3 photos</button><button class="bc-btn" data-edit-set="${attr(row.id)}">Details</button>`}</div></article>`}
 async function releaseSetFromWorkflow(itemId){
   const item=S.collection.find(row=>row.id===itemId);if(!item||!S.user)return;
   const workflow=workflowForItem(itemId);if(!workflow)return setExchangeable(itemId,false);
