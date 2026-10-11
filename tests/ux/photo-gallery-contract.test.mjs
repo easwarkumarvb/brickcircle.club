@@ -22,6 +22,8 @@ test('photo metadata owner writes and reciprocal reads are scoped',()=>{
   assert.match(sql,/enable row level security/);
   assert.match(sql,/owner_id = \(select auth\.uid\(\)\)/);
   assert.match(sql,/ci\.id = item_id and ci\.user_id = owner_id/);
+  assert.match(sql,/ci\.user_id = \(select auth\.uid\(\)\)/);
+  assert.match(sql,/public\.find_matches\(\(select auth\.uid\(\)\)\)/);
   assert.match(sql,/a\.storage_path = storage\.objects\.name/);
   assert.match(sql,/ci\.owner_photo_path = storage\.objects\.name/);
   assert.match(sql,/angle in \('side','rear'\)/);
