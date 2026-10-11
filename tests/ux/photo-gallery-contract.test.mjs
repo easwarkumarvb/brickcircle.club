@@ -35,3 +35,10 @@ test('gallery uses exchange language and opens owner photos securely',()=>{
   assert.match(app,/aria-label="Open large/);
   assert.match(app,/target="_blank" rel="noopener noreferrer"/);
 });
+
+test('private storage reads independently enforce owner or reciprocal match',()=>{
+  const storage=sql.slice(sql.indexOf('create policy "collection photos permitted read"'));
+  assert.match(storage,/ci\.owner_photo_path = storage\.objects\.name[\s\S]*ci\.user_id = \(select auth\.uid\(\)\)/);
+  assert.match(storage,/a\.storage_path = storage\.objects\.name[\s\S]*a\.owner_id = \(select auth\.uid\(\)\)/);
+  assert.equal((storage.match(/public\.find_matches\(\(select auth\.uid\(\)\)\)/g)||[]).length,2);
+});
