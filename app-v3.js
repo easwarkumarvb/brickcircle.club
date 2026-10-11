@@ -1109,7 +1109,7 @@ async function bcLoadPhotoAngles(itemId){
 function bcOwnerGallery(item){
   if(!S.user||!item||item.user_id!==S.user.id)return;
   const name=item.lego_sets?.name||item.set_number;
-  const o=modal(`<div class="bc-modal-head"><div><h2>${esc(name)} · Photo angles</h2><p class="bc-muted">Share three clear photographs of your actual assembled set: front, side, and rear or detail. Buyers should inspect the physical set at handoff.</p></div><button class="bc-close" data-close aria-label="Close photo gallery">×</button></div><div class="bc-angle-gallery" id="bc-angle-gallery" aria-live="polite">Loading photos…</div>`);
+  const o=modal(`<div class="bc-modal-head"><div><h2>${esc(name)} · Photo angles</h2><p class="bc-muted">Share three clear photographs of your actual assembled set: front, side, and rear or detail. Both collectors should inspect the physical set at handoff.</p></div><button class="bc-close" data-close aria-label="Close photo gallery">×</button></div><div class="bc-angle-gallery" id="bc-angle-gallery" aria-live="polite">Loading photos…</div>`);
   $('[data-close]',o).onclick=closeOverlay;
   const gallery=$('#bc-angle-gallery',o);
   const refresh=async()=>{
@@ -1123,7 +1123,7 @@ function bcOwnerGallery(item){
       if(!p.storage_path){holder.textContent='Photo not added yet';continue}
       try{
         const url=await signedOwnerPhoto(p.storage_path);
-        if(document.contains(holder))holder.innerHTML=`<img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy">`;
+        if(document.contains(holder))holder.innerHTML=`<a href="${attr(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open large ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo"><img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy"></a>`;
       }catch(_){holder.textContent='Unable to load this photo'}
     }
     $('[data-photo-angle]',gallery).forEach(button=>button.onclick=()=>{
