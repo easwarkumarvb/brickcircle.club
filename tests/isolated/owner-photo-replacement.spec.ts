@@ -38,6 +38,18 @@ test('keeps the current owner photo when replacement upload fails',async({page})
   expect(await page.evaluate(()=>window.__bcIsolated.storage.removals)).not.toContain(oldPath);
 });
 
+test('no-op owner-scoped update never replaces old photo or leaks new upload',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  const oldPath='00000000-0000-4000-8000-000000000007/old-owner-photo.jpg';
+  await page.evaluate(()=>window.__bcIsolated.silentNoUpdate=true);
+  await selectReplacement(page);
+  const result=await page.evaluate(()=>({item:window.__bcIsolated.collection[0],uploads:window.__bcIsolated.storage.uploads,removals:window.__bcIsolated.storage.removals}));
+  expect(result.item.owner_photo_path).toBe(oldPath);
+  expect(result.uploads).toHaveLength(1);
+  expect(result.removals).toContain(result.uploads[0]);
+  expect(result.removals).not.toContain(oldPath);
+  await expect(page.locator('[data-photo-status]')).toContainText('could not be updated');
+});
 test('cleans up only the new upload when the owner-scoped database update fails',async({page})=>{
   await page.goto('/v2.html?isolated=photo-replace#sets');
   const oldPath='00000000-0000-4000-8000-000000000007/old-owner-photo.jpg';
