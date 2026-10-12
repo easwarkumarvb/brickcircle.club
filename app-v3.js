@@ -1139,8 +1139,9 @@ function bcOwnerGallery(item){
         try{
           owner.assert();
           if(angle==='front'){
-            const {error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);
+            const {data,error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id).select('id');
             if(error)throw error;
+            if(!data?.some(row=>row.id===item.id))throw new Error('The owned set could not be updated. Refresh your collection and retry.');
             item.owner_photo_path=newPath;
           }else{
             const {error}=await db.from('collection_item_photo_angles').upsert({item_id:item.id,owner_id:owner.id,angle,storage_path:newPath},{onConflict:'item_id,angle'});
