@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { validateSelection, validateTarget, verifyReadModelPreflight, PR138_SHA, STAGING_REF, PRODUCTION_REF, STAGING_CONFIRMATION } from '../../scripts/validate-hosted-pr138.mjs';
+import { resolveInvocation, validateSelection, validateTarget, verifyReadModelPreflight, PR138_SHA, STAGING_REF, PRODUCTION_REF, STAGING_CONFIRMATION } from '../../scripts/validate-hosted-pr138.mjs';
 
 const repository = 'easwarkumarvb/brickcircle.club';
 const selection = () => ({ repository, ref: 'refs/heads/main', number: '138', sha: PR138_SHA, confirmation: STAGING_CONFIRMATION,
@@ -87,3 +87,16 @@ test('schema preflight precedes provisioning and never applies schema',()=>{
   assert.match(workflow,/scripts\/audit-hosted-pr138-outbox\.mjs/);
   assert.match(workflow,/pull_number: 138/);
 });
+
+const mergeInvocation=()=>({repository,ref:'refs/heads/main',eventName:'push',commitSha:'a'.repeat(40),headMessage:'Merge PR #139 [run-pr138-staging]',runnerPr:{number:139,merged:true,merge_commit_sha:'a'.repeat(40),base:{ref:'main',repo:{full_name:repository}},head:{ref:'qa/pr138-hosted-runner',repo:{full_name:repository}}}});
+test('only approved runner merge supplies staging selection',()=>assert.deepEqual(resolveInvocation(mergeInvocation()),{number:'138',sha:PR138_SHA,confirmation:STAGING_CONFIRMATION}));
+for(const [name,mutate] of [
+ ['other event',s=>s.eventName='pull_request'],['non-main',s=>s.ref='refs/heads/qa/pr138-hosted-runner'],
+ ['other repository',s=>s.repository='outsider/fork'],['missing marker',s=>s.headMessage='normal merge'],
+ ['unmerged',s=>s.runnerPr.merged=false],['future marked commit',s=>s.commitSha='b'.repeat(40)],
+ ['other runner PR',s=>s.runnerPr.number=140],['wrong head',s=>s.runnerPr.head.ref='dev/person-first-conversations'],
+ ['head fork',s=>s.runnerPr.head.repo.full_name='outsider/fork'],['base fork',s=>s.runnerPr.base.repo.full_name='outsider/fork'],
+ ['wrong base',s=>s.runnerPr.base.ref='release'],['missing runner',s=>s.runnerPr=null]
+])test('merge trigger rejects '+name,()=>{const s=mergeInvocation();mutate(s);assert.throws(()=>resolveInvocation(s))});
+test('manual invocation never synthesizes missing inputs',()=>{const selected=resolveInvocation({eventName:'workflow_dispatch',inputs:{}});assert.throws(()=>validateSelection({...selection(),...selected}));assert.deepEqual(resolveInvocation({eventName:'workflow_dispatch',inputs:{pull_request_number:'138',expected_head_sha:PR138_SHA,confirmation:STAGING_CONFIRMATION}}),{number:'138',sha:PR138_SHA,confirmation:STAGING_CONFIRMATION})});
+test('merge provenance repeats before and after protected review',()=>{const w=readFileSync('.github/workflows/hosted-supabase-pr138.yml','utf8');assert.equal((w.match(/pull_number: 139/g)||[]).length,2);assert.equal((w.match(/const selected = resolveInvocation/g)||[]).length,2);assert.match(w,/BC_HOSTED_SMOKE_CONFIRMATION: \$\{\{ needs.validate.outputs.confirmation \}\}/)});

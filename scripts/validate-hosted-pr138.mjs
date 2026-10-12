@@ -7,6 +7,25 @@ export const PR138_SHA = '7d84652903b176d69bfd09e2f59f3c3ec785d1a3';
 export const STAGING_REF = 'tteyypklldgwwicrgjzt';
 export const PRODUCTION_REF = 'nsxtromjdpdscknadxez';
 
+// A merge event may start only the owner-approved runner PR, never an arbitrary
+// marked main commit. Recheck this provenance after environment review too.
+export function resolveInvocation({repository,ref,eventName,commitSha,headMessage,runnerPr,inputs={}}) {
+  if(eventName==='workflow_dispatch')return {number:inputs.pull_request_number,sha:inputs.expected_head_sha,confirmation:inputs.confirmation};
+  assert.equal(eventName,'push');
+  assert.equal(repository,'easwarkumarvb/brickcircle.club');
+  assert.equal(ref,'refs/heads/main');
+  assert.ok(String(headMessage).includes('[run-pr138-staging]'));
+  assert.match(commitSha,/^[0-9a-f]{40}$/);
+  assert.equal(runnerPr?.number,139);
+  assert.equal(runnerPr.merged,true);
+  assert.equal(runnerPr.merge_commit_sha,commitSha);
+  assert.equal(runnerPr.base.ref,'main');
+  assert.equal(runnerPr.base.repo?.full_name,repository);
+  assert.equal(runnerPr.head.ref,'qa/pr138-hosted-runner');
+  assert.equal(runnerPr.head.repo?.full_name,repository);
+  return {number:'138',sha:PR138_SHA,confirmation:STAGING_CONFIRMATION};
+}
+
 // Deliberately not a general-purpose PR runner. Any new head needs trusted-main review.
 export function validateSelection({ pr, repository, ref, number, sha, confirmation }) {
   assert.equal(ref, 'refs/heads/main', 'Dispatch must use trusted main');

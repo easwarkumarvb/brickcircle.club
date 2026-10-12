@@ -1,6 +1,9 @@
 name: Hosted Supabase PR138
 
 on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/hosted-supabase-pr138.yml"]
   workflow_dispatch:
     inputs:
       pull_request_number:
@@ -27,10 +30,13 @@ concurrency:
 
 jobs:
   validate:
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[run-pr138-staging]'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       head_sha: ${{ steps.selection.outputs.head_sha }}
+      number: ${{ steps.selection.outputs.number }}
+      confirmation: ${{ steps.selection.outputs.confirmation }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,11 +54,18 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
         with:
           script: |
-            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr138.mjs`);
+            const { validateSelection, resolveInvocation } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr138.mjs`);
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const runnerPr = context.eventName === 'push' ? (await github.rest.pulls.get({ ...context.repo, pull_number: 139 })).data : null;
+            const selected = resolveInvocation({repository, ref: context.ref, eventName: context.eventName,
+              commitSha: context.sha, headMessage: context.payload.head_commit?.message, runnerPr,
+              inputs: {pull_request_number:process.env.REQUESTED_PR,expected_head_sha:process.env.EXPECTED_SHA,confirmation:process.env.CONFIRMATION}});
             const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 138 });
             const sha = validateSelection({ pr, repository: `${context.repo.owner}/${context.repo.repo}`, ref: context.ref,
-              number: process.env.REQUESTED_PR, sha: process.env.EXPECTED_SHA, confirmation: process.env.CONFIRMATION });
+              number: selected.number, sha: selected.sha, confirmation: selected.confirmation });
             core.setOutput('head_sha', sha);
+            core.setOutput('number', selected.number);
+            core.setOutput('confirmation', selected.confirmation);
 
   staging:
     needs: validate
@@ -60,8 +73,8 @@ jobs:
     timeout-minutes: 40
     environment: hosted-supabase-staging
     env:
-      BC_HOSTED_SMOKE_CONFIRMATION: ${{ inputs.confirmation }}
-      BC_HOSTED_SMOKE_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+      BC_HOSTED_SMOKE_CONFIRMATION: ${{ needs.validate.outputs.confirmation }}
+      BC_HOSTED_SMOKE_PULL_REQUEST_NUMBER: ${{ needs.validate.outputs.number }}
       BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA: ${{ needs.validate.outputs.head_sha }}
       BC_STAGING_SUPABASE_PROJECT_REF: ${{ vars.BC_STAGING_SUPABASE_PROJECT_REF }}
       BC_PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.BC_PRODUCTION_SUPABASE_PROJECT_REF }}
@@ -83,10 +96,15 @@ jobs:
           CONFIRMATION: ${{ inputs.confirmation }}
         with:
           script: |
-            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr138.mjs`);
+            const { validateSelection, resolveInvocation } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr138.mjs`);
+            const repository = `${context.repo.owner}/${context.repo.repo}`;
+            const runnerPr = context.eventName === 'push' ? (await github.rest.pulls.get({ ...context.repo, pull_number: 139 })).data : null;
+            const selected = resolveInvocation({repository, ref: context.ref, eventName: context.eventName,
+              commitSha: context.sha, headMessage: context.payload.head_commit?.message, runnerPr,
+              inputs: {pull_request_number:process.env.REQUESTED_PR,expected_head_sha:process.env.EXPECTED_SHA,confirmation:process.env.CONFIRMATION}});
             const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 138 });
             validateSelection({ pr, repository: `${context.repo.owner}/${context.repo.repo}`, ref: context.ref,
-              number: process.env.REQUESTED_PR, sha: process.env.EXPECTED_SHA, confirmation: process.env.CONFIRMATION });
+              number: selected.number, sha: selected.sha, confirmation: selected.confirmation });
       - name: Immutable browser assets only
         uses: actions/checkout@v4
         with:
