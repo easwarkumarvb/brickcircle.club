@@ -38,7 +38,8 @@ test('mobile conversations combine direct and exchange messages with exact unrea
   await page.locator('[data-msg-filter="all"]').click();
   await openDirect(page);
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
-  await expect(page.locator('#bc-case-destination option')).toHaveCount(2);
+  await expect(page.locator('.bc-peer-case-chip')).toHaveCount(1);
+  await expect(page.locator('#bc-case-destination')).toHaveCount(0);
   await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveCount(0);
   await page.getByRole('button',{name:'Back to Messages'}).click();
   await page.locator('[data-msg-filter="unread"]').click();
@@ -85,7 +86,7 @@ test('closed exchanges keep history read-only and expose recoverable load failur
   await seed(page,3,'COMPLETED');
   await page.evaluate(id=>{location.hash='messages/case:'+id},CASE);
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
-  await expect(page.locator('#bc-msg-form')).toBeHidden();
+  await expect(page.locator('#bc-msg-form')).toBeVisible(); // Closed exchange history is read-only; ordinary peer conversation continues.
   await page.evaluate(()=>{(window as any).__bcIsolated.failTables=['exchange_case_messages']});
   await page.locator('[data-refresh-thread]').click();
   await expect(page.locator('#bc-msg-error')).toBeVisible();

@@ -4,6 +4,8 @@ import { resolve, sep, extname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { chromium, expect as playwrightExpect } from '@playwright/test';
 import { createClient } from '@supabase/supabase-js';
+import { inspectConversationUx, captureSyntheticUxScreenshot } from './ux-mobile-journey.mjs';
+import { browserCancellation, browserCollection, verifyCollectorPermissions } from './ux-staging-journey.mjs';
 import { validateTarget, STAGING_REF, PRODUCTION_REF, PR125_SHA } from './validate-hosted-pr125.mjs';
 import { insertOwnedItem, serializeRedactedReport, validateStagingEmails } from './hosted-exchange-smoke.mjs';
 
@@ -107,7 +109,9 @@ export async function browserLifecycle({pa,pb,case1,a,b}, substage=()=>{}) {
     await page.locator('#bc-case-meetup [name="when"]').fill(new Date(Date.now()+86400000).toISOString().slice(0,16));
     await page.locator('#bc-case-meetup').evaluate(form=>form.requestSubmit());await expect(page.locator('#bc-case-meetup')).toHaveCount(0);
   };
-  substage('draft before acceptance');await open(pb);await pb.locator('#bc-msg-form textarea').fill('Lifecycle draft stays in this case');
+  substage('draft before acceptance');await open(pb);
+  await inspectConversationUx(pb,{phase:'exchange-proposed',mode:'composer'});
+  await pb.locator('#bc-msg-form textarea').fill('Lifecycle draft stays in this case');
   await action(pb,'accept','accept B');
   substage('draft after acceptance');await expect(pb.locator('#bc-msg-form textarea')).toHaveValue('Lifecycle draft stays in this case');
   await plan(pa,'propose_meetup','propose meetup A');await action(pb,'accept_meetup','accept meetup B');
@@ -118,6 +122,7 @@ export async function browserLifecycle({pa,pb,case1,a,b}, substage=()=>{}) {
   substage('canonical completed state');state=await a.client.from('exchange_cases').select('state,state_version').eq('id',case1).single();assert.ifError(state.error);assert.equal(state.data.state,'COMPLETED');
   substage('closed composer');await expect(pb.locator('#bc-msg-form')).toBeHidden();
   substage('closed guide');await expect(pb.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');
+  await inspectConversationUx(pb,{phase:'exchange-completed',mode:'closed'});
   substage('archived message');await expect(pb.locator('#bc-msg-chat')).toContainText('Browser case one second');
   substage('canonical completion event identity');
   const events=await a.client.from('exchange_case_events').select('*').eq('case_id',case1);assert.ifError(events.error);
@@ -188,6 +193,7 @@ export async function installTransport(context, config, candidate, diagnostics, 
 
 async function offline() {
   const browser=await chromium.launch();
+  let syntheticStage='transport-probe';
   try {
     const context=await browser.newContext({serviceWorkers:'block'}), diagnostics={deniedSocket:0,deniedProduction:0,deniedExternal:0};
     await installTransport(context,{url:`https://${STAGING_REF}.supabase.co`,key:'offline'},'.',diagnostics,'window.__pinnedSDK=true;');
@@ -210,9 +216,10 @@ async function offline() {
       const { lifecycleFixture, reproduceLifecycle }=await import('./offline-pr125-lifecycle.mjs');
       const fixture=proposalFixture(),lifecycle=lifecycleFixture(fixture);
       await offlineLogin(browser,candidate,browserLogin,withDesktopNotifications,{transport:lifecycle.transportFor(fixture.A),
-        afterLogin:async(page,url)=>{
+         afterLogin:async(page,url)=>{
+           await browserCollection(page,[fixture.items[0],fixture.items[2]]);
           const result=await reproduceProposal(page,fixture,browserProposal,physicalPairCard,url);
-          await reproduceLifecycle(browser,candidate,page,fixture,lifecycle,result,browserLogin,withDesktopNotifications,browserLifecycle);
+           await reproduceLifecycle(browser,candidate,page,fixture,lifecycle,result,browserLogin,withDesktopNotifications,browserLifecycle,false,browserCancellation);
         }});
       const mock=await readFile('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
       const A='00000000-0000-4000-8000-000000000101',B='00000000-0000-4000-8000-000000000102',C='00000000-0000-4000-8000-000000000103',stamp='2026-10-05T12:00:00Z';
@@ -220,13 +227,16 @@ async function offline() {
         collection:[{id:'item-a',user_id:A,set_number:'42143-1'},{id:'item-b',user_id:B,set_number:'42172-1'},{id:'item-a-third',user_id:A,set_number:'42115-1'},{id:'item-b-third',user_id:B,set_number:'42115-1'}].map(item=>({...item,available_for_exchange:false})),wishlist:[],
         exchanges:['first-case','second-case'].map((id,index)=>({id,user_a:A,user_b:B,proposer_id:A,recipient_id:B,item_a:index?'item-a-third':'item-a',item_b:index?'item-b-third':'item-b',duration_days:60,state:'PROPOSED',state_version:5,created_at:stamp,updated_at:stamp})),
         events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
+      const uxCheckpoints=[];
       for(const actor of ['easwar','ramya','dhyan']){
+        syntheticStage='synthetic-'+actor+'-setup';
         const ctx=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});
         await installTransport(ctx,{url:`https://${STAGING_REF}.supabase.co`,key:'offline'},candidate,diagnostics,mock);
         // A catch-all staging override ensures mock execution cannot reach hosted Auth/settings.
         await ctx.route(`https://${STAGING_REF}.supabase.co/**`,r=>r.fulfill({contentType:'application/json',body:'{}'}));
         await ctx.routeWebSocket('**/*',ws=>ws.close());
         await ctx.addInitScript(({actor,database})=>{localStorage.setItem('bc_three_user_actor',actor);localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1');},{actor,database});
+        syntheticStage='synthetic-'+actor+'-navigation';
         const p=await ctx.newPage();await p.goto(ORIGIN+'/v2.html?isolated=three-user#messages/case:first-case');
         if(actor==='dhyan'){
           await expect(p.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();await expect(p.locator('#bc-msg-form')).toHaveCount(0);
@@ -243,13 +253,29 @@ async function offline() {
           await p.locator('#bc-msg-form').evaluate(f=>f.requestSubmit());await expect(input).toHaveValue('');
           assert.equal(await p.evaluate(()=>window.__bcThreeUser.data.messages.find(m=>m.body==='First destination draft').case_id),'first-case');
           await p.evaluate(()=>window.bcNav('messages'));await expect(p.locator('.bc-msg-row')).toHaveCount(1);
+          // UX inspector must examine a specific thread, not the inbox landing page.
+          await p.evaluate(()=>window.bcNav('messages','case:first-case'));
+          await expect(p.locator('#bc-msg-form')).toBeVisible();
         }
+        syntheticStage='synthetic-'+actor+'-ux-checkpoint';
+        uxCheckpoints.push(await inspectConversationUx(p,{phase:'synthetic-'+actor,mode:actor==='dhyan'?'outsider':'composer'}));
+        syntheticStage='synthetic-'+actor+'-screenshot';
+        if(process.env.BC_UX_SYNTHETIC_ONLY==='1')await captureSyntheticUxScreenshot(p,'synthetic-'+actor);
         await ctx.close();
       }
+      await mkdir('ux-report/synthetic',{recursive:true});
+      await writeFile('ux-report/synthetic/checkpoints.json',JSON.stringify({kind:'synthetic-only',count:uxCheckpoints.length,journeys:['real-form-mocked-auth','owned-collection','physical-pair-proposal','handoff-return-completion','accepted-case-cancellation','three-collector-message-isolation'],checkpoints:uxCheckpoints},null,2));
       assert.equal(diagnostics.deniedProduction,1,'Only the deliberately blocked production probe is permitted');
+      // A successful rerun must supersede an earlier fixed-stage failure report.
+      await writeFile('ux-report/synthetic/failure.json',JSON.stringify({phase:'three-collector-synthetic',failed:false}));
       console.log('Offline PR125 three-actor selector/destination/draft/isolation mock passed; not hosted evidence.');
     }
     console.log('Offline browser transport guard passed; no hosted requests.');
+  }catch(failure){
+    // Fixed, synthetic-only stage codes; never log browser/network errors.
+    console.log('Synthetic replay stage: '+syntheticStage);
+    if(failure?.code==='BC_UX_SAFE_METRICS')console.log(failure.message);
+    throw failure;
   }finally{await browser.close();}
 }
 
@@ -276,6 +302,9 @@ async function run(env=process.env) {
     }
     const [a,b,c]=sessions;
     assert.equal(new Set(sessions.map(s=>s.id)).size,3);
+    stage='provisioned registration eligibility and ordinary collector admin permissions';
+    await verifyCollectorPermissions(sessions);
+    passed('three provisioned adult local profiles; all three collectors denied admin role; no privilege mutation');
     const runId=`browser-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`;
     // Exactly three catalogue sets suffice; validate all prerequisites before inserts.
     const sets=await browserFixtureSets(a.client,env.BC_STAGING_SET_A,env.BC_STAGING_SET_B),items=[];
@@ -305,9 +334,15 @@ async function run(env=process.env) {
     const send=async(page,body)=>{await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(f=>f.requestSubmit());await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');};
     const rows=async(client,table,body)=>{const r=await client.from(table).select('*').eq('body',body);assert.ifError(r.error);return r.data;};
     const openCase=async(page,id)=>{await nav(page,`case:${id}`);await expect(page.locator('#bc-case-destination')).toHaveValue(id);};
+    for(const [index,page] of pages.entries())await inspectConversationUx(page,{phase:'staging-login-'+['a','b','c'][index]});
     passed('three independent real browser staging sessions');
+    stage='owned collection mobile controls';
+    await browserCollection(pa,[items[0],items[2]]);
+    await browserCollection(pb,[items[1],items[3]]);
+    passed('both owners see exact fixture collection copies, checked availability and editable details on mobile');
     stage='inline proposal and no reservation on open';
     const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId},detail=>{stage=`inline proposal: ${detail}`});
+    await inspectConversationUx(pa,{phase:'staging-proposal',mode:'composer'});
     passed('inline physical-item proposal; opening does not reserve; two authorized same-peer cases');
 
     stage='direct and exact-case messages chronological inbox drafts and retry';
@@ -359,6 +394,9 @@ async function run(env=process.env) {
     await pa.locator('.bc-msg-row').click();
     await expect(pa.locator('#bc-case-destination option')).toHaveCount(3);
     assert.equal(await pa.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth),true);
+    await pa.evaluate(id=>window.bcNav('messages',`case:${id}`),case1);
+    await expect(pa.locator('#bc-case-destination')).toHaveValue(case1);
+    await inspectConversationUx(pa,{phase:'staging-message',mode:'composer'});
     passed('one collector inbox; chronological direct and two exact-case messages; separate drafts; actual committed-response-lost retries exactly once; mobile width');
 
     stage='notification deep links and displayed read watermarks';
@@ -387,6 +425,7 @@ async function run(env=process.env) {
     await pc.evaluate(id=>window.bcNav('messages',`case:${id}`),case1);
     await expect(pc.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();
     await expect(pc.locator('#bc-msg-form')).toHaveCount(0);await expect(pc.locator('[data-thread-case-action]')).toHaveCount(0);
+    await inspectConversationUx(pc,{phase:'staging-outsider',mode:'outsider'});
     for(const table of ['exchange_cases','exchange_case_messages','exchange_case_events']){
       const r=await c.client.from(table).select('id').eq(table==='exchange_cases'?'id':'case_id',case1);assert.ifError(r.error);assert.deepEqual(r.data,[]);
     }
@@ -398,6 +437,9 @@ async function run(env=process.env) {
     stage='guided inline exchange lifecycle';
     await browserLifecycle({pa,pb,case1,a,b},detail=>{stage=`guided lifecycle: ${detail}`});
     passed('real inline accept, meetup, safety, arrival, inspection, handoff, build, return and completion; closed archive retains chronological messages');
+    stage='guided cancellation';
+    await browserCancellation({pa,pb,case2,a,items},detail=>{stage=`guided cancellation: ${detail}`});
+    passed('accepted disposable second case cancelled before handoff; exact items released; both peers see closed archive');
     assert.equal(diagnostics.deniedProduction,0);assert.equal(diagnostics.deniedSocket,0);
     report.transport={productionRequests:0,unexpectedSockets:0};
     report.ok=true;
@@ -414,5 +456,12 @@ async function run(env=process.env) {
 }
 
 if(process.argv[1] && pathToFileURL(resolve(process.argv[1])).href===import.meta.url){
-  (process.argv.includes('--offline')?offline():run()).catch(()=>{console.error('Browser harness failed; diagnostics withheld.');process.exitCode=1;});
+  (process.argv.includes('--offline')?offline():run()).catch(async()=>{
+    // Signal a failed synthetic replay to triage without leaking browser errors.
+    if(process.argv.includes('--offline')){
+      await mkdir('ux-report/synthetic',{recursive:true});
+      await writeFile('ux-report/synthetic/failure.json',JSON.stringify({phase:'three-collector-synthetic',failed:true}));
+    }
+    console.error('Browser harness failed; diagnostics withheld.');process.exitCode=1;
+  });
 }

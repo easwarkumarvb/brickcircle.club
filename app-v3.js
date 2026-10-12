@@ -604,7 +604,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();clearSessionDrafts();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -718,7 +718,18 @@ function applyNotificationChange(payload){
     if(index>=0)S.notifications[index]={...S.notifications[index],...row};else S.notifications.unshift(row);
   }
   updateNotificationBadge();
-  if(payload.eventType==='INSERT'&&!row.read_at){if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');else showLifecycleNotification(row)}
+  if(payload.eventType==='INSERT'&&['message_received','exchange_message'].includes(row.kind)&&routeName()==='messages'){
+    // The trusted recipient-scoped notification is a hint; refresh from the
+    // authorized message RPC/tables rather than trusting notification bodies.
+    window.setTimeout(()=>syncVisibleThread(),150);
+  }
+  if(payload.eventType==='INSERT'&&!row.read_at){
+    const chatting=routeName()==='messages'&&!!$('#bc-msg-chat');
+    if(!chatting||!['message_received','exchange_message'].includes(row.kind)){
+      if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');
+      else showLifecycleNotification(row);
+    }
+  }
 }
 async function reconcileNotifications(){
   const epoch=authEpoch,uid=S.user?.id;if(!uid||logoutLocked||explicitLogout)return;
@@ -789,7 +800,11 @@ function showLifecycleNotification(notification){
   root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(notification.title||view.label)}</h2><p>${esc(notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
   document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.thread)navigate('messages',view.thread);else if(view.exchangeId)navigate('messages',`case:${view.exchangeId}`);else if(notificationExchangeId(notification))navigate('messages',`case:${notificationExchangeId(notification)}`);else navigate(view.route)};return true;
 }
-function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
+function showUnreadLifecycleNotice(){
+  const chatting=routeName()==='messages'&&!!$('#bc-msg-chat');
+  const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind)&&(!chatting||!['message_received','exchange_message'].includes(item.kind)));
+  return showLifecycleNotification(notification);
+}
 function showNextUnreadNotificationNotice(){
   if(!S.user?.id||notificationPresentationActive())return false;
   return showUnreadProposalNotice()||showUnreadLifecycleNotice();
@@ -897,7 +912,7 @@ function homeOnboarding(progress){
 }
 async function renderHome(token){
   if(!S.user){
-    const policy=membershipPolicy();page(`${landingHero()}${policy?`<aside class="bc-membership-policy"><b>Free during beta:</b> ${esc(policy.body)}</aside>`:''}${landingExchangeStory()}${landingWorkflow()}${landingMatchExample()}${landingTrust()}${landingFinalCta()}`);bindCommon(app());$$('[data-auth]',app()).forEach(b=>b.onclick=showAuth);$('[data-scroll="how-it-works"]',app()).onclick=()=>document.getElementById('how-it-works')?.scrollIntoView({behavior:'smooth'});return;
+    const policy=membershipPolicy();page(`${landingHero()}${policy?`<aside class="bc-membership-policy"><b>Free during beta:</b> ${esc(policy.body)}</aside>`:''}${landingExchangeStory()}${landingWorkflow()}${landingMatchExample()}${landingTrust()}${landingFounderFeature()}${landingFounderStory()}${landingFinalCta()}`);bindCommon(app());$$('[data-auth]',app()).forEach(b=>b.onclick=showAuth);$('[data-scroll="how-it-works"]',app()).onclick=()=>document.getElementById('how-it-works')?.scrollIntoView({behavior:'smooth'});return;
   }
   const progress=guidedProgress(),active=activeExchanges(),pending=pendingRequests(),matches=S.matches||[],l=S.liquidity||{};
   const name=(S.profile?.display_name||S.user.email||'Collector').split(' ')[0];
@@ -908,7 +923,7 @@ async function renderHome(token){
 }
 // Verified catalogue examples, not listings, availability or value comparisons.
 const landingPairs={
-  hero:[['42143-1','Ferrari Daytona SP3'],['42141-1','McLaren Formula 1 Race Car']],
+  hero:[['42143-1','Ferrari Daytona SP3'],['42115-1','Lamborghini Sián FKP 37']],
   story:[['10283-1','NASA Space Shuttle Discovery'],['21309-1','NASA Apollo Saturn V']],
   match:[['10214-1','Tower Bridge'],['10276-1','Colosseum']]
 };
@@ -918,6 +933,8 @@ function landingExchangeStory(){const [own,want]=landingPairs.story;return `<sec
 function landingWorkflow(){return `<section class="bc-landing-section" aria-labelledby="landing-workflow-title"><div class="bc-landing-heading"><span>ONE CLEAR PATH</span><h2 id="landing-workflow-title">Own → Want → Match → Exchange</h2></div><div class="bc-landing-workflow"><article><b>01</b><span>OWN</span><h3>Add your LEGO sets</h3><p>Choose which sets you could exchange.</p></article><article><b>02</b><span>WANT</span><h3>Pick your next experience</h3><p>Save the sets you genuinely want to try.</p></article><article><b>03</b><span>MATCH</span><h3>Find a reciprocal collector</h3><p>BrickCircle reveals the mutual overlap.</p></article><article><b>04</b><span>EXCHANGE</span><h3>Meet, inspect, swap</h3><p>Enjoy the set temporarily, then return it.</p></article></div></section>`}
 function landingMatchExample(){const [own,want]=landingPairs.match;return `<section class="bc-example-match" aria-labelledby="example-match-title"><div class="bc-example-copy"><span class="bc-pill green">Illustrative example · Reciprocal Match</span><h2 id="example-match-title">Both collectors get a set they want.</h2><p>You own Tower Bridge and want Colosseum. The other collector owns Colosseum and wants your Tower Bridge. Both sides independently want the exchange.</p><div class="bc-example-trust"><span>📍 Local</span><span>🤝 In person</span><span>✓ Inspection-first</span></div></div><div class="bc-example-sets"><article>${landingPairImage(own)}<small>YOU OWN · THEY WANT</small><strong>${own[1]}</strong></article><div class="bc-example-swap" aria-hidden="true">⇄</div><article>${landingPairImage(want)}<small>THEY OWN · YOU WANT</small><strong>${want[1]}</strong></article></div></section>`}
 function landingTrust(){return `<section class="bc-landing-section bc-trust" aria-labelledby="trust-title"><div class="bc-landing-heading"><span>EXCHANGE WITH CONFIDENCE</span><h2 id="trust-title">Simple, local and inspection-first</h2></div><div class="bc-trust-grid"><span>⌖<b>Local exchanges</b></span><span>🤝<b>Meet in person</b></span><span>✓<b>Inspect before handoff</b></span><span>↩<b>Temporary exchange</b></span><span>□<b>No shipping required</b></span><span>◉<b>You choose what’s available</b></span></div></section>`}
+function landingFounderFeature(){return `<section class="bc-founder-feature" aria-labelledby="bc-founder-feature-title"><div class="bc-founder-feature-inner"><div class="bc-founder-feature-photo"><img src="/assets/founder-easwar-kumar.jpg.jpeg" alt="Easwar Kumar with assembled LEGO models including a Technic Ferrari and Saturn V rocket" loading="lazy" width="768" height="1024" onerror="this.closest('.bc-founder-feature-photo').classList.add('bc-founder-photo-missing');this.hidden=true"></div><div class="bc-founder-feature-copy"><p class="bc-founder-feature-eyebrow">FROM THE FOUNDER</p><h2 id="bc-founder-feature-title">Built for the love of building.</h2><blockquote>“I started BrickCircle with a simple belief: the joy of LEGO shouldn't be limited by how many sets we can own.”</blockquote><div class="bc-founder-feature-author"><strong>Easwar Kumar</strong><span>Founder, BrickCircle.club</span></div></div></div></section>`}
+function landingFounderStory(){return `<section class="bc-founder-story" id="why-i-built-brickcircle" aria-labelledby="bc-founder-title"><div class="bc-founder-inner"><span class="bc-founder-kicker">A NOTE FROM THE FOUNDER</span><h2 id="bc-founder-title">Why I Built BrickCircle</h2><p class="bc-founder-byline">By Easwar Kumar | Founder, BrickCircle.club</p><div class="bc-founder-prose"><p>My fascination with LEGO goes beyond collecting bricks. I've always been drawn to the ingenuity behind complex builds — from intricate Technic supercars and Formula 1 machines to spacecraft and engineering marvels.</p><p>Over time, one thought kept coming back to me: <strong>Why should the joy of building be limited to the sets we can afford to own?</strong></p><p>A beautiful LEGO creation often spends much of its life sitting on a shelf after being built. Meanwhile, another enthusiast somewhere nearby may be dreaming of building that very set.</p><p>What if we could connect these two people?</p><p>That simple thought inspired BrickCircle — a community where adult LEGO enthusiasts can meet, exchange sets, discover new builds and share their passion for bricks.</p><p>I believe the real magic of LEGO lies in the experience of building, the engineering we discover and the connections we make along the way.</p><p class="bc-founder-motto"><strong>Buy Less. Build More.</strong></p><p class="bc-founder-signoff">— Easwar Kumar</p></div></div></section>`}
 function landingFinalCta(){return `<section class="bc-landing-final"><span>BUY LESS · BUILD MORE</span><h2>Your next great build may already belong to someone nearby.</h2><button class="bc-btn gold" data-auth>Join BrickCircle beta</button></section>`}
 function workflowGuide(){return `<section class="bc-workflow" id="how-it-works" aria-labelledby="workflow-title"><div class="bc-section-heading"><span class="bc-small">HOW IT WORKS</span><h2 id="workflow-title">Three steps to a reciprocal match</h2></div><div class="bc-workflow-grid"><article><span>1 · OWN</span><h3>Add your LEGO sets</h3><p>Tell us what you own and which sets you’re willing to exchange.</p></article><article><span>2 · WANT</span><h3>Build your wishlist</h3><p>Choose sets you genuinely want to experience.</p></article><article><span>3 · MATCH</span><h3>Get reciprocal matches</h3><p>When another collector wants one of yours and you want one of theirs, BrickCircle connects you.</p></article></div></section>`}
 function reassuranceStrip(){return `<section class="bc-reassurance" aria-label="How BrickCircle exchanges work"><b>Local · In-person · Inspection-first</b><span>No shipping</span><span>No anonymous hand-offs</span><span>No permanent sale required</span><span>You choose what becomes available to exchange</span></section>`}
@@ -1008,7 +1025,7 @@ function openCatalogueSetDetails(setNumber){
 function ownerPhotoValidation(file){if(!file)return 'Choose a photo first.';if(!OWNER_PHOTO_TYPES.has(file.type))return 'Please use a JPEG, PNG or WebP image.';if(file.size>OWNER_PHOTO_MAX_BYTES)return 'Photo must be 8 MB or smaller.';return ''}
 function ownerPhotoExtension(file){return file.type==='image/png'?'png':file.type==='image/webp'?'webp':'jpg'}
 async function uploadOwnerPhoto(file,owner){await owner.verify();owner.assert();const path=`${owner.id}/${crypto.randomUUID()}.${ownerPhotoExtension(file)}`,{error}=await db.storage.from('collection-photos').upload(path,file,{contentType:file.type,upsert:false});if(error)throw error;try{await owner.verify()}catch(stale){await cleanupOwnerPhoto(path);throw stale}return path}
-async function cleanupOwnerPhoto(path){if(!path)return;try{await db.storage.from('collection-photos').remove([path])}catch(_){}}
+async function cleanupOwnerPhoto(path){if(!path)return;try{const {error}=await db.storage.from('collection-photos').remove([path]);if(error)console.warn('Owner photo cleanup failed',error)}catch(error){console.warn('Owner photo cleanup failed',error)}}
 function ownerPhotoPicker({title,copy,saveLabel='Add to My Sets',onSave}){
   if(!S.user||logoutLocked)return;
   const ownerId=S.user.id,sessionGeneration=ownerPhotoIdentityGeneration;
@@ -1084,13 +1101,13 @@ function ownerPhotoPicker({title,copy,saveLabel='Add to My Sets',onSave}){
   };
 }
 function addOwnedSetWithPhoto(set){const details=S.browse.rows.find(row=>row.set_number===set)||S.sets[set]||{};ownerPhotoPicker({title:`Add ${details.name||`Set ${set}`} to My Sets`,copy:'Upload a clear photo of your assembled set. This helps the other collector understand the set’s visible condition and completeness.',onSave:async(file,owner)=>{const path=await uploadOwnerPhoto(file,owner);try{owner.assert();const {error}=await db.from('collection_items').insert({user_id:owner.id,set_number:set,owner_photo_path:path});if(error)throw error}catch(error){await cleanupOwnerPhoto(path);throw error}owner.assert();track('collection_item_added',{set_number:set,owner_photo:true});await refreshCore();owner.assert();await renderRoute();owner.assert();toast('Added to My Sets with your owner photo.')}})}
-function addLegacyOwnerPhoto(item){ownerPhotoPicker({title:`Add a photo for set ${item.set_number}`,copy:'This legacy set needs a photo of the assembled model before it can be made available to exchange.',saveLabel:'Upload photo',onSave:async(file,owner)=>{const path=await uploadOwnerPhoto(file,owner);try{owner.assert();const {error}=await db.from('collection_items').update({owner_photo_path:path,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);if(error)throw error}catch(error){await cleanupOwnerPhoto(path);throw error}owner.assert();await refreshCore();owner.assert();renderSetsBody();toast('Photo added. You can now make this set available to exchange.')}})}
+function addLegacyOwnerPhoto(item){ownerPhotoPicker({title:`Add a photo for set ${item.set_number}`,copy:'This legacy set needs a photo of the assembled model before it can be made available to exchange.',saveLabel:'Upload photo',onSave:async(file,owner)=>{const path=await uploadOwnerPhoto(file,owner);try{owner.assert();const {data,error}=await db.from('collection_items').update({owner_photo_path:path,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id).select('id');if(error)throw error;if(!data?.some(row=>row.id===item.id))throw new Error('The owned set could not be updated. Refresh your collection and retry.')}catch(error){await cleanupOwnerPhoto(path);throw error}owner.assert();await refreshCore();owner.assert();renderSetsBody();toast('Photo added. You can now make this set available to exchange.')}})}
 function replaceOwnerPhoto(item){
   if(!item||!S.user)return;
   const oldPath=item.owner_photo_path||'',details=item.lego_sets||S.sets[item.set_number]||{};
   ownerPhotoPicker({title:`Change photo for ${details.name||`Set ${item.set_number}`}`,copy:'Choose a new clear photo of your assembled LEGO set. The existing photo will be replaced only after the new photo is saved successfully.',saveLabel:'Save new photo',onSave:async(file,owner)=>{
     const newPath=await uploadOwnerPhoto(file,owner);
-    try{owner.assert();const {error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id);if(error)throw error}catch(error){await cleanupOwnerPhoto(newPath);throw error}
+    try{owner.assert();const {data,error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id).select('id');if(error)throw error;if(!data?.some(row=>row.id===item.id))throw new Error('The owned set could not be updated. Refresh your collection and retry.')}catch(error){await cleanupOwnerPhoto(newPath);throw error}
     owner.assert();
     if(oldPath&&oldPath!==newPath){ownerPhotoUrls.delete(oldPath);await cleanupOwnerPhoto(oldPath)}
     owner.assert();
@@ -1098,6 +1115,64 @@ function replaceOwnerPhoto(item){
     track('collection_owner_photo_changed',{set_number:item.set_number});
     await refreshCore();owner.assert();renderSetsBody();toast('Set photo updated.');
   }});
+}
+const bcAngleNames={side:'Side view',rear:'Rear / detail view'};
+async function bcLoadPhotoAngles(itemId){
+  const {data,error}=await db.from('collection_item_photo_angles').select('angle,storage_path').eq('item_id',itemId);
+  if(error)throw error;
+  return (data||[]).filter(p=>Object.hasOwn(bcAngleNames,p.angle));
+}
+function bcOwnerGallery(item){
+  if(!S.user||!item||item.user_id!==S.user.id)return;
+  const galleryOwnerId=S.user.id,galleryGeneration=ownerPhotoIdentityGeneration;
+  const name=item.lego_sets?.name||item.set_number;
+  const o=modal(`<div class="bc-modal-head"><div><h2>${esc(name)} · Photo angles</h2><p class="bc-muted">Share three clear photographs of your actual assembled set: front, side, and rear or detail. Both collectors should inspect the physical set at handoff.</p></div><button class="bc-close" data-close aria-label="Close photo gallery">×</button></div><div class="bc-angle-gallery" id="bc-angle-gallery" aria-live="polite">Loading photos…</div>`);
+  $('[data-close]',o).onclick=closeOverlay;
+  const gallery=$('#bc-angle-gallery',o);
+  const galleryActive=()=>o.isConnected&&!logoutLocked&&S.user?.id===galleryOwnerId&&ownerPhotoIdentityGeneration===galleryGeneration;
+  overlayDisposer(o,()=>gallery.replaceChildren());
+  const refresh=async()=>{
+    if(!galleryActive())return;
+    let angles;try{angles=await bcLoadPhotoAngles(item.id)}catch(error){if(galleryActive())gallery.textContent='Unable to read photos. Ensure the gallery migration is applied in this environment.';return}
+    if(!galleryActive())return;
+    const all=[{angle:'front',storage_path:item.owner_photo_path},...['side','rear'].map(angle=>({angle,storage_path:angles.find(p=>p.angle===angle)?.storage_path||''}))];
+    gallery.innerHTML=all.map(p=>`<section class="bc-angle-panel" data-angle-panel="${p.angle}"><h3>${p.angle==='front'?'Front / main photo':bcAngleNames[p.angle]}</h3><div class="bc-angle-preview" data-angle-preview="${p.angle}">Loading photo…</div><button type="button" class="bc-btn" data-photo-angle="${p.angle}">${p.storage_path?'Replace photo':'Add photo'}</button></section>`).join('');
+    for(const p of all){
+      const holder=gallery.querySelector(`[data-angle-preview="${p.angle}"]`);
+      if(!holder)continue;
+      if(!p.storage_path){holder.textContent='Photo not added yet';continue}
+      try{
+        const url=await signedOwnerPhoto(p.storage_path);
+        if(galleryActive()&&holder.isConnected)holder.innerHTML=`<a href="${attr(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open large ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo"><img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy"></a>`;
+      }catch(_){if(galleryActive())holder.textContent='Unable to load this photo'}
+    }
+    gallery.querySelectorAll('[data-photo-angle]').forEach(button=>button.onclick=()=>{
+      if(!galleryActive())return;
+      const angle=button.dataset.photoAngle,prior=all.find(p=>p.angle===angle)?.storage_path||'';
+      ownerPhotoPicker({title:`Upload ${angle==='front'?'front view':bcAngleNames[angle]} for ${name}`,copy:'Use an actual photo of your assembled set. Show all visible details, including any defects.',saveLabel:'Save photo',onSave:async(file,owner)=>{
+        const newPath=await uploadOwnerPhoto(file,owner);
+        try{
+          owner.assert();
+          if(angle==='front'){
+            const {data,error}=await db.from('collection_items').update({owner_photo_path:newPath,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id).select('id');
+            if(error)throw error;
+            if(!data?.some(row=>row.id===item.id))throw new Error('The owned set could not be updated. Refresh your collection and retry.');
+            item.owner_photo_path=newPath;
+          }else{
+            const {error}=await db.from('collection_item_photo_angles').upsert({item_id:item.id,owner_id:owner.id,angle,storage_path:newPath},{onConflict:'item_id,angle'});
+            if(error)throw error;
+          }
+        }catch(error){await cleanupOwnerPhoto(newPath);throw error}
+        ownerPhotoUrls.delete(newPath);
+        if(prior&&prior!==newPath){ownerPhotoUrls.delete(prior);await cleanupOwnerPhoto(prior)}
+        await refreshCore();renderSetsBody();
+        toast('Photo saved. Add the other angles for a clearer exchange.');
+        const updated=S.collection.find(x=>x.id===item.id)||item;
+        bcOwnerGallery(updated);
+      }});
+    });
+  };
+  refresh();
 }
 async function signedOwnerPhoto(path){const epoch=authEpoch;if(!path||logoutLocked)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(epoch!==authEpoch||logoutLocked)return '';if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
 async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.owner_photo_path)continue;const image=root.querySelector(`[data-edit-set="${CSS.escape(row.id)}"]`)?.closest('.bc-myset')?.querySelector('.bc-myset-visual img');if(!image)continue;try{const url=await signedOwnerPhoto(row.owner_photo_path);if(url){image.src=url;image.removeAttribute('data-set-image');image.alt='Owner photo of assembled LEGO set'}}catch(_){}}}
@@ -1108,7 +1183,14 @@ async function hydrateMatchPhotos(root){
     try{
       const {data,error}=await db.from('collection_items').select('owner_photo_path').eq('id',match.requested_item).eq('user_id',match.match_user).eq('available_for_exchange',true).limit(1),path=data?.[0]?.owner_photo_path;
       if(error||!path)continue;const url=await signedOwnerPhoto(path);
-      if(url)side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof"><img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy"><div class="bc-small">Owner photo · inspect the physical set in person before exchange</div></div>`);
+      if(url){
+        let angles=[];
+        try{angles=await bcLoadPhotoAngles(match.requested_item)}catch(_){}
+        const photos=[{angle:'front',url}];
+        for(const entry of angles){try{const signed=await signedOwnerPhoto(entry.storage_path);if(signed)photos.push({angle:entry.angle,url:signed})}catch(_){}}
+        const tiles=photos.map(p=>`<a class="bc-match-photo-tile" href="${attr(p.url)}" target="_blank" rel="noopener noreferrer" aria-label="View large ${p.angle==='front'?'front':bcAngleNames[p.angle]} owner photo"><img src="${attr(p.url)}" alt="Owner-supplied ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo of LEGO set ${attr(match.requested_set)}" loading="lazy"><span>${p.angle==='front'?'Front':bcAngleNames[p.angle]}</span></a>`).join('');
+        side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof bc-match-photo-gallery"><strong>Photos of this collector’s actual set</strong><div class="bc-match-photo-grid">${tiles}</div><div class="bc-small">${photos.length} of 3 views · Open an image to inspect details. Confirm condition and completeness together at handoff.</div></div>`);
+      }
     }catch(_){}
   }
 }
@@ -1135,9 +1217,9 @@ function renderSetsBody(){
     if(S.setTab==='available'&&!rows.length)host.innerHTML=empty('⇄','Nothing available yet','Choose one owned set and mark it Available to Exchange. Only sets you explicitly release can appear in matches.','Review owned sets','sets');
     else host.innerHTML=rows.length?`${S.setTab==='collection'?'<div class="bc-notice warn" style="margin-bottom:12px"><b>Availability is always your choice.</b> Only sets you explicitly make available can appear in reciprocal matches.</div>':''}<div class="bc-set-list">${rows.map(row=>mySetRow(row,false)).join('')}</div>`:empty('🧱','Start with the LEGO you already own','Add collectible sets you would be comfortable exchanging locally.','Add my first set','browse');
   }
-  bindCommon(host);$$('[data-exchangeable]',host).forEach(x=>x.onchange=()=>setExchangeable(x.dataset.exchangeable,x.checked));$$('[data-remove-wish]',host).forEach(b=>b.onclick=()=>removeWish(b.dataset.removeWish));$$('[data-change-photo]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.changePhoto);if(item)replaceOwnerPhoto(item)});$$('[data-release-set]',host).forEach(b=>b.onclick=()=>releaseSetFromWorkflow(b.dataset.releaseSet));$$('[data-clear-owner-review]',host).forEach(b=>b.onclick=()=>setExchangeable(b.dataset.clearOwnerReview,true));$$('[data-edit-set]',host).forEach(b=>b.onclick=()=>editCollectionItem(b.dataset.editSet));wireImages(host);if(S.setTab!=='wishlist')hydrateOwnerPhotos(host)
+  bindCommon(host);$$('[data-exchangeable]',host).forEach(x=>x.onchange=()=>setExchangeable(x.dataset.exchangeable,x.checked));$$('[data-remove-wish]',host).forEach(b=>b.onclick=()=>removeWish(b.dataset.removeWish));$$('[data-photo-gallery]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.photoGallery);if(item)bcOwnerGallery(item)});$$('[data-change-photo]',host).forEach(b=>b.onclick=()=>{const item=S.collection.find(row=>row.id===b.dataset.changePhoto);if(item)replaceOwnerPhoto(item)});$$('[data-release-set]',host).forEach(b=>b.onclick=()=>releaseSetFromWorkflow(b.dataset.releaseSet));$$('[data-clear-owner-review]',host).forEach(b=>b.onclick=()=>setExchangeable(b.dataset.clearOwnerReview,true));$$('[data-edit-set]',host).forEach(b=>b.onclick=()=>editCollectionItem(b.dataset.editSet));wireImages(host);if(S.setTab!=='wishlist')hydrateOwnerPhotos(host)
 }
-function mySetRow(row,wish){const s=row.lego_sets||S.sets[row.set_number]||{},image=imageSetNumber(row.set_number),workflow=!wish&&workflowForItem(row.id),status=caseItemStatus(row,workflow),statusTone=status==='Available to Exchange'?'green':status==='On exchange'||status==='Return pending'?'blue':status==='Needs owner review'?'gold':'';return `<article class="bc-card bc-myset"> <div class="bc-myset-visual"><img src="https://images.brickset.com/sets/images/${attr(image)}.jpg" alt="" loading="lazy" data-set-image="${attr(row.set_number)}"><div hidden>🧱</div></div><div><h3>${esc(s.name||row.set_number)}</h3><div class="bc-myset-meta">Set ${esc(row.set_number)}${s.theme?` · ${esc(s.theme)}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-statusrow">${wish?pill('Sets I Want','blue'):pill(status,statusTone)}${!wish&&row.condition?pill(row.condition):''}${!wish&&row.completeness!=null?pill(`${row.completeness}% complete`):''}</div></div><div class="bc-myset-actions">${wish?`<button class="bc-btn" data-remove-wish="${attr(row.set_number)}" aria-label="Remove ${attr(s.name||row.set_number)} from Sets I Want">Remove</button>`:`<label class="bc-toggle"><input type="checkbox" data-exchangeable="${attr(row.id)}" ${row.available_for_exchange?'checked':''} ${workflow?'disabled':''}> Available to Exchange</label>${workflow?`<button class="bc-btn danger" data-release-set="${attr(row.id)}">${workflow.state==='PROPOSED'?(workflow.proposer_id===S.user?.id?'Cancel proposal & free set':'Decline proposal'):['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(workflow.state)?'Cancel before handoff':workflow.state==='ACTIVE'?'Request early return':'Open safe release options'}</button>`:''}${!workflow&&row.exchange_review_required?`<button class="bc-btn primary" data-clear-owner-review="${attr(row.id)}">Review complete · make available</button>`:''}<button class="bc-btn" data-change-photo="${attr(row.id)}">Change photo</button><button class="bc-btn" data-edit-set="${attr(row.id)}">Details</button>`}</div></article>`}
+function mySetRow(row,wish){const s=row.lego_sets||S.sets[row.set_number]||{},image=imageSetNumber(row.set_number),workflow=!wish&&workflowForItem(row.id),status=caseItemStatus(row,workflow),statusTone=status==='Available to Exchange'?'green':status==='On exchange'||status==='Return pending'?'blue':status==='Needs owner review'?'gold':'';return `<article class="bc-card bc-myset"> <div class="bc-myset-visual"><img src="https://images.brickset.com/sets/images/${attr(image)}.jpg" alt="" loading="lazy" data-set-image="${attr(row.set_number)}"><div hidden>🧱</div></div><div><h3>${esc(s.name||row.set_number)}</h3><div class="bc-myset-meta">Set ${esc(row.set_number)}${s.theme?` · ${esc(s.theme)}`:''}${s.piece_count?` · ${Number(s.piece_count).toLocaleString()} pieces`:''}</div><div class="bc-statusrow">${wish?pill('Sets I Want','blue'):pill(status,statusTone)}${!wish&&row.condition?pill(row.condition):''}${!wish&&row.completeness!=null?pill(`${row.completeness}% complete`):''}</div></div><div class="bc-myset-actions">${wish?`<button class="bc-btn" data-remove-wish="${attr(row.set_number)}" aria-label="Remove ${attr(s.name||row.set_number)} from Sets I Want">Remove</button>`:`<label class="bc-toggle"><input type="checkbox" data-exchangeable="${attr(row.id)}" ${row.available_for_exchange?'checked':''} ${workflow?'disabled':''}> Available to Exchange</label>${workflow?`<button class="bc-btn danger" data-release-set="${attr(row.id)}">${workflow.state==='PROPOSED'?(workflow.proposer_id===S.user?.id?'Cancel proposal & free set':'Decline proposal'):['ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING'].includes(workflow.state)?'Cancel before handoff':workflow.state==='ACTIVE'?'Request early return':'Open safe release options'}</button>`:''}${!workflow&&row.exchange_review_required?`<button class="bc-btn primary" data-clear-owner-review="${attr(row.id)}">Review complete · make available</button>`:''}<button class="bc-btn primary" data-photo-gallery="${attr(row.id)}">View / add 3 photos</button><button class="bc-btn" data-change-photo="${attr(row.id)}">Change photo</button><button class="bc-btn" data-edit-set="${attr(row.id)}">Details</button>`}</div></article>`}
 async function releaseSetFromWorkflow(itemId){
   const item=S.collection.find(row=>row.id===itemId);if(!item||!S.user)return;
   const workflow=workflowForItem(itemId);if(!workflow)return setExchangeable(itemId,false);
@@ -1357,7 +1439,7 @@ async function cancelCaseBeforeMutualHandoff(e,button){
   if(error){if(button)button.disabled=false;return fail(error,'Could not cancel before handoff. The exchange may have changed, or a handoff may already be confirmed. Refresh and retry.')}
   await refreshCore();await reloadCaseView(e.id);toast('Exchange cancelled before the mutual handoff.');
 }
-async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;fail(error,'The exchange may have changed. Checking the latest step before you retry.');if(messagesThreadGuard('case',e.id))await reloadCaseView(e.id);return}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
+async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;fail(error,'The exchange may have changed. Checking the latest step before you retry.');if(messagesCaseActionAllowed(e.id))await reloadCaseView(e.id);return}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
 function legacyIssueCase(e){return e.state==='HANDOFF_ISSUE'||e.state==='DISPUTED'}
 function canReportCaseIssue(e){return Boolean(e.handoff_at)&&!legacyIssueCase(e)}
 function reputationTrustContext(userId){
@@ -1518,10 +1600,14 @@ function showNotifications(){
 }
 /* --- Messages: conversation list + direct/case threads --- */
 let collectorFocus=null;
+function messagesCaseActionAllowed(caseId){
+  const uid=S.user?.id,e=uid?messageIndexByUid.get(uid)?.cases.get(caseId)?.case:null;
+  return !!e&&routeName()==='messages'&&collectorFocus?.uid===uid&&collectorFocus.peerId===otherId(e)&&!!$('#bc-msg-chat');
+}
 function messagesThreadGuard(kind,id){
   if(!S.user||routeName()!=='messages')return false;
-  if(routeId()===`${kind}:${id}`||(kind==='case'&&routeId().startsWith(`case:${id}:message:`)))return true;
-  return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct';
+  if(kind==='case')return messagesCaseActionAllowed(id)&&$('#bc-msg-form')?.dataset.destination===id;
+  return kind==='direct'&&!!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&$('#bc-msg-form')?.dataset.destination==='';
 }
 function parseMessagesTarget(){
   const raw=routeId(),separator=raw.indexOf(':');
@@ -1538,6 +1624,7 @@ const MESSAGE_INDEX_PAGE_SIZE=100;
 const messageIndexByUid=new Map();
 let messageIndexUid=null;
 let messagesFilter='all';
+let messagesSearch='';
 const watermarkPrefix='brickcircle:messages:seen:';
 function messageIndex(uid){
   if(messageIndexUid!==uid){messageIndexByUid.clear();messageIndexUid=uid}
@@ -1699,10 +1786,11 @@ function filteredConversationGroups(){
   if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
   if(messagesFilter==='exchanges')groups=groups.filter(group=>group.cases.length>0);
   if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
+  if(messagesSearch.trim())groups=groups.filter(group=>(S.profiles[group.peerId]?.display_name||'Collector').toLocaleLowerCase().includes(messagesSearch.trim().toLocaleLowerCase()));
   return groups.sort((a,b)=>b.stamp-a.stamp);
 }
 function messagesFilterBarMarkup(){
-  return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
+  return `<label class="bc-conversation-search-label" for="bc-conversation-search">Find a collector</label><input id="bc-conversation-search" class="bc-input bc-conversation-search" type="search" autocomplete="off" placeholder="Search by collector name" value="${attr(messagesSearch)}" aria-label="Search conversations by collector name"><div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
 }
 function messageRow(group,uid,selected){
   const unread=group.kind==='peer'?group.unread:conversationUnread(uid,group);
@@ -1777,6 +1865,18 @@ function renderMessagesListPane(){
   updateMessageBadge();
 }
 function bindMessagesListPane(root=app()){
+  const search=$('#bc-conversation-search',root);
+  if(search)search.oninput=()=>{
+    messagesSearch=search.value;
+    const pane=$('.bc-messages-list-pane',app());
+    if(!pane)return;
+    const scroll=pane.scrollTop,caret=search.selectionStart;
+    pane.innerHTML=messagesListPaneMarkup();
+    bindMessagesListPane(pane);
+    const next=$('#bc-conversation-search',pane);
+    if(next){next.focus();next.setSelectionRange(caret,caret)}
+    pane.scrollTop=scroll;
+  };
   $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
   $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
   $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
@@ -1822,6 +1922,18 @@ const DIRECT_THREAD_FALLBACK='No messages yet. Say hello and arrange your first 
 const CASE_THREAD_FALLBACK='No messages yet. Keep meetup, handoff, return and issue details here.';
 const threadCaches={direct:new Map(),case:new Map()};
 const threadDrafts=new Map();
+const DRAFT_TAB_PREFIX='bc:draft:tab:v1:';
+const DRAFT_TAB_TTL=24*60*60*1000;
+function readSessionDraft(key){
+  try{const raw=sessionStorage.getItem(DRAFT_TAB_PREFIX+key);if(!raw)return '';const row=JSON.parse(raw);if(!row||Date.now()-row.savedAt>DRAFT_TAB_TTL||typeof row.body!=='string'){sessionStorage.removeItem(DRAFT_TAB_PREFIX+key);return ''}return row.body.slice(0,4000)}catch(_){return ''}
+}
+function writeSessionDraft(key,value){
+  try{if(value)sessionStorage.setItem(DRAFT_TAB_PREFIX+key,JSON.stringify({savedAt:Date.now(),body:String(value).slice(0,4000)}));else sessionStorage.removeItem(DRAFT_TAB_PREFIX+key)}catch(_){}
+}
+function clearSessionDrafts(){
+  try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(DRAFT_TAB_PREFIX))sessionStorage.removeItem(key)}}catch(_){}
+}
+
 const pendingSends=new Map();
 let threadCacheUid=null;
 function threadCache(kind,id,uid){
@@ -1935,9 +2047,9 @@ function bindThreadCompose(form,kind,id,senderName){
   const key=`${uid}:${kind}:${id}`;
   const input=$('textarea[name="message"]',form);
   if(input){
-    const saved=threadDrafts.get(key);
+    const saved=threadDrafts.get(key)??readSessionDraft(key);
     if(saved&&input.value!==saved)input.value=saved;
-    input.oninput=()=>{threadDrafts.set(key,input.value)};
+    input.oninput=()=>{threadDrafts.set(key,input.value);writeSessionDraft(key,input.value)};
   }
   if(pendingSends.has(key)){
     const button=$('button[type="submit"]',form);
@@ -1975,7 +2087,7 @@ function bindThreadCompose(form,kind,id,senderName){
       if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       const sentDraft=input?input.value:null;
       form.reset();
-      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
+      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft){threadDrafts.delete(key);writeSessionDraft(key,'')}
       try{
         await mergeThreadLatest(kind,id,submitUid,stillCurrent);
       }catch(_){
@@ -1985,8 +2097,8 @@ function bindThreadCompose(form,kind,id,senderName){
         return;
       }
       if(!stillCurrent())return;
-      updateThreadChat(collectorFocus?threadCache('direct',collectorFocus.peerId,submitUid):threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
       reconcileMessageIndex(submitUid,kind,id);
+      updateThreadChat(collectorFocus?threadCache('direct',collectorFocus.peerId,submitUid):threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
       if(collectorFocus)advanceCollectorWatermarks(collectorFocus.peerId,submitUid);else advanceThreadWatermark(submitUid,kind,id);
       updateMessageBadge();
       restore();
@@ -2050,7 +2162,7 @@ function clearThreadStatus(){
 function activeThreadForm(uid,kind,id){
   if(S.user?.id!==uid)return null;
   const ctx=$('#bc-msg-chat')?.bcThread;
-  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(collectorFocus?.uid===uid&&collectorFocus.caseId===id&&kind==='case'))return null;
+  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(kind==='case'&&messagesThreadGuard('case',id)))return null;
   return $('#bc-msg-form');
 }
 async function loadEarlierThreadMessages(chat){
@@ -2091,16 +2203,16 @@ function bindThreadCaseActions(e){
   $$('[data-thread-case-action]',app()).forEach(button=>{
     if(threadCaseActions.has(e.id))button.disabled=true;
     button.onclick=async()=>{
-      if(threadCaseActions.has(e.id)||!messagesThreadGuard('case',e.id))return;
+      if(threadCaseActions.has(e.id)||!messagesCaseActionAllowed(e.id))return;
       threadCaseActions.add(e.id);
       $$('[data-thread-case-action]',app()).forEach(b=>b.disabled=true);
       try{if(button.dataset.threadCaseAction==='review')showReview(e,S.profiles[otherId(e)]||{});else await runCaseAction(e,button.dataset.threadCaseAction,button)}
-      finally{threadCaseActions.delete(e.id);if(messagesThreadGuard('case',e.id))$$('[data-thread-case-action]',app()).forEach(b=>b.disabled=false)}
+      finally{threadCaseActions.delete(e.id);if(messagesCaseActionAllowed(e.id))$$('[data-thread-case-action]',app()).forEach(b=>b.disabled=false)}
     };
   });
 }
 async function reloadCaseView(id){
-  if(messagesThreadGuard('case',id)){
+  if(messagesCaseActionAllowed(id)){
     const chat=$('#bc-msg-chat');
     if(chat?.bcThread?.refreshing){chat.bcThread.refreshAgain=true;return}
     return refreshThread(chat);
@@ -2186,7 +2298,9 @@ async function refreshThread(chat){
       if(picker){picker.parentElement.outerHTML=collectorDestinationMarkup(id,selected);$('#bc-case-destination').onchange=event=>{const caseId=event.target.value;navigate('messages',caseId?`case:${caseId}`:`direct:${id}`)}}
       const e=selected?messageIndexByUid.get(uid)?.cases.get(selected)?.case:null;
      if(selected&&!e)return renderMessagesUnavailable('Conversation unavailable.');
+      const explicitContext=$('#bc-msg-form')?.dataset.destination||'';
       selectCollectorCase(id,selected);
+      if(explicitContext)setPeerComposeContext(id,explicitContext);
       updateThreadChat(threadCache('direct',id,uid),{senderName,scrollMode:'keep'});
       advanceCollectorWatermarks(id,uid);
      renderMessagesListPane();
@@ -2260,22 +2374,57 @@ function renderInlineProposal(peerId){
 }
 function collectorDestinationMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
-  return `<label class="bc-collector-destination">Message destination <select id="bc-case-destination" class="bc-select"><option value="" ${selected===null?'selected':''}>Collector · general chat</option>${groups.map(g=>`<option value="${attr(g.caseId)}" ${selected===g.caseId?'selected':''}>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</option>`).join('')}</select></label>`;
+  return `<div class="bc-peer-case-list" aria-label="Exchanges with this collector">${groups.map(g=>`<button type="button" class="bc-peer-case-chip" data-focus-peer-case="${attr(g.caseId)}">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</button>`).join('')}</div>`;
+}
+function preferredPeerCase(peerId){
+  const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
+  return groups.find(g=>!terminalCaseStates.has(g.case.state))?.case||null;
 }
 function selectCollectorCase(peerId,caseId){
-  const uid=S.user?.id,group=messageIndexByUid.get(uid)?.cases.get(caseId);
+  const uid=S.user?.id,group=caseId?messageIndexByUid.get(uid)?.cases.get(caseId):null;
   if(caseId&&(!group?.case||otherId(group.case)!==peerId))return renderMessagesUnavailable('Conversation unavailable.');
   const previous=collectorFocus;
   if(previous&&(previous.uid!==uid||previous.peerId!==peerId||previous.caseId!==(caseId||null)))$('#bc-collector-form')?.replaceChildren();
   collectorFocus={uid,peerId,caseId:caseId||null};
   const host=$('#bc-collector-action'),e=group?.case;
-  if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">General chat does not change exchange terms. Select a case for its next step.</p>';
-  if(e)bindThreadCaseActions(e);
-  const form=$('#bc-msg-form');if(form){const current=form.dataset.destination||'',input=$('textarea',form);if(input&&form.dataset.bound)threadDrafts.set(`${uid}:${current?'case':'direct'}:${current||peerId}`,input.value);form.dataset.destination=caseId||'';form.dataset.bound='true';const draft=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';if(input&&input.value!==draft)input.value=draft;bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name)}
-  const picker=$('#bc-case-destination');if(picker){picker.value=caseId||'';picker.disabled=pendingSends.has(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)}
+  const displayed=e||preferredPeerCase(peerId);
+  if(host)host.innerHTML=displayed?caseConversationGuide(displayed):'<p class="bc-small">Start a conversation. When a mutual LEGO match appears, you can propose an exchange here.</p>';
+  if(displayed)bindThreadCaseActions(displayed);
+  const form=$('#bc-msg-form');
+  const caseList=$('#bc-peer-case-list');
+  if(caseList)caseList.innerHTML=collectorDestinationMarkup(peerId,caseId);
+  // Reading an exchange never silently changes the message destination.
+  if(form){form.hidden=false;form.dataset.destination='';bindThreadCompose(form,'direct',peerId,S.profiles[peerId]?.display_name)}
   if(e){const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b]}
   const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
-  if(e&&terminalCaseStates.has(e.state)&&form){form.hidden=true}else if(form)form.hidden=false;
+  $$('[data-focus-peer-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.focusPeerCase}`));
+  const action=$('#bc-collector-action');
+  if(action&&displayed&&!terminalCaseStates.has(displayed.state)){
+    const context=document.createElement('button');context.type='button';context.className='bc-btn bc-reply-case';context.textContent='Reply about this exchange';
+    context.onclick=()=>setPeerComposeContext(peerId,displayed.id);
+    action.appendChild(context);
+  }
+  setPeerComposeContext(peerId,null);
+}
+function setPeerComposeContext(peerId,caseId){
+  if(!S.user||collectorFocus?.uid!==S.user.id||collectorFocus.peerId!==peerId)return;
+  const group=caseId?messageIndexByUid.get(S.user.id)?.cases.get(caseId):null;
+  const e=group?.case;
+  if(caseId&&(!e||otherId(e)!==peerId||terminalCaseStates.has(e.state)))return;
+  const form=$('#bc-msg-form'),context=$('#bc-compose-context');
+  if(!form||!context)return;
+  const previous=form.dataset.destination||'';
+  if(previous===String(caseId||''))return;
+  if(pendingSends.has(`${S.user.id}:${previous?'case':'direct'}:${previous||peerId}`)){showThreadStatus('Sending… Wait for confirmation before changing reply context.');return}
+  const uid=S.user.id,input=$('textarea',form);
+  const prevKey=`${uid}:${previous?'case':'direct'}:${previous||peerId}`;
+  if(input){threadDrafts.set(prevKey,input.value);writeSessionDraft(prevKey,input.value)}
+  form.dataset.destination=caseId||'';
+  const nextKey=`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`;
+  if(input)input.value=threadDrafts.get(nextKey)??readSessionDraft(nextKey);
+  context.innerHTML=e?`<span class="bc-context-chip">About ${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} <button type="button" data-clear-case-context aria-label="Return to general chat">×</button></span>`:'';
+  if(e)$('[data-clear-case-context]',context).onclick=()=>setPeerComposeContext(peerId,null);
+  bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name);
 }
 async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=null){
   page(loading('Opening conversation…'));
@@ -2304,11 +2453,11 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   if(focusedCase&&!messageIndexByUid.get(uid)?.cases.get(focusedCase))return renderMessagesUnavailable('Conversation unavailable.');
   collectorFocus={uid,peerId,caseId:focusedCase};
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,focusedCase)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div class="bc-conversation-exchanges"><div id="bc-peer-case-list"></div><div id="bc-collector-action"></div></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar"><div id="bc-compose-context" role="status" aria-live="polite"></div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
-  $('#bc-case-destination').onchange=event=>{const id=event.target.value;navigate('messages',id?`case:${id}`:`direct:${peerId}`)};
+
   selectCollectorCase(peerId,focusedCase);
   renderInlineProposal(peerId);
   advanceCollectorWatermarks(peerId,uid);

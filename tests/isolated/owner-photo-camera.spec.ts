@@ -40,6 +40,29 @@ async function storageSpy(page:Page,pending=false){
 
 test.beforeEach(async({page})=>mockCamera(page));
 
+test('three-angle owner gallery exposes working front, side and rear photo actions',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await page.locator('[data-photo-gallery="photo-item-1"]').click();
+  const gallery=page.locator('#bc-angle-gallery');
+  await expect(gallery).toBeVisible();
+  await expect(gallery.locator('[data-photo-angle]')).toHaveCount(3);
+  await expect(gallery.locator('[data-photo-angle="front"]')).toBeVisible();
+  await expect(gallery.locator('[data-photo-angle="side"]')).toBeVisible();
+  await expect(gallery.locator('[data-photo-angle="rear"]')).toBeVisible();
+  await gallery.locator('[data-photo-angle="side"]').click();
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  await expect(page.locator('#bc-owner-photo-title')).toContainText('Side view');
+  expect(await page.evaluate(()=>(window as any).__camera.calls)).toEqual([]);
+});
+
+test('owner photo gallery closes and removes collector photos on account switch',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await page.locator('[data-photo-gallery="photo-item-1"]').click();
+  await expect(page.locator('#bc-angle-gallery [data-photo-angle]')).toHaveCount(3);
+  await page.evaluate(()=>window.__bcIsolated.emitAuth('SIGNED_IN',{user:{id:'account-b',email:'b@example.invalid'}}));
+  await expect(page.locator('#bc-angle-gallery')).toHaveCount(0);
+  await expect(page.locator('#bc-overlay')).toHaveCount(0);
+});
 test('opening requests no permission; bounded JPEG capture, retake, explicit save and owner-scoped replacement',async({page})=>{
   test.setTimeout(60000);
   await open(page);await storageSpy(page);

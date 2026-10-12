@@ -84,6 +84,23 @@ for(const enrolled of [false,true])test(`required authenticator flow ${enrolled?
   else await expect(page.locator('#mfa-setup')).toBeHidden();
   await page.locator('#mfa-code').fill('123456');await page.locator('#verify-mfa').click();await expect(page.locator('#dashboard')).toBeVisible();await expect(page.locator('#mfa-dialog')).not.toBeVisible();await expect(page.locator('#mfa-secret')).toBeEmpty();await expect(page.locator('#mfa-qr')).not.toHaveAttribute('src');
 });
+test('AAL1 token refresh during first-factor enrollment does not dismiss the MFA dialog',async({page})=>{
+  await setup(page,{mfa:true});
+  await page.goto('/admin.html');
+  await expect(page.locator('#mfa-dialog')).toBeVisible();
+  await expect(page.locator('#mfa-setup')).toBeVisible();
+  await page.evaluate(()=> (window as any).__authEvent('TOKEN_REFRESHED',{
+    user:{id:'12345678-1234-1234-1234-123456789012'},
+    access_token:`test.${btoa(JSON.stringify({aal:'aal1'}))}.signature`
+  }));
+  await expect(page.locator('#mfa-dialog')).toBeVisible();
+  await expect(page.locator('#mfa-setup')).toBeVisible();
+  await expect(page.locator('#mfa-secret')).toContainText('test-setup-secret');
+  await expect(page.locator('#dashboard')).toBeHidden();
+  await page.locator('#mfa-code').fill('123456');
+  await page.locator('#verify-mfa').click();
+  await expect(page.locator('#dashboard')).toBeVisible();
+});
 test('cancelled authenticator enrollment clears the setup key and removes only its new factor',async({page})=>{
   await setup(page,{mfa:true});await page.goto('/admin.html');await expect(page.locator('#mfa-secret')).toContainText('test-setup-secret');await page.locator('#cancel-mfa').click();await expect(page.locator('#mfa-dialog')).not.toBeVisible();await expect(page.locator('#mfa-secret')).toBeEmpty();await expect(page.locator('#mfa-qr')).not.toHaveAttribute('src');await expect.poll(()=>page.evaluate(()=>Boolean((window as any).__unenrolled))).toBe(true);await expect(page.locator('#dashboard')).toBeHidden();
 });
