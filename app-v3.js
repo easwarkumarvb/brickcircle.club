@@ -604,7 +604,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();clearSessionDrafts();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -1922,6 +1922,18 @@ const DIRECT_THREAD_FALLBACK='No messages yet. Say hello and arrange your first 
 const CASE_THREAD_FALLBACK='No messages yet. Keep meetup, handoff, return and issue details here.';
 const threadCaches={direct:new Map(),case:new Map()};
 const threadDrafts=new Map();
+const DRAFT_TAB_PREFIX='bc:draft:tab:v1:';
+const DRAFT_TAB_TTL=24*60*60*1000;
+function readSessionDraft(key){
+  try{const raw=sessionStorage.getItem(DRAFT_TAB_PREFIX+key);if(!raw)return '';const row=JSON.parse(raw);if(!row||Date.now()-row.savedAt>DRAFT_TAB_TTL||typeof row.body!=='string'){sessionStorage.removeItem(DRAFT_TAB_PREFIX+key);return ''}return row.body.slice(0,4000)}catch(_){return ''}
+}
+function writeSessionDraft(key,value){
+  try{if(value)sessionStorage.setItem(DRAFT_TAB_PREFIX+key,JSON.stringify({savedAt:Date.now(),body:String(value).slice(0,4000)}));else sessionStorage.removeItem(DRAFT_TAB_PREFIX+key)}catch(_){}
+}
+function clearSessionDrafts(){
+  try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(DRAFT_TAB_PREFIX))sessionStorage.removeItem(key)}}catch(_){}
+}
+
 const pendingSends=new Map();
 let threadCacheUid=null;
 function threadCache(kind,id,uid){
@@ -2035,9 +2047,9 @@ function bindThreadCompose(form,kind,id,senderName){
   const key=`${uid}:${kind}:${id}`;
   const input=$('textarea[name="message"]',form);
   if(input){
-    const saved=threadDrafts.get(key);
+    const saved=threadDrafts.get(key)??readSessionDraft(key);
     if(saved&&input.value!==saved)input.value=saved;
-    input.oninput=()=>{threadDrafts.set(key,input.value)};
+    input.oninput=()=>{threadDrafts.set(key,input.value);writeSessionDraft(key,input.value)};
   }
   if(pendingSends.has(key)){
     const button=$('button[type="submit"]',form);
@@ -2075,7 +2087,7 @@ function bindThreadCompose(form,kind,id,senderName){
       if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       const sentDraft=input?input.value:null;
       form.reset();
-      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
+      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft){threadDrafts.delete(key);writeSessionDraft(key,'')}
       try{
         await mergeThreadLatest(kind,id,submitUid,stillCurrent);
       }catch(_){
@@ -2406,10 +2418,10 @@ function setPeerComposeContext(peerId,caseId){
   if(pendingSends.has(`${S.user.id}:${previous?'case':'direct'}:${previous||peerId}`)){showThreadStatus('Sending… Wait for confirmation before changing reply context.');return}
   const uid=S.user.id,input=$('textarea',form);
   const prevKey=`${uid}:${previous?'case':'direct'}:${previous||peerId}`;
-  if(input)threadDrafts.set(prevKey,input.value);
+  if(input){threadDrafts.set(prevKey,input.value);writeSessionDraft(prevKey,input.value)}
   form.dataset.destination=caseId||'';
   const nextKey=`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`;
-  if(input)input.value=threadDrafts.get(nextKey)||'';
+  if(input)input.value=threadDrafts.get(nextKey)??readSessionDraft(nextKey);
   context.innerHTML=e?`<span class="bc-context-chip">About ${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} <button type="button" data-clear-case-context aria-label="Return to general chat">×</button></span>`:'';
   if(e)$('[data-clear-case-context]',context).onclick=()=>setPeerComposeContext(peerId,null);
   bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name);
