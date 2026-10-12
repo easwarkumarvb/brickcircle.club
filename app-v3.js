@@ -1424,7 +1424,7 @@ async function cancelCaseBeforeMutualHandoff(e,button){
   if(error){if(button)button.disabled=false;return fail(error,'Could not cancel before handoff. The exchange may have changed, or a handoff may already be confirmed. Refresh and retry.')}
   await refreshCore();await reloadCaseView(e.id);toast('Exchange cancelled before the mutual handoff.');
 }
-async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;fail(error,'The exchange may have changed. Checking the latest step before you retry.');if(messagesThreadGuard('case',e.id))await reloadCaseView(e.id);return}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
+async function performCaseTransition(e,action,payload,button){if(button)button.disabled=true;const intent={case_id:e.id,version:e.state_version,action,payload};const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:e.id,p_expected_version:e.state_version,p_action:action,p_payload:payload},intent);if(error){if(button)button.disabled=false;fail(error,'The exchange may have changed. Checking the latest step before you retry.');if(messagesCaseActionAllowed(e.id))await reloadCaseView(e.id);return}await refreshCore();await reloadCaseView(e.id);toast('Exchange case updated.')}
 function legacyIssueCase(e){return e.state==='HANDOFF_ISSUE'||e.state==='DISPUTED'}
 function canReportCaseIssue(e){return Boolean(e.handoff_at)&&!legacyIssueCase(e)}
 function reputationTrustContext(userId){
@@ -1585,14 +1585,15 @@ function showNotifications(){
 }
 /* --- Messages: conversation list + direct/case threads --- */
 let collectorFocus=null;
+function messagesCaseActionAllowed(caseId){
+  const uid=S.user?.id,e=uid?messageIndexByUid.get(uid)?.cases.get(caseId)?.case:null;
+  return !!e&&routeName()==='messages'&&collectorFocus?.uid===uid&&collectorFocus.peerId===otherId(e)&&!!$('#bc-msg-chat');
+}
 function messagesThreadGuard(kind,id){
   if(!S.user||routeName()!=='messages')return false;
-  if(routeId()===`${kind}:${id}`||(kind==='case'&&routeId().startsWith(`case:${id}:message:`)))return true;
-  if(kind==='case'){
-    const e=messageIndexByUid.get(S.user.id)?.cases.get(id)?.case;
-    return !!e&&!!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===otherId(e)&&!!$('#bc-msg-chat');
-  }
-  return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct';
+  if(kind==='case')return messagesCaseActionAllowed(id)&&$('#bc-msg-form')?.dataset.destination===id;
+  if(routeId()===`${kind}:${id}`)return true;
+  return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct'&&$('#bc-msg-form')?.dataset.destination==='';
 }
 function parseMessagesTarget(){
   const raw=routeId(),separator=raw.indexOf(':');
@@ -2121,7 +2122,7 @@ function clearThreadStatus(){
 function activeThreadForm(uid,kind,id){
   if(S.user?.id!==uid)return null;
   const ctx=$('#bc-msg-chat')?.bcThread;
-  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(collectorFocus?.uid===uid&&collectorFocus.caseId===id&&kind==='case'))return null;
+  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(kind==='case'&&messagesThreadGuard('case',id)))return null;
   return $('#bc-msg-form');
 }
 async function loadEarlierThreadMessages(chat){
@@ -2162,16 +2163,16 @@ function bindThreadCaseActions(e){
   $$('[data-thread-case-action]',app()).forEach(button=>{
     if(threadCaseActions.has(e.id))button.disabled=true;
     button.onclick=async()=>{
-      if(threadCaseActions.has(e.id)||!messagesThreadGuard('case',e.id))return;
+      if(threadCaseActions.has(e.id)||!messagesCaseActionAllowed(e.id))return;
       threadCaseActions.add(e.id);
       $$('[data-thread-case-action]',app()).forEach(b=>b.disabled=true);
       try{if(button.dataset.threadCaseAction==='review')showReview(e,S.profiles[otherId(e)]||{});else await runCaseAction(e,button.dataset.threadCaseAction,button)}
-      finally{threadCaseActions.delete(e.id);if(messagesThreadGuard('case',e.id))$$('[data-thread-case-action]',app()).forEach(b=>b.disabled=false)}
+      finally{threadCaseActions.delete(e.id);if(messagesCaseActionAllowed(e.id))$$('[data-thread-case-action]',app()).forEach(b=>b.disabled=false)}
     };
   });
 }
 async function reloadCaseView(id){
-  if(messagesThreadGuard('case',id)){
+  if(messagesCaseActionAllowed(id)){
     const chat=$('#bc-msg-chat');
     if(chat?.bcThread?.refreshing){chat.bcThread.refreshAgain=true;return}
     return refreshThread(chat);
