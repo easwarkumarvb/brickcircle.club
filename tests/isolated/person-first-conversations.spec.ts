@@ -9,6 +9,8 @@ async function open(page:any,route='messages/case:guide-case',state='ACCEPTED',t
   const database={profiles,collection:[{id:'item-a',user_id:A,set_number:'42172-1',available_for_exchange:false},{id:'item-b',user_id:B,set_number:'42143-1',available_for_exchange:false}],wishlist:[],exchanges:twoCases?[first,{...first,id:'second-case',item_a:'item-c',item_b:'item-d',state:'PROPOSED',state_version:2,created_at:'2026-10-06T12:00:00Z'}]:[first],events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
   await page.addInitScript(({database}:any)=>{localStorage.setItem('bc_three_user_actor','easwar');localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1')},{database});
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',(r:any)=>r.fulfill({contentType:'application/javascript',body:mock}));
+  page.on('pageerror',e=>console.log('BROWSER ERROR',e.stack));
+  page.on('console',e=>{if(e.type()==='error')console.log('BROWSER CONSOLE',e.text())});
   await page.goto('/v2.html?isolated=three-user#'+route);
   await expect(page.locator('#bc-msg-form')).toBeVisible();
 }
