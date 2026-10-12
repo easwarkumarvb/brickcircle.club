@@ -1592,8 +1592,7 @@ function messagesCaseActionAllowed(caseId){
 function messagesThreadGuard(kind,id){
   if(!S.user||routeName()!=='messages')return false;
   if(kind==='case')return messagesCaseActionAllowed(id)&&$('#bc-msg-form')?.dataset.destination===id;
-  if(routeId()===`${kind}:${id}`)return true;
-  return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct'&&$('#bc-msg-form')?.dataset.destination==='';
+  return kind==='direct'&&!!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&$('#bc-msg-form')?.dataset.destination==='';
 }
 function parseMessagesTarget(){
   const raw=routeId(),separator=raw.indexOf(':');
@@ -2373,6 +2372,7 @@ function setPeerComposeContext(peerId,caseId){
   if(!form||!context)return;
   const previous=form.dataset.destination||'';
   if(previous===String(caseId||''))return;
+  if(pendingSends.has(`${S.user.id}:${previous?'case':'direct'}:${previous||peerId}`)){showThreadStatus('Sending… Wait for confirmation before changing reply context.');return}
   const uid=S.user.id,input=$('textarea',form);
   const prevKey=`${uid}:${previous?'case':'direct'}:${previous||peerId}`;
   if(input)threadDrafts.set(prevKey,input.value);
