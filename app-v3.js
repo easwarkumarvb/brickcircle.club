@@ -1127,7 +1127,7 @@ function bcOwnerGallery(item){
         if(document.contains(holder))holder.innerHTML=`<a href="${attr(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open large ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo"><img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy"></a>`;
       }catch(_){holder.textContent='Unable to load this photo'}
     }
-    $('[data-photo-angle]',gallery).forEach(button=>button.onclick=()=>{
+    gallery.querySelectorAll('[data-photo-angle]').forEach(button=>button.onclick=()=>{
       const angle=button.dataset.photoAngle,prior=all.find(p=>p.angle===angle)?.storage_path||'';
       ownerPhotoPicker({title:`Upload ${angle==='front'?'front view':bcAngleNames[angle]} for ${name}`,copy:'Use an actual photo of your assembled set. Show all visible details, including any defects.',saveLabel:'Save photo',onSave:async(file,owner)=>{
         const newPath=await uploadOwnerPhoto(file,owner);
