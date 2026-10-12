@@ -1109,13 +1109,17 @@ async function bcLoadPhotoAngles(itemId){
 }
 function bcOwnerGallery(item){
   if(!S.user||!item||item.user_id!==S.user.id)return;
+  const galleryOwnerId=S.user.id,galleryGeneration=ownerPhotoIdentityGeneration;
   const name=item.lego_sets?.name||item.set_number;
   const o=modal(`<div class="bc-modal-head"><div><h2>${esc(name)} · Photo angles</h2><p class="bc-muted">Share three clear photographs of your actual assembled set: front, side, and rear or detail. Both collectors should inspect the physical set at handoff.</p></div><button class="bc-close" data-close aria-label="Close photo gallery">×</button></div><div class="bc-angle-gallery" id="bc-angle-gallery" aria-live="polite">Loading photos…</div>`);
   $('[data-close]',o).onclick=closeOverlay;
   const gallery=$('#bc-angle-gallery',o);
+  const galleryActive=()=>o.isConnected&&!logoutLocked&&S.user?.id===galleryOwnerId&&ownerPhotoIdentityGeneration===galleryGeneration;
+  overlayDisposer(o,()=>gallery.replaceChildren());
   const refresh=async()=>{
-    if(!document.contains(o))return;
-    let angles;try{angles=await bcLoadPhotoAngles(item.id)}catch(error){gallery.textContent='Unable to read photos. Ensure the gallery migration is applied in this environment.';return}
+    if(!galleryActive())return;
+    let angles;try{angles=await bcLoadPhotoAngles(item.id)}catch(error){if(galleryActive())gallery.textContent='Unable to read photos. Ensure the gallery migration is applied in this environment.';return}
+    if(!galleryActive())return;
     const all=[{angle:'front',storage_path:item.owner_photo_path},...['side','rear'].map(angle=>({angle,storage_path:angles.find(p=>p.angle===angle)?.storage_path||''}))];
     gallery.innerHTML=all.map(p=>`<section class="bc-angle-panel" data-angle-panel="${p.angle}"><h3>${p.angle==='front'?'Front / main photo':bcAngleNames[p.angle]}</h3><div class="bc-angle-preview" data-angle-preview="${p.angle}">Loading photo…</div><button type="button" class="bc-btn" data-photo-angle="${p.angle}">${p.storage_path?'Replace photo':'Add photo'}</button></section>`).join('');
     for(const p of all){
@@ -1124,10 +1128,11 @@ function bcOwnerGallery(item){
       if(!p.storage_path){holder.textContent='Photo not added yet';continue}
       try{
         const url=await signedOwnerPhoto(p.storage_path);
-        if(document.contains(holder))holder.innerHTML=`<a href="${attr(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open large ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo"><img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy"></a>`;
-      }catch(_){holder.textContent='Unable to load this photo'}
+        if(galleryActive()&&holder.isConnected)holder.innerHTML=`<a href="${attr(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open large ${p.angle==='front'?'front':bcAngleNames[p.angle]} photo"><img src="${attr(url)}" alt="${p.angle==='front'?'Front':bcAngleNames[p.angle]} photo of your assembled set" loading="lazy"></a>`;
+      }catch(_){if(galleryActive())holder.textContent='Unable to load this photo'}
     }
     gallery.querySelectorAll('[data-photo-angle]').forEach(button=>button.onclick=()=>{
+      if(!galleryActive())return;
       const angle=button.dataset.photoAngle,prior=all.find(p=>p.angle===angle)?.storage_path||'';
       ownerPhotoPicker({title:`Upload ${angle==='front'?'front view':bcAngleNames[angle]} for ${name}`,copy:'Use an actual photo of your assembled set. Show all visible details, including any defects.',saveLabel:'Save photo',onSave:async(file,owner)=>{
         const newPath=await uploadOwnerPhoto(file,owner);
