@@ -9,7 +9,16 @@ const extension=`
 const config=window.__readModelConfig;
 const originalRpc=db.rpc,originalFrom=db.from;
 const readState=window.__readModel={config,calls:[],legacyReads:[]};
-db.from=table=>{if(['messages','exchange_case_messages','exchange_case_events'].includes(table))readState.legacyReads.push(table);return originalFrom(table)};
+db.from=table=>{
+ const query=originalFrom(table);
+ if(['messages','exchange_case_messages','exchange_case_events'].includes(table)){
+  const record={table,limit:null,scope:null};readState.legacyReads.push(record);
+  const limit=query.limit,or=query.or;
+  query.limit=value=>{record.limit=value;return limit.call(query,value)};
+  query.or=value=>{record.scope=value;return or.call(query,value)};
+ }
+ return query;
+};
 const tuple=row=>[row.occurred_at,row.source_type,row.source_id];
 const compare=(a,b)=>JSON.stringify(a).localeCompare(JSON.stringify(b));
 db.rpc=async(name,args)=>{
@@ -79,7 +88,10 @@ test('server unread remains authoritative until a validated visible feed cursor 
 for(const name of ['list_collector_conversations','collector_conversation_feed'])test(`${name} authorization failure fails closed without legacy downgrade`,async({page})=>{
  await open(page,{errors:{[name]:{code:'42501',message:'Not authorized'}}},name==='collector_conversation_feed'?'messages/direct:'+B:'messages');
  await expect(page.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();await expect(page.locator('#bc-msg-form')).toHaveCount(0);
- expect(await page.evaluate(()=>(window as any).__readModel.legacyReads.filter((table:string)=>table==='messages').length)).toBe(0);
+ // Account boot hydration remains bounded at 100; denied conversation RPCs
+ // must never downgrade to the legacy inbox scan or direct thread history.
+ const reads=await page.evaluate(()=>(window as any).__readModel.legacyReads.filter((q:any)=>q.table==='messages'));
+ expect(reads.filter((q:any)=>q.limit!==100)).toEqual([]);
 });
 
 test('a transient feed refresh keeps known messages and unsent composer draft',async({page})=>{

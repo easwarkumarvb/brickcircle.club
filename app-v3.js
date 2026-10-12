@@ -1693,13 +1693,15 @@ async function hydrateCollectorCases(uid,peerIds,caseIds,token){
   const index=messageIndex(uid),scope=`user_a.eq.${uid},user_b.eq.${uid}`;
   const queries=[];
   if(peerIds.length)queries.push(db.from('exchange_cases').select('*').or(scope).or(`user_a.in.(${peerIds.join(',')}),user_b.in.(${peerIds.join(',')})`).not('state','in',`(${[...terminalCaseStates].join(',')})`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(201));
-  if(caseIds.length)queries.push(db.from('exchange_cases').select('*').or(scope).in('id',caseIds));
+  const uniqueCaseIds=[...new Set(caseIds)];
+  for(let offset=0;offset<uniqueCaseIds.length;offset+=100)queries.push(db.from('exchange_cases').select('*').or(scope).in('id',uniqueCaseIds.slice(offset,offset+100)).limit(100));
   const results=await Promise.all(queries.map(query=>settledTimeout(query,10000)));
   if(S.user?.id!==uid||S.renderToken!==token)return false;
   const denied=results.find(result=>collectorReadDenied(result.error));if(denied){index.cases.clear();throw denied.error}
   index.caseFresh=!results.some(result=>result.error);if(!index.caseFresh){index.partial=true;return false}
   if(peerIds.length&&results[0]?.data?.length===201){index.caseOverflow=true;index.partial=true}
   const cases=results.flatMap(result=>result.data||[]).filter(row=>[row.user_a,row.user_b].includes(uid));
+  const returnedCaseIds=new Set(cases.map(row=>row.id));uniqueCaseIds.forEach(id=>{if(!returnedCaseIds.has(id))index.cases.delete(id)});
   cases.forEach(row=>{const prior=index.cases.get(row.id);index.cases.set(row.id,{kind:'case',caseId:row.id,case:row,messages:prior?.messages||[],events:prior?.events||[],stamp:new Date(row.updated_at||row.created_at).getTime()})});
   return !!await hydrateExchangeItems(cases,()=>S.user?.id===uid&&S.renderToken===token);
 }
@@ -1731,12 +1733,15 @@ async function loadMessageIndex(uid,token,older=false){
   if(!Array.isArray(result.data))throw new Error('Conversation summary unavailable.');
   index.readModel=true;index.summaries??=new Map();index.feeds??=new Map();index.partial=false;
   const rows=result.data.filter(row=>row.peer_id&&row.peer_id!==uid);
+  if(!older){const floor=rows.at(-1),compare=(a,b)=>new Date(a.last_at).getTime()-new Date(b.last_at).getTime()||(String(a.peer_id)<String(b.peer_id)?-1:String(a.peer_id)>String(b.peer_id)?1:0);index.summaries.forEach((row,id)=>{if(result.data.length<30||!floor||compare(row,floor)>=0)index.summaries.delete(id)})}
   rows.forEach(row=>index.summaries.set(row.peer_id,row));
-  if(older||!index.inboxCursor){index.inboxCursor=rows.at(-1)||null;index.inboxHasOlder=rows.length===30}
+  if(older||!index.inboxCursor||(!older&&result.data.length<30)){index.inboxCursor=rows.at(-1)||null;index.inboxHasOlder=rows.length===30}
   index.loadedAt=Date.now();
   const peers=rows.map(row=>row.peer_id),missing=peers.filter(id=>!S.profiles[id]);
   if(missing.length){const profiles=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',missing),10000);if(S.user?.id!==uid||S.renderToken!==token)return null;if(collectorReadDenied(profiles.error))throw profiles.error;if(profiles.error)index.partial=true;(profiles.data||[]).forEach(row=>S.profiles[row.id]=row)}
-  const visibleCaseIds=[collectorFocus?.caseId,collectorFocus?.replyCaseId].filter(Boolean);
+  const visiblePeers=new Set(peers);if(collectorFocus?.uid===uid)visiblePeers.add(collectorFocus.peerId);
+  const activeLoadedCaseIds=[...index.cases.values()].filter(group=>group.case&&visiblePeers.has(otherId(group.case))&&!terminalCaseStates.has(group.case.state)).map(group=>group.caseId);
+  const visibleCaseIds=[...activeLoadedCaseIds,collectorFocus?.uid===uid?collectorFocus.caseId:null,collectorFocus?.uid===uid?collectorFocus.replyCaseId:null].filter(Boolean);
   await hydrateCollectorCases(uid,peers,visibleCaseIds,token);
   return index;
 }
@@ -1751,7 +1756,7 @@ async function loadCollectorFeed(peerId,uid,token,older=false){
   const incoming=result.data.filter(row=>{if(!['direct_message','case_message','case_event'].includes(row.source_type)||!row.source_id||!Number.isFinite(new Date(row.occurred_at).getTime())||!row.payload||row.payload.id!==row.source_id)return false;if(row.source_type==='case_event')return !!row.case_id&&row.payload.case_id===row.case_id;if(row.source_type==='case_message'&&(!row.case_id||row.payload.case_id!==row.case_id))return false;if(row.source_type==='direct_message'&&(row.case_id||row.payload.exchange_id!=null))return false;const m=row.payload;return m.id===row.source_id&&((m.sender_id===uid&&m.recipient_id===peerId)||(m.sender_id===peerId&&m.recipient_id===uid))});
   const priorRows=older?feed.rows:result.data.length<50?[]:feed.rows.filter(row=>incoming.length&&collectorFeedCompare(row,incoming.at(-1))<0);
   const rows=new Map(priorRows.map(row=>[collectorFeedKey(row),row]));incoming.forEach(row=>rows.set(collectorFeedKey(row),row));
-  feed.rows=[...rows.values()].sort(collectorFeedCompare);if(older||!index.feeds.has(peerId)){feed.hasOlder=result.data.length===50;feed.cursor=result.data.at(-1)||null}
+  feed.rows=[...rows.values()].sort(collectorFeedCompare);if(older||!index.feeds.has(peerId)||(!older&&result.data.length<50)){feed.hasOlder=result.data.length===50;feed.cursor=result.data.at(-1)||null}
   index.feeds.set(peerId,feed);
   return hydrateCollectorCases(uid,[peerId],[...new Set(incoming.map(row=>row.case_id).filter(Boolean))],token);
 }
@@ -1864,7 +1869,7 @@ async function markCollectorDisplayedRead(peerId,uid){
   try{
     const result=await settledTimeout(db.rpc('mark_collector_conversation_read',{p_peer_id:peerId,p_through_at:row.occurred_at,p_through_type:row.source_type,p_through_id:row.source_id}),10000);
     if(S.user?.id!==uid||S.renderToken!==token)return;
-    if(result.error){index.partial=true;if(collectorReadDenied(result.error))renderMessagesUnavailable('Conversation access could not be verified.');return}
+    if(result.error){index.partial=true;if(collectorReadDenied(result.error)){index.feeds?.delete(peerId);renderMessagesUnavailable('Conversation access could not be verified.')}return}
     feed.readTuple=collectorFeedKey(row)+row.occurred_at;
     await loadMessageIndex(uid,token);if(S.user?.id===uid&&S.renderToken===token)renderMessagesListPane();
   }catch(error){index.partial=true}finally{feed.marking=false}
@@ -2503,6 +2508,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   if(!peer)return renderMessagesUnavailable('This collector could not be found or no longer has a public profile.');
   await indexPromise;
   if(!current())return;
+  if(indexFailure){threadCaches.direct.clear();threadCaches.case.clear();return renderMessagesUnavailable('Conversation access could not be verified. Please retry.',()=>renderDirectThread(S.renderToken,peerId,focusedCase,focusedMessage))}
   const {data:rows,error:messageError}=messageIndexByUid.get(uid)?.readModel===true?{data:[],error:null}:await settledTimeout(threadLatestQuery('direct',peerId,uid),10000);
   if(!current())return;
   if(messageError&&['42501','PGRST301','PGRST302'].includes(messageError.code)){threadCaches.direct.clear();threadCaches.case.clear();messageIndexByUid.get(uid)?.direct.clear();messageIndexByUid.get(uid)?.cases.clear();return renderMessagesUnavailable('Conversation access could not be verified. Please retry.',()=>renderDirectThread(S.renderToken,peerId,focusedCase,focusedMessage))}
@@ -2510,7 +2516,9 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   if(!current())return;
   if(indexFailure){threadCaches.direct.clear();threadCaches.case.clear();return renderMessagesUnavailable('Conversation access could not be verified. Please retry.',()=>renderDirectThread(S.renderToken,peerId,focusedCase,focusedMessage))}
   if(focusedCase&&messageIndexByUid.get(uid)?.readModel===true){const details=await settledTimeout(db.from('exchange_cases').select('*').eq('id',focusedCase).maybeSingle(),10000);if(!current())return;const e=details.data;if(details.error||!e||![e.user_a,e.user_b].includes(uid)||otherId(e)!==peerId)return renderMessagesUnavailable('Conversation unavailable.');messageIndex(uid).cases.set(e.id,{kind:'case',caseId:e.id,case:e,messages:[],events:[]});await hydrateExchangeItems([e],current)}
-  const eventsAvailable=await loadCollectorEvents(peerId,uid,token),partial=!!messageError||!eventsAvailable||!!messageIndexByUid.get(uid)?.partial;
+  let eventsAvailable=false;
+  try{eventsAvailable=await loadCollectorEvents(peerId,uid,token)}catch(error){if(!current())return;if(collectorReadDenied(error)){threadCaches.direct.clear();threadCaches.case.clear();messageIndexByUid.get(uid)?.feeds?.delete(peerId);return renderMessagesUnavailable('Conversation access could not be verified. Please retry.',()=>renderDirectThread(S.renderToken,peerId,focusedCase,focusedMessage))}messageIndex(uid).partial=true}
+  const partial=!!messageError||!eventsAvailable||!!messageIndexByUid.get(uid)?.partial;
   if(messageError&&messageIndexByUid.has(uid))messageIndexByUid.get(uid).partial=true;
   if(focusedCase&&focusedMessage&&messageIndexByUid.get(uid)?.readModel===true){const result=await settledTimeout(db.from('exchange_case_messages').select('*').eq('case_id',focusedCase).eq('id',focusedMessage).maybeSingle(),10000);if(!current())return;const m=result.data,e=messageIndex(uid).cases.get(focusedCase)?.case;if(result.error||!m||!e||m.case_id!==focusedCase||m.sender_id===m.recipient_id||![e.user_a,e.user_b].includes(m.sender_id)||![e.user_a,e.user_b].includes(m.recipient_id))return renderMessagesUnavailable('Conversation message unavailable.');const feed=messageIndex(uid).feeds.get(peerId);if(feed&&!feed.rows.some(row=>row.source_type==='case_message'&&row.source_id===m.id)){feed.rows.push({occurred_at:m.created_at,source_type:'case_message',source_id:m.id,case_id:m.case_id,payload:m});feed.rows.sort(collectorFeedCompare)}}
   if(focusedCase)await loadCollectorOverdue(focusedCase,uid,token);
