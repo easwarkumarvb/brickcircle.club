@@ -2,7 +2,7 @@
 
 Candidate: `7d84652903b176d69bfd09e2f59f3c3ec785d1a3`. Product draft: https://github.com/easwarkumarvb/brickcircle.club/pull/138.
 
-The separate staging runner proposal targets trusted main and never includes the product implementation. Existing PR125 runners and their pins remain unchanged. The new runner cannot execute from this proposal branch: main dispatch and protected-environment review are mandatory. No merge, deployment, production migration or policy relaxation is authorized. An infrastructure merge also needs deployment controls checked so that it does not trigger a production deployment.
+The separate staging runner proposal targets trusted main and never includes the product implementation. Existing PR125 runners and their pins remain unchanged. The new runner cannot execute from this proposal branch: main dispatch and protected-environment review are mandatory. No merge, deployment, production migration or policy relaxation is authorized. This reviewable proposal also sets `git.deploymentEnabled.main=false` in `vercel.json` so that an approved infrastructure merge cannot automatically deploy production. It disables future automatic main deployments too; re-enabling them or manually deploying requires separate owner approval.
 
 The additive conversation migration was applied only to `brickcircle-exchange-staging-20260924` (`tteyypklldgwwicrgjzt`) on 12 October 2026. Its table RLS and anonymous denials were verified. Supabase security advisors reported no new conversation findings; existing unrelated advisor notices remain. This is not browser or Realtime certification.
 
