@@ -61,5 +61,10 @@
         }
       ]
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "qa/pr138-hosted-runner": false
+    }
+  }
 }
