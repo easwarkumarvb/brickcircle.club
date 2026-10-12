@@ -7,7 +7,9 @@ async function open(page:any,route='messages/case:guide-case',state='PROPOSED'){
  const database={profiles:[{id:A,display_name:'Easwar'},{id:B,display_name:'Ramya'}].map(p=>({...p,email:p.id+'@example.invalid',country:'India',city:'Bengaluru',adult_confirmed_at:stamp,created_at:stamp})),collection:[{id:'item-a',user_id:A,set_number:'42172-1'},{id:'item-b',user_id:B,set_number:'42143-1'}],wishlist:[],exchanges:[{id:'guide-case',user_a:A,user_b:B,proposer_id:A,recipient_id:B,item_a:'item-a',item_b:'item-b',duration_days:60,state,state_version:5,created_at:stamp,updated_at:stamp}],events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
  await page.addInitScript(({database}:any)=>{localStorage.setItem('bc_three_user_actor','easwar');localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1')},{database});
  await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',(r:any)=>r.fulfill({contentType:'application/javascript',body:mock}));
+ const errors:string[]=[];page.on('pageerror',(error:Error)=>errors.push(error.message));page.on('console',(message:any)=>{if(message.type()==='error')errors.push(message.text())});
  await page.goto('/v2.html?isolated=three-user#'+route);
+ if(await page.getByRole('heading',{name:'BrickCircle could not start'}).isVisible())throw Error('App boot error: '+errors.join(' | '));
 }
 test('opening a case does not silently redirect the composer',async({page})=>{
  await page.setViewportSize({width:390,height:844});await open(page);
