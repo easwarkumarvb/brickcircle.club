@@ -71,3 +71,26 @@ test('refresh keeps an explicitly selected case reply and its unsent draft',asyn
  await page.getByRole('button',{name:'Reply about this exchange'}).click();
  await expect(input).toHaveValue('Waiting to send this to the exchange');
 });
+
+test('unsent normal-chat draft survives reload and is erased on sign-out',async({page})=>{
+ await open(page,'messages/direct:'+B);
+ const input=page.locator('#bc-msg-form textarea');
+ await input.fill('Saved in this tab only');
+ await page.reload();
+ await expect(input).toHaveValue('Saved in this tab only');
+ const countBefore=await page.evaluate(()=>Object.keys(sessionStorage).filter(k=>k.startsWith('bc:draft:tab:v1:')).length);
+ expect(countBefore).toBeGreaterThan(0);
+ await page.evaluate(()=>window.BC_SUPABASE.auth.signOut());
+ await expect.poll(()=>page.evaluate(()=>Object.keys(sessionStorage).filter(k=>k.startsWith('bc:draft:tab:v1:')).length)).toBe(0);
+});
+test('conversation search locates the collector by name and retains input focus',async({page})=>{
+ await open(page,'messages');
+ const field=page.locator('#bc-conversation-search');
+ await expect(field).toBeVisible();
+ await field.fill('Ram');
+ await expect(field).toHaveValue('Ram');
+ await expect(page.locator('.bc-msg-row')).toHaveCount(1);
+ await field.fill('No such collector');
+ await expect(page.locator('.bc-msg-row')).toHaveCount(0);
+ await expect(field).toBeFocused();
+});
