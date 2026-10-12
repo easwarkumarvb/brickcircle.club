@@ -34,7 +34,7 @@ for(const [i,[state,patch,a,b]] of stages.entries())for(const [actor,action] of 
     else if(state==='COMPLETED')await expect(primary).toHaveAttribute('data-thread-case-action','review');
     else await expect(primary).toHaveCount(0);
     await expect(guide).toContainText(['COMPLETED','CANCELLED'].includes(state)?'Closed':action?'Your turn':'Waiting for partner');
-    if(['COMPLETED','CANCELLED'].includes(state))await expect(page.locator('#bc-msg-form')).toBeHidden();
+    if(['COMPLETED','CANCELLED'].includes(state)){await expect(page.locator('#bc-msg-form')).toBeVisible();await expect(page.locator('#bc-msg-form')).toHaveAttribute('data-bc-compose-kind','direct')}
     if(state==='MEETUP_PLANNING'||state==='RETURN_PLANNING')await expect(guide).toContainText('Public Library');
   });
 }
@@ -343,8 +343,9 @@ for(const switchAccount of [false,true])test(`late collector refresh respects ${
 });
 test('collector case selector focuses exact case, and reconnect preserves draft',async({page})=>{
   await page.setViewportSize({width:390,height:844});await open(page,'easwar','PROPOSED',{},'messages/direct:'+B);
-  await page.locator('#bc-case-destination').selectOption('guide-case');
-  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:guide-case');
+  await page.locator('[data-focus-case="guide-case"]').click();
+  await expect(page.locator('[data-focus-case="guide-case"]')).toHaveAttribute('aria-pressed','true');
+  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/direct:'+B);
   await expect(page.getByRole('region',{name:'Exchange next step'})).toBeVisible();
   await expect(page.locator('.bc-conversation-guide')).toContainText('Waiting for their reply');
   const input=page.locator('#bc-msg-form textarea');await input.fill('Keep my draft');

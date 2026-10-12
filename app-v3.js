@@ -604,7 +604,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;collectorComposeContext=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();clearStoredThreadDrafts();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -719,6 +719,17 @@ function applyNotificationChange(payload){
   }
   updateNotificationBadge();
   if(payload.eventType==='INSERT'&&!row.read_at){if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');else showLifecycleNotification(row)}
+  // Supabase recipient-scoped notification is a wake-up signal, not a trusted chat payload.
+  if(payload.eventType==='INSERT'&&collectorFocus?.uid===S.user?.id&&routeName()==='messages'){
+    const actor=row.actor_user_id||row.metadata?.actor_user_id||row.sender_id;
+    const caseId=notificationExchangeId(row);
+    const matchingCase=caseId&&messageIndexByUid.get(S.user.id)?.cases.get(caseId)?.case;
+    if(actor===collectorFocus.peerId||(matchingCase&&otherId(matchingCase)===collectorFocus.peerId)){
+      const chat=$('#bc-msg-chat');
+      if(chat?.bcThread?.refreshing)chat.bcThread.refreshAgain=true;
+      else Promise.resolve().then(()=>syncVisibleThread());
+    }
+  }
 }
 async function reconcileNotifications(){
   const epoch=authEpoch,uid=S.user?.id;if(!uid||logoutLocked||explicitLogout)return;
@@ -1230,8 +1241,8 @@ async function renderExchanges(token,legacy='exchanges'){
   if(!S.user){showAuth();return navigate('home')}await hydrateExchangeItems();if(token!==S.renderToken||logoutLocked)return;if(legacy==='requests'||routeId())S.exchangeTab='requests';if(legacy==='returns'||legacy==='meetup')S.exchangeTab='active';
   const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();page(`<div class="bc-page-head"><div><h1>Exchanges</h1><p>Every exchange shows one clear stage and the next action to keep it moving.</p></div><div class="bc-head-actions">${active.length?pill(`${active.length} active`,'green'):''}${pending.length?pill(`${pending.length} needs attention`,'gold'):''}</div></div><div class="bc-tabs"><button class="bc-tab ${S.exchangeTab==='active'?'active':''}" data-extab="active">Active · ${active.length}</button><button class="bc-tab ${S.exchangeTab==='requests'?'active':''}" data-extab="requests">Needs action · ${pending.length}</button><button class="bc-tab ${S.exchangeTab==='completed'?'active':''}" data-extab="completed">Past · ${history.length}</button></div><div id="bc-exchange-body"></div>`);$$('[data-extab]').forEach(b=>b.onclick=()=>{S.exchangeTab=b.dataset.extab;renderExchangeBody()});renderExchangeBody();
 }
-function renderExchangeBody(){const host=$('#bc-exchange-body');if(!host)return;const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();if(S.exchangeTab==='requests'){host.innerHTML=pending.length?`<div class="bc-exchange-list">${pending.map(requestCard).join('')}</div>`:empty('📨','No pending proposals','New proposals you send or receive will appear here.','Find matches','matches');$$('[data-request-action]',host).forEach(b=>b.onclick=()=>respondRequest(b.dataset.requestId,b.dataset.requestAction))}else if(S.exchangeTab==='completed'){host.innerHTML=history.length?`<div class="bc-exchange-list">${history.map(exchangeCard).join('')}</div>`:empty('✓','No exchange history yet','Completed and closed exchange cases remain visible here.','Find a match','matches')}else{host.innerHTML=active.length?`<div class="bc-exchange-list">${active.map(exchangeCard).join('')}</div>`:empty('🤝','No active exchanges','Accept a reciprocal proposal and your meetup → handoff → return journey will live here.','See matches','matches')}$$('[data-exchange]',host).forEach(b=>b.onclick=()=>navigate('exchange',b.dataset.exchange));bindCommon(host)}
-function requestCard(r){const incoming=r.recipient_id===S.user.id,other=otherId(r),p=S.profiles[other]||{},offer=itemName(r.item_a),want=itemName(r.item_b),focused=routeId()===r.id;return `<article class="bc-card bc-pad bc-request" data-request-card="${attr(r.id)}" ${focused?'style="outline:3px solid #f3c623;outline-offset:2px"':''}><div><div>${pill(incoming?'Incoming proposal':'Proposal sent',incoming?'gold':'blue')}</div><h3>${esc(offer)} ⇄ ${esc(want)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${r.duration_days} days · responds by ${fmtDateTime(r.response_deadline)}</div>${r.opening_message?`<div class="bc-notice" style="margin-top:10px">${esc(r.opening_message)}</div>`:''}</div><div class="bc-request-actions">${incoming?`<button class="bc-btn primary" data-request-action="accept" data-request-id="${r.id}">Accept</button><button class="bc-btn" data-request-action="decline" data-request-id="${r.id}">Decline</button><button class="bc-btn" data-request-action="counter" data-request-id="${r.id}">Counter</button>`:`<button class="bc-btn danger" data-request-action="withdraw" data-request-id="${r.id}">Withdraw proposal</button>`}<button class="bc-btn" data-exchange="${r.id}">Open case</button></div></article>`}
+function renderExchangeBody(){const host=$('#bc-exchange-body');if(!host)return;const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();if(S.exchangeTab==='requests'){host.innerHTML=pending.length?`<div class="bc-exchange-list">${pending.map(requestCard).join('')}</div>`:empty('📨','No pending proposals','New proposals you send or receive will appear here.','Find matches','matches');$$('[data-request-action]',host).forEach(b=>b.onclick=()=>respondRequest(b.dataset.requestId,b.dataset.requestAction))}else if(S.exchangeTab==='completed'){host.innerHTML=history.length?`<div class="bc-exchange-list">${history.map(exchangeCard).join('')}</div>`:empty('✓','No exchange history yet','Completed and closed exchange cases remain visible here.','Find a match','matches')}else{host.innerHTML=active.length?`<div class="bc-exchange-list">${active.map(exchangeCard).join('')}</div>`:empty('🤝','No active exchanges','Accept a reciprocal proposal and your meetup → handoff → return journey will live here.','See matches','matches')}$$('[data-exchange]',host).forEach(b=>b.onclick=()=>navigate('messages',`case:${b.dataset.exchange}`));bindCommon(host)}
+function requestCard(r){const incoming=r.recipient_id===S.user.id,other=otherId(r),p=S.profiles[other]||{},offer=itemName(r.item_a),want=itemName(r.item_b),focused=routeId()===r.id;return `<article class="bc-card bc-pad bc-request" data-request-card="${attr(r.id)}" ${focused?'style="outline:3px solid #f3c623;outline-offset:2px"':''}><div><div>${pill(incoming?'Incoming proposal':'Proposal sent',incoming?'gold':'blue')}</div><h3>${esc(offer)} ⇄ ${esc(want)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${r.duration_days} days · responds by ${fmtDateTime(r.response_deadline)}</div>${r.opening_message?`<div class="bc-notice" style="margin-top:10px">${esc(r.opening_message)}</div>`:''}</div><div class="bc-request-actions">${incoming?`<button class="bc-btn primary" data-request-action="accept" data-request-id="${r.id}">Accept</button><button class="bc-btn" data-request-action="decline" data-request-id="${r.id}">Decline</button><button class="bc-btn" data-request-action="counter" data-request-id="${r.id}">Counter</button>`:`<button class="bc-btn danger" data-request-action="withdraw" data-request-id="${r.id}">Withdraw proposal</button>`}<button class="bc-btn" data-exchange="${r.id}">Open conversation</button></div></article>`}
 async function respondRequest(id,action){
   const btn=$(`[data-request-id="${CSS.escape(id)}"][data-request-action="${action}"]`);
   const original=btn?.textContent||'';
@@ -1260,13 +1271,13 @@ async function respondRequest(id,action){
     S.exchangeTab='active';
     toast('Exchange accepted. Plan a safe meetup next.');
     track('exchange_request_accepted',{case_id:id});
-    return navigate('exchange',id);
+    return navigate('messages',`case:${id}`);
   }
   renderExchangeBody();
 }
 function showCounterProposal(exchange){const o=caseFormSurface(`<div class="bc-modal-head"><div><h2>Counterproposal</h2><p class="bc-muted">Update the duration without creating another exchange case.</p></div><button class="bc-close" data-close>×</button></div><form class="bc-form" id="bc-counter"><div class="bc-field"><label>Temporary exchange period</label><select class="bc-select" name="days">${[30,60,90].map(days=>`<option value="${days}" ${days===exchange.duration_days?'selected':''}>${days} days</option>`).join('')}</select></div><div class="bc-field"><label>Message</label><textarea class="bc-textarea" name="message">${esc(exchange.opening_message||'')}</textarea></div><button type="submit" class="bc-btn primary">Send counterproposal</button></form>`);const current=caseFormCurrent(o);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-counter',o).onsubmit=async event=>{event.preventDefault();if(!current())return;const form=new FormData(event.currentTarget),button=$('button[type="submit"]',event.currentTarget),payload={duration_days:Number(form.get('days')),message:String(form.get('message')||'')},intent={case_id:exchange.id,version:exchange.state_version,action:'counter',payload};if(button.disabled)return;button.disabled=true;const {error}=await canonicalRpc('exchange_case_transition',{p_case_id:exchange.id,p_expected_version:exchange.state_version,p_action:'counter',p_payload:payload},intent);if(!current())return;if(error){button.disabled=false;return fail(error,'Could not send the counterproposal.')}closeOverlay();await refreshCore();if(!current(false))return;messagesThreadGuard('case',exchange.id)?await reloadCaseView(exchange.id):navigate('exchange',exchange.id);toast('Counterproposal sent in the same exchange case.')}}
 function exchangeStageLabel(e){return {PROPOSED:'Proposal pending',ACCEPTED:'Plan meetup',MEETUP_PLANNING:'Review meetup',MEETUP_CONFIRMED:'Safety checklist',INSPECTION:'Meet and inspect',HANDOFF_PENDING:'Confirm handoff',HANDOFF_ISSUE:'Legacy custody review',ACTIVE:e.return_due_at&&new Date(e.return_due_at)<new Date()?'Return overdue':'Temporary exchange active',EARLY_RETURN:'Early return requested',RETURN_PLANNING:'Plan return',RETURN_INSPECTION:'Inspect returned sets',DISPUTED:'Legacy issue',DECLINED:'Declined',WITHDRAWN:'Withdrawn',EXPIRED:'Expired',CANCELLED:'Cancelled',COMPLETED:'Completed'}[e.state]||'In progress'}
-function exchangeCard(e){const p=otherProfile(e),a=itemName(e.item_a),b=itemName(e.item_b),stage=stageForExchange(e),closed=terminalCaseStates.has(e.state),next=caseNextAction(e);return `<article class="bc-card bc-ex-card"><div class="bc-ex-top"><div><span class="bc-pill ${e.state==='DISPUTED'||e.state==='HANDOFF_ISSUE'?'red':e.state==='COMPLETED'?'green':e.state==='ACTIVE'?'blue':'gold'}">${esc(exchangeStageLabel(e))}</span><h3>${esc(a)} ⇄ ${esc(b)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${e.duration_days} days${e.return_due_at?` · return ${fmtDate(e.return_due_at)}`:''}</div></div><button class="bc-btn ${closed?'':'primary'}" data-exchange="${e.id}">${closed?'View history':'Continue →'}</button></div>${closed?'':`<div class="bc-ex-next"><span>Next</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>`}<div class="bc-ex-progress">${[1,2,3,4,5].map(n=>`<i class="bc-ex-step ${n<stage?'done':n===stage?'current':''}"></i>`).join('')}</div><div class="bc-small">Proposal → Meetup → Handoff → Experience → Return</div></article>`}
+function exchangeCard(e){const p=otherProfile(e),a=itemName(e.item_a),b=itemName(e.item_b),stage=stageForExchange(e),closed=terminalCaseStates.has(e.state),next=caseNextAction(e);return `<article class="bc-card bc-ex-card"><div class="bc-ex-top"><div><span class="bc-pill ${e.state==='DISPUTED'||e.state==='HANDOFF_ISSUE'?'red':e.state==='COMPLETED'?'green':e.state==='ACTIVE'?'blue':'gold'}">${esc(exchangeStageLabel(e))}</span><h3>${esc(a)} ⇄ ${esc(b)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · ${e.duration_days} days${e.return_due_at?` · return ${fmtDate(e.return_due_at)}`:''}</div></div><button class="bc-btn ${closed?'':'primary'}" data-exchange="${e.id}">${closed?'View conversation history':'Continue in chat →'}</button></div>${closed?'':`<div class="bc-ex-next"><span>Next</span><strong>${esc(next.label||exchangeStageLabel(e))}</strong><small>${esc(next.copy)}</small></div>`}<div class="bc-ex-progress">${[1,2,3,4,5].map(n=>`<i class="bc-ex-step ${n<stage?'done':n===stage?'current':''}"></i>`).join('')}</div><div class="bc-small">Proposal → Meetup → Handoff → Experience → Return</div></article>`}
 
 async function renderExchangeDetail(id,token){
   const epoch=authEpoch,uid=S.user?.id,current=()=>epoch===authEpoch&&token===S.renderToken&&!logoutLocked&&S.user?.id===uid;
@@ -1519,9 +1530,11 @@ function showNotifications(){
 /* --- Messages: conversation list + direct/case threads --- */
 let collectorFocus=null;
 function messagesThreadGuard(kind,id){
-  if(!S.user||routeName()!=='messages')return false;
-  if(routeId()===`${kind}:${id}`||(kind==='case'&&routeId().startsWith(`case:${id}:message:`)))return true;
-  return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct';
+  if(!S.user||routeName()!=='messages'||!collectorFocus||collectorFocus.uid!==S.user.id)return false;
+  if(kind==='direct')return collectorFocus.peerId===id;
+  if(kind!=='case'||collectorFocus.caseId!==id)return false;
+  const e=messageIndexByUid.get(S.user.id)?.cases.get(id)?.case;
+  return !!e&&[e.user_a,e.user_b].includes(S.user.id)&&otherId(e)===collectorFocus.peerId;
 }
 function parseMessagesTarget(){
   const raw=routeId(),separator=raw.indexOf(':');
@@ -1538,6 +1551,7 @@ const MESSAGE_INDEX_PAGE_SIZE=100;
 const messageIndexByUid=new Map();
 let messageIndexUid=null;
 let messagesFilter='all';
+let messagesSearch='';
 const watermarkPrefix='brickcircle:messages:seen:';
 function messageIndex(uid){
   if(messageIndexUid!==uid){messageIndexByUid.clear();messageIndexUid=uid}
@@ -1696,6 +1710,7 @@ function filteredConversationGroups(){
   index.direct.forEach(group=>add(group.peerId,group));
   index.cases.forEach(group=>{const e=group.case;if(e)add(otherId(e),group)});
   let groups=[...peers.values()];
+  if(messagesSearch.trim())groups=groups.filter(group=>(S.profiles[group.peerId]?.display_name||'Collector').toLocaleLowerCase().includes(messagesSearch.trim().toLocaleLowerCase()));
   if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
   if(messagesFilter==='exchanges')groups=groups.filter(group=>group.cases.length>0);
   if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
@@ -1726,7 +1741,7 @@ function messagesListPaneMarkup(){
   const uid=S.user?.id,groups=filteredConversationGroups(),route=parseMessagesTarget();
   const selected=route?.kind==='direct'?`peer:${route.peerId}`:route?.kind==='case'?`peer:${otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{})}`:'';
   const count=groups.length;
-  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
+  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small" data-collector-count>${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div><label class="bc-msg-search-label">Find a collector<input class="bc-input bc-msg-search" type="search" data-message-search autocomplete="off" placeholder="Search by name" value="${attr(messagesSearch)}"></label>${messagesFilterBarMarkup()}<div class="bc-msg-rows">${groups.length?groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join(''):'<p class="bc-small">No matching conversations. Try another name or filter.</p>'}</div>`;
 }
 function reconcileMessageIndex(uid,kind,id){
   const index=messageIndex(uid);
@@ -1777,6 +1792,18 @@ function renderMessagesListPane(){
   updateMessageBadge();
 }
 function bindMessagesListPane(root=app()){
+  const search=$('[data-message-search]',root);
+  if(search)search.oninput=()=>{
+    messagesSearch=search.value;
+    const groups=filteredConversationGroups(),uid=S.user?.id,route=parseMessagesTarget();
+    const selected=route?.kind==='direct'?route.peerId:route?.kind==='case'?otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{}):'';
+    const rows=$('.bc-msg-rows',root);
+    if(rows){
+      rows.innerHTML=groups.length?groups.map(group=>messageRow(group,uid,group.peerId===selected)).join(''):'<p class="bc-small">No matching conversations. Try another name or filter.</p>';
+      $$('[data-message-open]',rows).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
+    }
+    const count=$('[data-collector-count]',root);if(count)count.textContent=groups.length+' collectors';
+  };
   $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
   $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
   $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
@@ -1822,6 +1849,26 @@ const DIRECT_THREAD_FALLBACK='No messages yet. Say hello and arrange your first 
 const CASE_THREAD_FALLBACK='No messages yet. Keep meetup, handoff, return and issue details here.';
 const threadCaches={direct:new Map(),case:new Map()};
 const threadDrafts=new Map();
+const BC_DRAFT_PREFIX='brickcircle:chat-draft:';
+function threadDraft(key){
+  if(threadDrafts.has(key))return threadDrafts.get(key);
+  try{
+    const record=JSON.parse(sessionStorage.getItem(BC_DRAFT_PREFIX+key)||'null');
+    if(record&&typeof record.body==='string'&&record.body.length<=4000&&Date.now()-record.savedAt<86400000){
+      threadDrafts.set(key,record.body);return record.body;
+    }
+  }catch(_){}
+  return '';
+}
+function saveThreadDraft(key,body){
+  const value=String(body||'').slice(0,4000);
+  if(!value){threadDrafts.delete(key);try{sessionStorage.removeItem(BC_DRAFT_PREFIX+key)}catch(_){};return}
+  threadDrafts.set(key,value);
+  try{sessionStorage.setItem(BC_DRAFT_PREFIX+key,JSON.stringify({body:value,savedAt:Date.now()}))}catch(_){}
+}
+function clearStoredThreadDrafts(){
+  try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(BC_DRAFT_PREFIX))sessionStorage.removeItem(key)}}catch(_){}
+}
 const pendingSends=new Map();
 let threadCacheUid=null;
 function threadCache(kind,id,uid){
@@ -1899,7 +1946,7 @@ function collectorTimelineMarkup(peerId,uid){
     const row=m||event||snapshot,createdAt=snapshot?(snapshot.updated_at||snapshot.created_at):row.created_at,next=new Date(createdAt).toDateString();
     if(day!==next){day=next;markup+=`<div class="bc-msg-day" role="separator">${esc(fmtDate(createdAt))}</div>`}
     const e=cases.find(group=>group.caseId===caseId)?.case;
-    markup+=event||snapshot?`<details class="bc-collector-event" data-timeline-case="${attr(caseId)}"><summary>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(event?String(event.event_type||'Exchange update').replace(/^exchange_/,'').replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()):exchangeStageLabel(e))}</summary><small>${fmtDateTime(createdAt)} · Case ${esc(caseId)}</small></details>`:`<div class="bc-collector-entry" data-timeline-message="${attr(m.id)}" ${caseId?`data-timeline-case="${attr(caseId)}"`:''}>${e?`<button type="button" class="bc-case-source" data-open-messages-case="${attr(caseId)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}</button>`:''}${messageBubble(m,S.profiles[peerId]?.display_name)}</div>`;
+    markup+=event||snapshot?`<details class="bc-collector-event" data-timeline-case="${attr(caseId)}"><summary>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(event?String(event.event_type||'Exchange update').replace(/^exchange_/,'').replaceAll('_',' ').replace(/^./,c=>c.toUpperCase()):exchangeStageLabel(e))}</summary><small>${fmtDateTime(createdAt)} · Exchange update</small></details>`:`<div class="bc-collector-entry" data-timeline-message="${attr(m.id)}" ${caseId?`data-timeline-case="${attr(caseId)}"`:''}>${e?`<button type="button" class="bc-case-source" data-open-messages-case="${attr(caseId)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} · ${esc(exchangeStageLabel(e))}</button>`:''}${messageBubble(m,S.profiles[peerId]?.display_name)}</div>`;
   });
   return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>';
 }
@@ -1907,8 +1954,10 @@ async function loadCollectorEvents(peerId,uid,token){
   const groups=[...(messageIndexByUid.get(uid)?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
   const results=await Promise.all(groups.map(group=>settledTimeout(db.from('exchange_case_events').select('*').eq('case_id',group.caseId).order('created_at',{ascending:true}),10000)));
   if(S.user?.id!==uid||S.renderToken!==token)return false;
-  if(results.some(result=>result.error))return false;
-  groups.forEach((group,i)=>{group.events=[...new Map((results[i].data||[]).filter(event=>event.case_id===group.caseId).map(event=>[event.id,event])).values()]});
+  groups.forEach((group,i)=>{
+    group.eventsFailed=!!results[i].error;
+    group.events=results[i].error?[]:[...new Map((results[i].data||[]).filter(event=>event.case_id===group.caseId).map(event=>[event.id,event])).values()];
+  });
   return true;
 }
 async function loadCollectorOverdue(caseId,uid,token){
@@ -1928,16 +1977,22 @@ function updateThreadChat(cache,options={}){
   else requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight});
   if(collectorFocus?.peerId===cache.id)bindCollectorCaseLinks(chat);
 }
-function bindCollectorCaseLinks(root){$$('[data-open-messages-case]',root).forEach(b=>b.onclick=()=>navigate('messages',`case:${b.dataset.openMessagesCase}`))}
+function bindCollectorCaseLinks(root){
+  $$('[data-open-messages-case]',root).forEach(b=>b.onclick=()=>{
+    const id=b.dataset.openMessagesCase,e=messageIndexByUid.get(S.user?.id)?.cases.get(id)?.case;
+    if(e&&collectorFocus?.peerId===otherId(e))selectCollectorCase(collectorFocus.peerId,id);
+    else navigate('messages','case:'+id);
+  });
+}
 function bindThreadCompose(form,kind,id,senderName){
   if(!form)return;
   const uid=S.user?.id;
   const key=`${uid}:${kind}:${id}`;
   const input=$('textarea[name="message"]',form);
   if(input){
-    const saved=threadDrafts.get(key);
+    const saved=threadDraft(key);
     if(saved&&input.value!==saved)input.value=saved;
-    input.oninput=()=>{threadDrafts.set(key,input.value)};
+    input.oninput=()=>{saveThreadDraft(key,input.value)};
   }
   if(pendingSends.has(key)){
     const button=$('button[type="submit"]',form);
@@ -1958,7 +2013,7 @@ function bindThreadCompose(form,kind,id,senderName){
     const button=$('button[type="submit"]',form);
     if(!button||button.disabled)return;
     if(kind==='case'){
-      const caseRow=$('#bc-msg-chat')?.bcThread?.caseRow;
+      const caseRow=messageIndexByUid.get(submitUid)?.cases.get(id)?.case;
       if(caseRow&&terminalCaseStates.has(caseRow.state))return;
     }
     clearThreadError();
@@ -1975,7 +2030,7 @@ function bindThreadCompose(form,kind,id,senderName){
       if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       const sentDraft=input?input.value:null;
       form.reset();
-      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
+      if(sentDraft!==null&&threadDraft(key)===sentDraft)saveThreadDraft(key,'');
       try{
         await mergeThreadLatest(kind,id,submitUid,stillCurrent);
       }catch(_){
@@ -2050,7 +2105,7 @@ function clearThreadStatus(){
 function activeThreadForm(uid,kind,id){
   if(S.user?.id!==uid)return null;
   const ctx=$('#bc-msg-chat')?.bcThread;
-  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(collectorFocus?.uid===uid&&collectorFocus.caseId===id&&kind==='case'))return null;
+  if(!ctx||!(ctx.kind===kind&&String(ctx.id)===String(id))&&!(collectorComposeContext?.uid===uid&&collectorComposeContext.caseId===id&&kind==='case'))return null;
   return $('#bc-msg-form');
 }
 async function loadEarlierThreadMessages(chat){
@@ -2108,7 +2163,7 @@ async function reloadCaseView(id){
   if(routeName()==='exchange'&&routeId()===id)return renderExchangeDetail(id,S.renderToken);
 }
 let threadSyncTimer=null;
-function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;}
+function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;document.documentElement.classList.remove('bc-chat-keyboard-open');}
 function syncVisibleThread(){
   const chat=$('#bc-msg-chat');
   if(document.hidden||navigator.onLine===false||!chat?.bcThread||pendingSends.has(`${S.user?.id}:${chat.bcThread.kind}:${chat.bcThread.id}`))return;
@@ -2205,7 +2260,7 @@ async function refreshThread(chat){
   if(!caseResult.error&&!messageFailure&&$('#bc-msg-error')?.dataset.errorKind!=='delivery')clearThreadError();
   const liveForm=$('#bc-msg-form'),liveInput=liveForm?$('textarea[name="message"]',liveForm):null;
   // A background read must never overwrite text/caret edited while it awaited I/O.
-  if(liveInput&&liveInput!==input){liveInput.value=threadDrafts.get(`${uid}:${kind}:${id}`)||draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
+  if(liveInput&&liveInput!==input){liveInput.value=threadDraft(`${uid}:${kind}:${id}`)||draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
   updateMessageBadge();
   if(caseResult.error||messageFailure){
     showThreadError('Messages could not be refreshed.',()=>refreshThread(chat));
@@ -2217,6 +2272,13 @@ async function refreshThread(chat){
 }
 function bindMessagesPage(){
   stopThreadSync();threadSyncTimer=setInterval(syncVisibleThread,15000);
+  const composer=$('#bc-msg-form');
+  if(composer){
+    composer.addEventListener('focusin',()=>document.documentElement.classList.add('bc-chat-keyboard-open'));
+    composer.addEventListener('focusout',()=>{
+      setTimeout(()=>{if(!composer.contains(document.activeElement))document.documentElement.classList.remove('bc-chat-keyboard-open')},80);
+    });
+  }
   $$('[data-open-messages-case]',app()).forEach(b=>b.onclick=()=>navigate('messages',`case:${b.dataset.openMessagesCase}`));
   bindMessagesListPane();
   $$('[data-refresh-thread]',app()).forEach(b=>b.onclick=()=>refreshThread($('#bc-msg-chat')));
@@ -2258,29 +2320,79 @@ function renderInlineProposal(peerId){
     pendingMatchProposal=null;await refreshCore();if(S.user?.id!==uid||collectorFocus?.peerId!==peerId||S.renderToken!==token)return;navigate('messages',`case:${result.data.case.id}`);
   };
 }
+
+let collectorComposeContext=null;
+function collectorCases(peerId){
+  return [...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
+}
 function collectorDestinationMarkup(peerId,selected){
-  const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
-  return `<label class="bc-collector-destination">Message destination <select id="bc-case-destination" class="bc-select"><option value="" ${selected===null?'selected':''}>Collector · general chat</option>${groups.map(g=>`<option value="${attr(g.caseId)}" ${selected===g.caseId?'selected':''}>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</option>`).join('')}</select></label>`;
+  const cases=collectorCases(peerId);
+  if(!cases.length)return '';
+  return '<div class="bc-person-cases" role="group" aria-label="Exchanges with this collector">'+cases.map(group=>{
+    const e=group.case,closed=terminalCaseStates.has(e.state);
+    return '<button type="button" class="bc-person-case-chip'+(selected===e.id?' selected':'')+'" data-focus-case="'+attr(e.id)+'" aria-pressed="'+(selected===e.id)+'"><span>'+esc(itemName(e.item_a))+' ⇄ '+esc(itemName(e.item_b))+'</span><small>'+esc(exchangeStageLabel(e))+(closed?' · History':'')+'</small></button>';
+  }).join('')+'</div>';
+}
+function bindCollectorCaseChoices(root=app()){
+  $$('[data-focus-case]',root).forEach(button=>button.onclick=()=>{
+    if(!collectorFocus)return;
+    selectCollectorCase(collectorFocus.peerId,button.dataset.focusCase);
+  });
+}
+function setComposerContext(peerId,caseId=null){
+  const form=$('#bc-msg-form'),uid=S.user?.id;
+  if(!form||!uid||collectorFocus?.peerId!==peerId)return;
+  if(caseId){
+    const e=messageIndexByUid.get(uid)?.cases.get(caseId)?.case;
+    if(!e||otherId(e)!==peerId||terminalCaseStates.has(e.state)){toast('This exchange can no longer receive replies. You can still message the collector.');return}
+  }
+  const input=$('textarea[name="message"]',form),oldKind=form.dataset.bcComposeKind,oldId=form.dataset.bcComposeId;
+  if(input&&oldKind&&oldId)saveThreadDraft(uid+':'+oldKind+':'+oldId,input.value);
+  collectorComposeContext={uid,peerId,caseId};
+  const kind=caseId?'case':'direct',id=caseId||peerId,key=uid+':'+kind+':'+id;
+  form.dataset.bcComposeKind=kind;form.dataset.bcComposeId=id;
+  if(input){
+    input.value=threadDraft(key);
+    input.placeholder=caseId?'Reply about this exchange…':'Message '+(S.profiles[peerId]?.display_name||'collector').split(' ')[0]+'…';
+    input.setAttribute('aria-label',input.placeholder);
+  }
+  const badge=$('#bc-compose-context');
+  if(badge){
+    const e=caseId?messageIndexByUid.get(uid)?.cases.get(caseId)?.case:null;
+    badge.hidden=!e;
+    badge.innerHTML=e?'<span>Replying about '+esc(itemName(e.item_a))+' ⇄ '+esc(itemName(e.item_b))+'</span><button type="button" data-clear-compose-context aria-label="Return to general chat">×</button>':'';
+    badge.querySelector('[data-clear-compose-context]')?.addEventListener('click',()=>{setComposerContext(peerId,null);input?.focus()});
+  }
+  bindThreadCompose(form,kind,id,S.profiles[peerId]?.display_name);
 }
 function selectCollectorCase(peerId,caseId){
   const uid=S.user?.id,group=messageIndexByUid.get(uid)?.cases.get(caseId);
   if(caseId&&(!group?.case||otherId(group.case)!==peerId))return renderMessagesUnavailable('Conversation unavailable.');
   const previous=collectorFocus;
   if(previous&&(previous.uid!==uid||previous.peerId!==peerId||previous.caseId!==(caseId||null)))$('#bc-collector-form')?.replaceChildren();
+  // Viewing a case never changes the destination of a message.
+  if(previous?.caseId!==caseId&&collectorComposeContext?.caseId)setComposerContext(peerId,null);
   collectorFocus={uid,peerId,caseId:caseId||null};
+  const strip=$('#bc-person-case-strip');
+  if(strip){strip.innerHTML=collectorDestinationMarkup(peerId,caseId);bindCollectorCaseChoices(strip)}
   const host=$('#bc-collector-action'),e=group?.case;
-  if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">General chat does not change exchange terms. Select a case for its next step.</p>';
-  if(e)bindThreadCaseActions(e);
-  const form=$('#bc-msg-form');if(form){const current=form.dataset.destination||'',input=$('textarea',form);if(input&&form.dataset.bound)threadDrafts.set(`${uid}:${current?'case':'direct'}:${current||peerId}`,input.value);form.dataset.destination=caseId||'';form.dataset.bound='true';const draft=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';if(input&&input.value!==draft)input.value=draft;bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name)}
-  const picker=$('#bc-case-destination');if(picker){picker.value=caseId||'';picker.disabled=pendingSends.has(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)}
-  if(e){const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b]}
-  const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
-  if(e&&terminalCaseStates.has(e.state)&&form){form.hidden=true}else if(form)form.hidden=false;
+  if(host)host.innerHTML=e?caseConversationGuide(e)+(terminalCaseStates.has(e.state)?'<p class="bc-small bc-closed-chat-note">This exchange is closed. You can still message this collector.</p>':'<button type="button" class="bc-btn bc-context-reply" data-reply-about-case="'+attr(caseId)+'">Reply about this exchange</button>'):'';
+  if(e){
+    const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b];
+    bindThreadCaseActions(e);
+    $('[data-reply-about-case]',host)?.addEventListener('click',()=>{setComposerContext(peerId,caseId);$('textarea[name="message"]',$('#bc-msg-form'))?.focus()});
+  }
+  if(e&&terminalCaseStates.has(e.state)&&collectorComposeContext?.caseId===caseId){
+    setComposerContext(peerId,null);
+    showThreadStatus('This exchange has closed. Your unsent exchange reply remains saved separately; general chat is available.');
+  }
+  const chat=$('#bc-msg-chat');
+  if(chat?.bcThread)chat.bcThread.caseRow=e||null;
 }
 async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=null){
   page(loading('Opening conversation…'));
   const uid=S.user?.id;
-  collectorFocus=null;
+  collectorFocus=null;collectorComposeContext=null;
   const current=()=>token===S.renderToken&&S.user?.id===uid&&routeName()==='messages'&&routeId()===(focusedCase?`case:${focusedCase}${focusedMessage?`:message:${focusedMessage}`:''}`:`direct:${peerId}`);
   const indexPromise=uid?loadMessageIndex(uid,token).catch(()=>null):Promise.resolve(null);
   const {data:peer,error:peerError}=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').eq('id',peerId).maybeSingle(),10000);
@@ -2302,17 +2414,19 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   mergeThreadHistory(cache,validateThreadRows(cache,rows));
   if(firstLoad)cache.hasOlder=cache.messages.length>=THREAD_PAGE_SIZE;
   if(focusedCase&&!messageIndexByUid.get(uid)?.cases.get(focusedCase))return renderMessagesUnavailable('Conversation unavailable.');
-  collectorFocus={uid,peerId,caseId:focusedCase};
+  const firstCase=focusedCase||collectorCases(peerId).find(group=>!terminalCaseStates.has(group.case.state))?.caseId||null;
+  collectorFocus={uid,peerId,caseId:firstCase};
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,focusedCase)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-person-case-strip"></div><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar"><div id="bc-compose-context" class="bc-compose-context" hidden></div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
-  $('#bc-case-destination').onchange=event=>{const id=event.target.value;navigate('messages',id?`case:${id}`:`direct:${peerId}`)};
-  selectCollectorCase(peerId,focusedCase);
+  selectCollectorCase(peerId,firstCase);
+  setComposerContext(peerId,null);
   renderInlineProposal(peerId);
   advanceCollectorWatermarks(peerId,uid);
   if(focusedCase){const target=focusedMessage?`[data-timeline-case="${CSS.escape(focusedCase)}"][data-timeline-message="${CSS.escape(focusedMessage)}"]`:`[data-timeline-case="${CSS.escape(focusedCase)}"]`;$('#bc-msg-chat').querySelector(target)?.scrollIntoView({block:'nearest'})}
+  if(collectorCases(peerId).some(group=>group.eventsFailed))showThreadError('Some exchange updates are temporarily unavailable. You can still read and send ordinary messages; retry to load exchange history.',()=>refreshThread($('#bc-msg-chat')));
   updateMessageBadge();
 }
 async function renderMessages(token){
