@@ -65,6 +65,8 @@
   "git": {
     "deploymentEnabled": {
       "qa/pr138-hosted-runner": false,
+      "qa/pr138-staging-revalidation": false,
+      "dev/person-first-conversations": false,
       "main": false
     }
   }

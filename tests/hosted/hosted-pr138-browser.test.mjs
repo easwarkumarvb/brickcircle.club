@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {assertFeedPage,assertRequestBounds,assertVisibleReadCursors,assertReadModelReady,assertPublicBrowserEnvironment,compareTuple} from '../../scripts/hosted-pr138-browser.mjs';
+import {assertFeedPage,assertRequestBounds,assertVisibleReadCursors,assertReadModelReady,assertPublicBrowserEnvironment,compareTuple,timestampMicros} from '../../scripts/hosted-pr138-browser.mjs';
 import {assertOutboxOnly} from '../../scripts/audit-hosted-pr138-outbox.mjs';
 import {transportAllowed,stagingApplication,canonicalArchiveEvents} from '../../scripts/hosted-pr125-browser.mjs';
 import {PR138_SHA,STAGING_REF,PRODUCTION_REF} from '../../scripts/validate-hosted-pr138.mjs';
@@ -40,6 +40,24 @@ test('feed evidence requires bounded reverse tuple order distinct source identit
  assert.throws(()=>assertFeedPage([{...row('id','case_event','case1'),payload:{id:'id',case_id:'foreign-case'}}],'B','A'));
  assert.throws(()=>assertFeedPage([{...row(),occurred_at:'not-a-date'}],'B','A'));
  assert.equal(compareTuple([1,'direct_message','id'],[2,'case_message','id'])<0,true);
+});
+test('feed evidence retains microseconds before ID tie-breaks instead of truncating to milliseconds',()=>{
+ const earlier={...row('z'),occurred_at:'2026-10-05T12:00:00.123001+00:00'},later={...row('a'),occurred_at:'2026-10-05T12:00:00.123999+00:00'};
+ assert.doesNotThrow(()=>assertFeedPage([later,earlier],'B','A'));
+ assert.throws(()=>assertFeedPage([earlier,later],'B','A'));
+ assert.equal(compareTuple([timestampMicros(earlier.occurred_at),'direct_message','z'],[timestampMicros(later.occurred_at),'direct_message','a']),-1);
+});
+test('feed evidence normalizes offsets and abbreviated fractions while rejecting malformed timestamp cursors',()=>{
+ const at='2026-10-05T12:00:00.123001Z';
+ assert.equal(timestampMicros(at),timestampMicros('2026-10-05T17:30:00.123001+05:30'));
+ assert.equal(timestampMicros(at),timestampMicros('2026-10-05T05:00:00.123001-07:00'));
+ assert.equal(timestampMicros('2026-10-05T12:00:00.1Z'),timestampMicros('2026-10-05T12:00:00.100000+00:00'));
+ const sameTimeRows=[{...row('z'),occurred_at:'2026-10-05T12:00:00.123001Z'},{...row('a'),occurred_at:'2026-10-05T17:30:00.123001+05:30'}];
+ assert.doesNotThrow(()=>assertFeedPage(sameTimeRows,'B','A'));assert.throws(()=>assertFeedPage([...sameTimeRows].reverse(),'B','A'));
+ for(const at of [null,123,'not-a-date','2026-10-05T12:00:00','2026-10-05T12:00:00.1234567Z','2026-10-05T12:00:00+99:00']){
+  assert.throws(()=>timestampMicros(at));assert.throws(()=>assertFeedPage([{...row(),occurred_at:at}],'B','A'));
+  const modified=calls();modified[2].args.p_through_at=at;assert.throws(()=>assertRequestBounds(modified));
+ }
 });
 test('captured browser RPC evidence rejects missing enabled read model, unbounded pages and incomplete cursors',()=>{
  assert.doesNotThrow(()=>assertRequestBounds(calls()));

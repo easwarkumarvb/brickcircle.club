@@ -24,7 +24,7 @@ jobs:
       - name: Immutable product assets for offline UI validation
         uses: actions/checkout@v4
         with:
-          ref: 7d84652903b176d69bfd09e2f59f3c3ec785d1a3
+          ref: 3d1fc2097780c5352e2cdf66a100a38c38141407
           path: candidate
           persist-credentials: false
       - run: npx --no-install playwright install --with-deps chromium
