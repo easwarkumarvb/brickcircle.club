@@ -61,5 +61,10 @@
         }
       ]
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "dev/person-first-conversations": false
+    }
+  }
 }

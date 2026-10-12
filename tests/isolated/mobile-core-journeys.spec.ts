@@ -23,7 +23,7 @@ test('mobile reciprocal match is visual, concise and proposal-first',async({page
   await expect(page.getByRole('heading',{name:'Match Collector'})).toBeVisible();
   await expect(proposal).toContainText('Propose an exchange');
   await expect(proposal.getByRole('button',{name:'Send proposal'})).toBeVisible();
-  await expect(page.locator('#bc-case-destination')).toHaveValue('');
+  await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
   await noHorizontalOverflow(page);
 });
 
@@ -46,6 +46,7 @@ test('mobile case conversation surfaces the next valid action before message his
   await page.setViewportSize({width:390,height:844});
   await page.goto('/v2.html?isolated=proposal#exchange/proposal-request-1');
 
+  await page.locator('[data-view-collector-case="proposal-request-1"]').first().click();
   const next=page.getByRole('region',{name:'Exchange next step'});
   await expect(next).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:proposal-request-1');
@@ -53,7 +54,7 @@ test('mobile case conversation surfaces the next valid action before message his
   await expect(next).toContainText('Accept proposal');
   await expect(page.getByRole('button',{name:'Accept proposal'})).toHaveCount(1);
   await expect(next.getByRole('button',{name:'Accept proposal'})).toBeVisible();
-  const beforeHistory=await next.evaluate(node=>{const chat=document.querySelector('#bc-msg-chat');return !!chat&&!!(node.compareDocumentPosition(chat)&Node.DOCUMENT_POSITION_FOLLOWING)});
+  const beforeHistory=await page.locator('#bc-collector-action').evaluate(node=>{const chat=document.querySelector('#bc-msg-chat');return !!chat&&!!(node.compareDocumentPosition(chat)&Node.DOCUMENT_POSITION_FOLLOWING)});
   expect(beforeHistory).toBeTruthy();
   await noHorizontalOverflow(page);
 });

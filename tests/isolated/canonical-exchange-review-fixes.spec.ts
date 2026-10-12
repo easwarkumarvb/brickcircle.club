@@ -30,7 +30,7 @@ async function openActor(context:BrowserContext,actor:keyof typeof actors,databa
   const page=await context.newPage();
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',route=>route.fulfill({contentType:'application/javascript',body:mock}));
   await page.goto(`/v2.html?isolated=three-user#${route}`);
-  if(route.startsWith('exchange/'))await expect(page.locator('#bc-case-destination')).toHaveValue(route.slice('exchange/'.length));
+  if(route.startsWith('exchange/')){await page.locator(`[data-view-collector-case="${route.slice('exchange/'.length)}"]`).first().click();await expect(page.getByRole('region',{name:'Exchange next step'})).toBeVisible()}
   return page;
 }
 
@@ -176,13 +176,15 @@ test('Messages combines case and direct history in one collector timeline with e
   const caseMessage={id:'case-message',case_id:'case-review-fix',sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'Meetup detail in the case',created_at:now};
   const directMessage={id:'direct-message',exchange_id:null,sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'General collector question',created_at:'2026-09-09T13:00:00.000Z'};
   const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACCEPTED'),{messages:[caseMessage],directMessages:[directMessage]}));
+  await page.locator('[data-close-collector-sheet]').click();
   await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await page.locator('[data-message-open="direct:'+actors.ramya.id+'"]').click();
   await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
   await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
-  await page.locator('#bc-case-destination').selectOption('case-review-fix');
-  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-review-fix');
+  await page.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
+  await page.locator('[data-close-collector-sheet]').click();
   await expect(page.locator('.bc-msg-hero h1')).toContainText('Ramya');
   await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
   await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
@@ -231,6 +233,9 @@ test('proposal and message retries reuse keys while a committed transition disab
   const workflowContext=await browser.newContext(),workflow=await openActor(workflowContext,'easwar',seed(exchange('INSPECTION',{safety_ack_a_at:now,safety_ack_b_at:now})));
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('exchange_case_transition'));
   const arrive=workflow.getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toHaveCount(0);await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
+  if(await workflow.locator('dialog.bc-collector-sheet').isVisible())await workflow.locator('[data-close-collector-sheet]').click();
+  await workflow.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await workflow.locator('[data-reply-case="case-review-fix"]').click();
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('send_exchange_case_message'));
   const messageButton=workflow.locator('#bc-msg-form button');
   // Use the native form lifecycle atomically: a WebKit mouse click can scroll
