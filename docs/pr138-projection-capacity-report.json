@@ -1,0 +1,223 @@
+{
+  "candidate": "614c05d5d92d1beb6929bbc9d1445bb0796ba08d",
+  "status": "passed",
+  "timings": {
+    "seed_wall_ms": 159.88915599999842,
+    "transactional_migration_wall_ms": 556.4543859999986,
+    "inbox30": {
+      "execution_ms": [
+        23.626,
+        23.223,
+        23.089,
+        23.526,
+        23.388
+      ],
+      "median_execution_ms": 23.388,
+      "max_execution_ms": 23.626,
+      "wall_ms": [
+        62.82759800000548,
+        61.42190900000344,
+        61.75212400000163,
+        62.140943000002835,
+        62.06845999999899
+      ]
+    },
+    "inbox30_cursor": {
+      "execution_ms": [
+        23.558,
+        23.003,
+        23.408,
+        23.263,
+        23.216
+      ],
+      "median_execution_ms": 23.263,
+      "max_execution_ms": 23.558,
+      "wall_ms": [
+        62.21593399999392,
+        61.555602999995074,
+        61.56143600000519,
+        61.63703800000064,
+        61.92203199999824
+      ]
+    },
+    "feed50_dense": {
+      "execution_ms": [
+        6.407,
+        6.21,
+        6.27,
+        6.202,
+        6.341
+      ],
+      "median_execution_ms": 6.27,
+      "max_execution_ms": 6.407,
+      "wall_ms": [
+        45.26226400000155,
+        44.404849999999385,
+        44.266124000003515,
+        43.77762299999688,
+        45.183246999997095
+      ]
+    },
+    "feed50_cursor": {
+      "execution_ms": [
+        6.408,
+        6.271,
+        6.27,
+        6.209,
+        6.263
+      ],
+      "median_execution_ms": 6.27,
+      "max_execution_ms": 6.408,
+      "wall_ms": [
+        44.23383999999686,
+        43.903204999999446,
+        43.939948999998535,
+        44.210309999996866,
+        44.39438400000029
+      ]
+    }
+  },
+  "plans": {
+    "inbox30": {
+      "top_level": "Function Scan; not sufficient to infer indexes",
+      "actual_nested_index_names": [
+        "collector_entries_peer_feed_idx",
+        "collector_summaries_inbox_idx",
+        "messages_pkey"
+      ],
+      "raw_evidence": "inbox30-nested-plans.log"
+    },
+    "inbox30_cursor": {
+      "top_level": "Function Scan; not sufficient to infer indexes",
+      "actual_nested_index_names": [
+        "collector_entries_peer_feed_idx",
+        "collector_summaries_inbox_idx",
+        "messages_pkey"
+      ],
+      "raw_evidence": "inbox30_cursor-nested-plans.log"
+    },
+    "feed50_dense": {
+      "top_level": "Function Scan; not sufficient to infer indexes",
+      "actual_nested_index_names": [
+        "collector_entries_peer_feed_idx",
+        "messages_pkey"
+      ],
+      "raw_evidence": "feed50_dense-nested-plans.log"
+    },
+    "feed50_cursor": {
+      "top_level": "Function Scan; not sufficient to infer indexes",
+      "actual_nested_index_names": [
+        "collector_entries_peer_feed_idx",
+        "messages_pkey"
+      ],
+      "raw_evidence": "feed50_cursor-nested-plans.log"
+    }
+  },
+  "limitations": [
+    "Synthetic service-local PostgreSQL17; not Supabase hardware, HTTP latency, pooler, Auth or Realtime.",
+    "10,000 additional direct messages, 61 owner pairs and a 4,000-message dense pair; existing minimal canonical fixtures also remain.",
+    "Mixed case/event cardinality is only the existing canonical seed; this is not a million-row or realistic body-size benchmark.",
+    "Warm-cache samples include function execution/planning; wall timings additionally include psql startup.",
+    "Lock-mode probe is a separate controlled transaction; its intentional hold is not included in migration timing.",
+    "No production SLO, concurrent throughput, memory-pressure or physical-phone certification is implied."
+  ],
+  "postgres_version": "PostgreSQL 17.11 (Debian 17.11-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "migration_sha256": "9af5765cc888c5edec390c0117b1e5e32944ed72ddc88855893f38612ec20dd2",
+  "migration_observed_locks": [
+    [
+      "exchange_case_events",
+      "AccessShareLock",
+      true
+    ],
+    [
+      "exchange_case_events",
+      "ShareRowExclusiveLock",
+      true
+    ],
+    [
+      "exchange_case_messages",
+      "AccessShareLock",
+      true
+    ],
+    [
+      "exchange_case_messages",
+      "ShareRowExclusiveLock",
+      true
+    ],
+    [
+      "exchange_cases",
+      "AccessShareLock",
+      true
+    ],
+    [
+      "exchange_cases",
+      "ShareLock",
+      true
+    ],
+    [
+      "exchange_cases",
+      "ShareRowExclusiveLock",
+      true
+    ],
+    [
+      "messages",
+      "AccessShareLock",
+      true
+    ],
+    [
+      "messages",
+      "ShareRowExclusiveLock",
+      true
+    ]
+  ],
+  "cardinalities": {
+    "source_messages": 11002,
+    "entries": 22020,
+    "summaries": 136,
+    "synthetic_messages": 10000,
+    "owner_entries": 10000,
+    "owner_summaries": 61,
+    "dense_entries": 4000
+  },
+  "assertions": {
+    "owner_rls": true,
+    "outsider_denied": true,
+    "inbox_pages": [
+      30,
+      30,
+      1
+    ],
+    "feed_pages": [
+      50,
+      50
+    ],
+    "page_overlap": false
+  },
+  "lock_probe": {
+    "source_locks": [
+      {
+        "relname": "exchange_case_events",
+        "mode": "ShareRowExclusiveLock",
+        "granted": true
+      },
+      {
+        "relname": "messages",
+        "mode": "ShareRowExclusiveLock",
+        "granted": true
+      },
+      {
+        "relname": "exchange_cases",
+        "mode": "ShareRowExclusiveLock",
+        "granted": true
+      },
+      {
+        "relname": "exchange_case_messages",
+        "mode": "ShareRowExclusiveLock",
+        "granted": true
+      }
+    ],
+    "read_completed": true,
+    "write_rejected_by_250ms_lock_timeout": true,
+    "intentional_hold_seconds": 3
+  }
+}
