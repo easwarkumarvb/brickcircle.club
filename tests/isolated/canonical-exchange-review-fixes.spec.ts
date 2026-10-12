@@ -53,7 +53,8 @@ test('completed canonical case uses structured double-blind peer reviews and pre
   await expect(easwar.getByRole('button',{name:'Leave review'})).toBeVisible();
   await submitStructuredReview(easwar);
   await expect.poll(()=>easwar.evaluate(()=>window.__bcThreeUser.data.peerReviews.length)).toBe(1);
-  await expect(easwar.locator('#bc-collector-action')).toContainText('You reviewed Ramya');
+  await easwar.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await expect(easwar.getByRole('region',{name:'Exchange next step'})).toContainText('You reviewed Ramya');
   const first=await easwar.evaluate(()=>({data:JSON.parse(JSON.stringify(window.__bcThreeUser.data)),calls:window.__bcThreeUser.rpcCalls}));
   expect(first.data.peerReviews).toHaveLength(1);
   expect(first.data.peerReviews[0]).toMatchObject({reviewer_id:actors.easwar.id,reviewee_id:actors.ramya.id,overall_rating:4,return_reliability:5,set_accuracy:4,communication:5,condition_accuracy:4,would_exchange_again:true});
@@ -65,7 +66,8 @@ test('completed canonical case uses structured double-blind peer reviews and pre
   const ramyaContext=await browser.newContext(),ramya=await openActor(ramyaContext,'ramya',first.data);
   await expect(ramya.getByRole('button',{name:'Leave review'})).toBeVisible();
   await submitStructuredReview(ramya,{overall:'5',reliability:'5',accuracy:'5',communication:'5',condition:'5',again:'yes'},'Would exchange again.');
-  await expect(ramya.locator('#bc-collector-action')).toContainText('You reviewed Easwar');
+  await ramya.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await expect(ramya.getByRole('region',{name:'Exchange next step'})).toContainText('You reviewed Easwar');
 
   const duplicate=await ramya.evaluate(async()=>{
     return window.supabase.createClient().rpc('submit_peer_exchange_review',{
@@ -88,7 +90,7 @@ test(`pre-handoff cancellation at ${width}px remains available after one-sided h
   page.on('dialog',async dialog=>{if(dialog.type()==='prompt')await dialog.accept('Changed plans before mutual handoff');else await dialog.accept()});
   await page.getByRole('button',{name:'Cancel before handoff'}).click();
   await expect(page.getByText('Cancelled',{exact:true}).first()).toBeVisible();
-  await expect(page.locator('#bc-collector-action')).toContainText('Closed');
+  await expect(page.locator('#bc-collector-action')).toContainText('Cancelled');
   const result=await page.evaluate(()=>({data:window.__bcThreeUser.data,calls:window.__bcThreeUser.rpcCalls}));
   expect(result.data.exchanges[0].state).toBe('CANCELLED');
   expect(result.data.exchanges[0].state).not.toBe('HANDOFF_ISSUE');

@@ -85,8 +85,11 @@ test('collector inbox groups two exact cases into one row without losing case ro
   await open(page,'easwar');
   await page.evaluate(()=>{const s=(window as any).__bcThreeUser;s.data.exchanges.push({...s.data.exchanges[0],id:'guide-case-2',item_a:'item-b',item_b:'item-a',state:'ACCEPTED',state_version:2,created_at:'2026-10-06T12:00:00Z',updated_at:'2026-10-06T12:00:00Z'});s.persist();location.hash='#messages';});
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
-  await expect(page.locator('.bc-msg-row')).toContainText('2 exchanges');
+  await expect(page.locator('.bc-msg-row')).toContainText('Ramya');
   await page.locator('.bc-msg-row').click();
+  await expect(page.locator('.bc-collector-case-chip')).toHaveCount(2);
+  await expect(page.locator('.bc-collector-case-chip[data-view-collector-case="guide-case"]')).toHaveCount(1);
+  await expect(page.locator('.bc-collector-case-chip[data-view-collector-case="guide-case-2"]')).toHaveCount(1);
   await expect(page.locator('[data-view-collector-case]')).not.toHaveCount(0);
   await replyCase(page,'guide-case-2');
   expect(await page.evaluate(()=>(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow.id)).toBe('guide-case-2');
@@ -104,7 +107,7 @@ test('one chronological timeline merges direct and two case messages; destinatio
     s.persist();location.hash='#messages/direct:'+B;
   },{A,B});
   const chat=page.locator('#bc-msg-chat');
-  await expect(chat).toContainText('First direct');await expect(chat).toContainText('First case');await expect(chat).toContainText('Second case');await expect(chat.locator('.bc-collector-event',{hasText:'Accepted'})).toHaveCount(1);
+  await expect(chat).toContainText('First direct');await expect(chat).toContainText('First case');await expect(chat).toContainText('Second case');await expect(chat.locator('.bc-collector-event',{hasText:'Exchange agreed'})).toHaveCount(1);
   const contents=await chat.innerText();expect(contents.indexOf('First direct')).toBeLessThan(contents.indexOf('First case'));expect(contents.indexOf('First case')).toBeLessThan(contents.indexOf('Second case'));
   await expectGeneral(page);
   await replyCase(page,'second-case');
@@ -273,7 +276,7 @@ test('pre-handoff cancellation uses the canonical RPC and releases both item pre
   await focusCase(page,'guide-case');await page.locator('.bc-guide-options summary').click();
   page.on('dialog',dialog=>dialog.type()==='prompt'?dialog.accept('Not exchanging now'):dialog.accept());
   await page.locator('[data-thread-case-action="cancel_before_handoff"]').click();
-  await expect(page.locator('#bc-collector-action')).toContainText('Closed');
+  await expect(page.locator('#bc-collector-action')).toContainText('Cancelled');
   if(await page.locator('dialog.bc-collector-sheet').isVisible())await page.locator('[data-close-collector-sheet]').click();
   await expectGeneral(page);
   expect(await page.evaluate(()=>(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow.state)).toBe('CANCELLED');
@@ -305,7 +308,8 @@ test('canonical final return confirmation preserves general composer and server 
   await focusCase(page,'guide-case');await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Closed');await page.locator('[data-close-collector-sheet]').click();await expectGeneral(page);
   await expect(input).toHaveValue('Unsent final draft');
   expect(await page.evaluate(()=>{const s=(window as any).__bcThreeUser;return {state:(document.querySelector('#bc-msg-chat') as any).bcThread.caseRow.state,event:s.data.events.at(-1).event_type,result:s.data.events.at(-1).resulting_state}})).toEqual({state:'COMPLETED',event:'return_confirm',result:'COMPLETED'});
-  await expect(page.locator('.bc-collector-event summary')).toContainText('Return confirm');
+  await expect(page.locator('.bc-collector-event').filter({hasText:'Returned set confirmed'})).toHaveCount(1);
+  await expect(page.locator('.bc-collector-event').filter({hasText:'Returned set confirmed'}).locator('[data-view-collector-case="guide-case"]')).toBeVisible();
 });
 test('collector refresh preserves draft and an open meetup action sheet',async({page})=>{
   await open(page,'easwar','ACCEPTED');

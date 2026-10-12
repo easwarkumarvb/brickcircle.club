@@ -17,6 +17,7 @@ begin
     where state not in('DECLINED','WITHDRAWN','EXPIRED','CANCELLED','COMPLETED') order by id limit 1;
   select id into outsider from public.profiles where id not in(a,b) order by id limit 1;
   if cid is null or outsider is null then raise exception 'Disposable DB requires a case and a third collector'; end if;
+  perform set_config('request.jwt.claim.sub',a::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',a,'role','authenticated')::text,true);
   execute 'set local role authenticated';
   result:=public.send_collector_message(b,'Read model first direct','qa-read-model-direct-1');
@@ -51,6 +52,7 @@ begin
       values(b,a,newest.occurred_at,newest.source_type,newest.source_id);
     raise exception 'Foreign read cursor insert accepted';
   exception when insufficient_privilege then null;end;
+  perform set_config('request.jwt.claim.sub',outsider::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',outsider,'role','authenticated')::text,true);
   assert not exists(select 1 from public.collector_conversation_feed(b,null,null,null,100)
     where source_id=found_message or case_id=cid);
@@ -59,6 +61,7 @@ begin
   update public.collector_conversation_read_cursors set through_at=now() where user_id=a;
   get diagnostics affected_rows=row_count;
   assert affected_rows=0;
+  perform set_config('request.jwt.claim.sub',b::text,true);
   perform set_config('request.jwt.claims',jsonb_build_object('sub',b,'role','authenticated')::text,true);
   assert exists(select 1 from public.collector_conversation_feed(a) where source_id=found_message);
   assert (select count(*) from public.collector_conversation_read_cursors where user_id=a)=0;

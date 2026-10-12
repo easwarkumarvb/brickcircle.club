@@ -2,7 +2,7 @@
 
 Status: **proposal only; not an active migration, not applied, not browser-integrated, not runtime-verified**. Stage B is incomplete. The production application continues using existing protected reads and canonical writers.
 
-`supabase/proposals/person_first_conversation_read_model.sql` provides an executable starting point for a participant-safe feed and durable per-user read cursor. Supabase CLI, PostgreSQL and Docker are unavailable in this workspace. No migration filename was invented: create the migration with `supabase migration new person_first_conversation_read_model` in a disposable local environment after review. No hosted database was changed.
+`supabase/proposals/person_first_conversation_read_model.sql` provides an executable starting point for a participant-safe feed and durable per-user read cursor. The database runtime (PostgreSQL/Docker) is unavailable in this workspace. Supabase CLI 2.120.0 was subsequently made available through npx, but no database migration was generated or applied. No migration filename was invented: create the migration with `supabase migration new person_first_conversation_read_model` in a disposable local environment after review. No hosted database was changed.
 
 ## Browser contract after verification
 

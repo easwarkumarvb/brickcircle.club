@@ -1567,7 +1567,7 @@ function totalUnreadCount(uid){
   return total;
 }
 function updateMessageBadge(){
-  const uid=S.user?.id,unread=uid?totalUnreadCount(uid):0;
+  const uid=S.user?.id,unread=uid?totalUnreadCount(uid):0,unknown=!!messageIndexByUid.get(uid)?.partial;
   const inbox=$('[data-open="inbox"]');
   const buttons=[...$$('[data-nav="messages"]')];
   if(inbox)buttons.push(inbox);
@@ -1576,14 +1576,14 @@ function updateMessageBadge(){
     const base=button.getAttribute('data-bc-label')||button.getAttribute('aria-label')||'Messages';
     if(!button.getAttribute('data-bc-label'))button.setAttribute('data-bc-label',base);
     let badge=$('.bc-badge',button);
-    if(!unread){
+    if(!unread&&!unknown){
       badge?.remove();
       button.setAttribute('aria-label',base);
       return;
     }
     if(!badge){badge=document.createElement('span');badge.className='bc-badge';button.appendChild(badge)}
-    badge.textContent=unread>9?'9+':String(unread);
-    button.setAttribute('aria-label',`${base}, ${unread>9?'9+':unread} unread`);
+    badge.textContent=unknown?'?':unread>9?'9+':String(unread);
+    button.setAttribute('aria-label',unknown?`${base}, unread count temporarily unavailable`:`${base}, ${unread>9?'9+':unread} unread on this device`);
   });
 }
 function participantMessagesQuery(uid,cursor){
@@ -1918,7 +1918,7 @@ function threadChatMarkup(messages,fallback,senderName,hasOlder){
 }
 function collectorEventLabel(event,e){
   if(!event)return exchangeStageLabel(e);
-  const kind=String(event.event_type||'').replace(/^exchange_/,''),labels={created:'Exchange proposed',proposed:'Exchange proposed',proposal_created:'Exchange proposed',counter:'New duration suggested',countered:'New duration suggested',accepted:'Exchange agreed',accept:'Exchange agreed',declined:'Proposal declined',decline:'Proposal declined',withdrawn:'Proposal withdrawn',cancelled:'Exchange cancelled',cancel:'Exchange cancelled',expired:'Proposal expired',propose_meetup:'Meetup suggested',meetup_proposed:'Meetup suggested',confirm_meetup:'Meetup agreed',meetup_confirmed:'Meetup agreed',safety_ack:'Safety checklist confirmed',arrived:'Collector arrived',inspect:'Set inspection confirmed',inspected:'Set inspection confirmed',handoff:'Set handoff confirmed',active:'Build period started',early_return:'Early return requested',propose_return:'Return meetup suggested',return_proposed:'Return meetup suggested',confirm_return:'Return meetup agreed',return_confirmed:'Returned set confirmed',return_arrived:'Collector arrived for return',return_inspected:'Returned set inspected',completed:'Exchange completed',complete:'Exchange completed',issue_reported:'Issue reported',issue_resolved:'Issue resolved'};
+  const kind=String(event.event_type||'').replace(/^exchange_/,''),labels={created:'Exchange proposed',proposed:'Exchange proposed',proposal_created:'Exchange proposed',accept_meetup:'Meetup agreed',arrive:'Collector arrived',accept_return:'Return meetup agreed',return_arrive:'Collector arrived for return',return_inspect:'Returned set inspected',return_confirm:'Returned set confirmed',counter:'New duration suggested',countered:'New duration suggested',accepted:'Exchange agreed',accept:'Exchange agreed',declined:'Proposal declined',decline:'Proposal declined',withdrawn:'Proposal withdrawn',cancelled:'Exchange cancelled',cancel:'Exchange cancelled',expired:'Proposal expired',propose_meetup:'Meetup suggested',meetup_proposed:'Meetup suggested',confirm_meetup:'Meetup agreed',meetup_confirmed:'Meetup agreed',safety_ack:'Safety checklist confirmed',arrived:'Collector arrived',inspect:'Set inspection confirmed',inspected:'Set inspection confirmed',handoff:'Set handoff confirmed',active:'Build period started',early_return:'Early return requested',propose_return:'Return meetup suggested',return_proposed:'Return meetup suggested',confirm_return:'Return meetup agreed',return_confirmed:'Returned set confirmed',return_arrived:'Collector arrived for return',return_inspected:'Returned set inspected',completed:'Exchange completed',complete:'Exchange completed',issue_reported:'Issue reported',issue_resolved:'Issue resolved'};
   return labels[kind]||'Exchange updated';
 }
 function collectorTimelineMarkup(peerId,uid){
@@ -2020,19 +2020,19 @@ function bindThreadCompose(form,kind,id,senderName){
     const sendOperation=prior||{uid:submitUid,key:sendKey,kind,id,body,requestKey:crypto.randomUUID()};
     uncertainThreadSends.set(sendKey,sendOperation);persistThreadDraft(sendKey,body);
     pendingSends.set(sendKey,sendOperation);
-    button.disabled=true;if(input)input.disabled=true;
+    button.disabled=true;if(input)input.disabled=true;const clearReply=$('[data-clear-reply-case]');if(clearReply)clearReply.disabled=true;
 
     showThreadStatus('Sending…');
     const restore=()=>{if(stillCurrent()){button.disabled=false;if(input){input.disabled=false;input.focus()}}};
     try{
       const result=await settledTimeout(db.rpc(kind==='case'?'send_exchange_case_message':'send_collector_message',{...(kind==='case'?{p_case_id:id}:{p_recipient_id:id}),p_body:body,p_idempotency_key:sendOperation.requestKey}),15000);
       if(S.user?.id!==submitUid||pendingSends.get(sendKey)!==sendOperation)return;
-      if(!result.error&&result.data?.ok!==false){uncertainThreadSends.delete(sendKey);if(threadDrafts.get(key)?.trim()===body)persistThreadDraft(key,'')}
+      if(!result.error&&result.data?.ok===true){uncertainThreadSends.delete(sendKey);if(threadDrafts.get(key)?.trim()===body)persistThreadDraft(key,'')}
       if(!stillCurrent())return;
       if(kind==='case'&&result.error?.code==='22023'&&terminalCaseStates.has(messageIndexByUid.get(submitUid)?.cases.get(id)?.case?.state)){
         uncertainThreadSends.delete(sendKey);persistThreadDraft(key,body);restore();showClosedReplyRecovery(collectorFocus.peerId,body);return;
       }
-      if(result.error||result.data?.ok===false){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
+      if(result.error||result.data?.ok!==true){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       uncertainThreadSends.delete(sendKey);
       const sentDraft=input?input.value:null;
       form.reset();
@@ -2062,7 +2062,7 @@ function bindThreadCompose(form,kind,id,senderName){
         const liveInput=$('textarea[name="message"]',liveForm);
 
         if(liveButton)liveButton.disabled=false;
-        if(liveInput)liveInput.disabled=false;
+        if(liveInput)liveInput.disabled=false;const clearReply=$('[data-clear-reply-case]');if(clearReply)clearReply.disabled=false;
         const selectedCase=collectorFocus?.replyCaseId?messageIndexByUid.get(submitUid)?.cases.get(collectorFocus.replyCaseId)?.case:null;if(selectedCase)updateCaseComposerState(selectedCase,S.profiles[collectorFocus.peerId]);
       }
     }
@@ -2208,7 +2208,8 @@ function updateCaseComposerState(e,p){
   const form=$('#bc-msg-form');if(!form)return;form.hidden=false;
   const context=$('#bc-collector-reply-context');if(context)context.outerHTML=collectorDestinationMarkup(collectorFocus.peerId,replyCaseId);
   bindCollectorReplyContext(collectorFocus.peerId);
-  const button=$('button[type="submit"]',form),key=`${S.user.id}:${replyCaseId?'case':'direct'}:${replyCaseId||collectorFocus.peerId}`;
+  const button=$('button[type="submit"]',form),key=`${S.user.id}:${replyCaseId?'case':'direct'}:${replyCaseId||collectorFocus.peerId}`,clearReply=$('[data-clear-reply-case]');
+  if(clearReply)clearReply.disabled=pendingSends.has(key);
   if(button)button.disabled=pendingSends.has(key)||!!(reply&&terminalCaseStates.has(reply.state)&&!uncertainThreadSends.has(key));
 }
 async function refreshThread(chat){
@@ -2301,17 +2302,25 @@ function renderInlineProposal(peerId){
   const host=$('#bc-collector-proposal');if(!host||S.user?.id!==collectorFocus?.uid)return;
   const matches=S.matches.filter(m=>m.match_user===peerId);
   const pending=pendingMatchProposal?.uid===S.user.id&&pendingMatchProposal.peerId===peerId?pendingMatchProposal:null;
-  host.innerHTML=`<div class="bc-collector-match-options">${matches.map(m=>`<button class="bc-btn" type="button" data-match-pair="${attr(m.offered_item)}:${attr(m.requested_item)}">Propose ${esc(m.offered_name)} ⇄ ${esc(m.requested_name)}</button>`).join('')}</div>${pending?`<form class="bc-card bc-pad bc-form" id="bc-inline-proposal"><h2>Propose an exchange</h2><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p><label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form>`:''}`;
+  host.innerHTML=`<div class="bc-collector-match-options">${matches.map(m=>`<button class="bc-btn" type="button" data-match-pair="${attr(m.offered_item)}:${attr(m.requested_item)}">Propose ${esc(m.offered_name)} ⇄ ${esc(m.requested_name)}</button>`).join('')}</div>${pending?`<dialog class="bc-collector-sheet" aria-label="Propose an exchange"><div class="bc-collector-sheet-head"><h2>Propose an exchange</h2><button class="bc-btn" type="button" data-close-proposal aria-label="Close exchange proposal">×</button></div><form class="bc-card bc-pad bc-form" id="bc-inline-proposal"><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p><label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form></dialog>`:''}`;
   $$('[data-match-pair]',host).forEach(button=>button.onclick=()=>{const m=matches.find(row=>`${row.offered_item}:${row.requested_item}`===button.dataset.matchPair);if(m){pendingMatchProposal={uid:S.user.id,peerId,offered:m.offered_item,requested:m.requested_item};renderInlineProposal(peerId)}});
-  const form=$('#bc-inline-proposal',host);if(form)form.onsubmit=async event=>{
+  const dialog=$('dialog',host),form=$('#bc-inline-proposal',host);
+  if(dialog){
+    const close=$('[data-close-proposal]',dialog);
+    close.onclick=()=>dialog.close();
+    dialog.addEventListener('cancel',event=>{if($('button[type="submit"]',form)?.disabled)event.preventDefault()});
+    dialog.addEventListener('close',()=>{if(dialog.isConnected&&pendingMatchProposal===pending){pendingMatchProposal=null;renderInlineProposal(peerId);$('[data-match-pair]',host)?.focus()}},{once:true});
+    dialog.showModal();applyA11y(dialog);
+  }
+  if(form)form.onsubmit=async event=>{
     event.preventDefault();const proposal=pendingMatchProposal;if(!proposal||proposal.uid!==S.user?.id||proposal.peerId!==peerId)return;
     const uid=S.user.id,token=S.renderToken,stillCurrent=()=>S.user?.id===uid&&S.renderToken===token&&collectorFocus?.uid===uid&&collectorFocus.peerId===peerId&&form.isConnected&&pendingMatchProposal===proposal;
-    const data=new FormData(form),days=Number(data.get('days')),message=String(data.get('message')||''),button=$('button[type="submit"]',form);
-    button.disabled=true;
+    const data=new FormData(form),days=Number(data.get('days')),message=String(data.get('message')||''),button=$('button[type="submit"]',form),close=$('[data-close-proposal]',dialog);
+    if(button.disabled)return;button.disabled=true;close.disabled=true;
     const result=await canonicalRpc('create_exchange_case',{p_offered_item_id:proposal.offered,p_requested_item_id:proposal.requested,p_duration_days:days,p_message:message},{offered_item_id:proposal.offered,requested_item_id:proposal.requested,duration_days:days,message});
     if(!stillCurrent())return;
-    if(result.error||!result.data?.case?.id){button.disabled=false;return fail(result.error||new Error('Proposal unavailable'),'Could not send proposal.')}
-    pendingMatchProposal=null;await refreshCore();if(S.user?.id!==uid||collectorFocus?.peerId!==peerId||S.renderToken!==token)return;navigate('messages',`case:${result.data.case.id}`);
+    if(result.error||!result.data?.case?.id){button.disabled=false;close.disabled=false;return fail(result.error||new Error('Proposal unavailable'),'Could not send proposal.')}
+    pendingMatchProposal=null;dialog.remove();await refreshCore();if(S.user?.id!==uid||collectorFocus?.peerId!==peerId||S.renderToken!==token)return;navigate('messages',`case:${result.data.case.id}`);
   };
 }
 let collectorViewportDispose=null;
@@ -2353,7 +2362,7 @@ function collectorCaseSummaryMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
   if(!groups.length)return '';
   const current=groups.find(g=>g.caseId===selected)||groups.find(g=>!terminalCaseStates.has(g.case.state))||groups[0],e=current.case,next=caseNextAction(e);
-  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}">${collectorSetPairImages(g.case)}<span>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small>${esc(exchangeStageLabel(g.case))}</small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}">${next.action?'Review next step':'View exchange'}</button></div>`;
+  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}">${collectorSetPairImages(g.case)}<span>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small>${esc(exchangeStageLabel(g.case))}</small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}">${next.action?esc(next.label):'View exchange'}</button></div>`;
 }
 function openCollectorCaseSheet(peerId,caseId){
   selectCollectorCase(peerId,caseId);
