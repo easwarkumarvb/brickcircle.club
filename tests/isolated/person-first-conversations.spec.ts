@@ -33,3 +33,41 @@ test('completed exchange retains ordinary collector composer',async({page})=>{
  await expect(page.getByRole('button',{name:'Reply about this exchange'})).toHaveCount(0);
  await expect(page.locator('#bc-case-destination')).toHaveCount(0);
 });
+
+test('collector opens directly by name and sees the next exchange action above chat',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await open(page,'messages/direct:'+B);
+ await expect(page.locator('.bc-msg-hero')).toContainText('Ramya');
+ await expect(page.locator('.bc-conversation-exchanges')).toContainText('exchange');
+ await expect(page.locator('.bc-conversation-exchanges [data-thread-case-action]')).toHaveCount(1);
+ await expect(page.getByRole('button',{name:'Reply about this exchange'})).toBeVisible();
+ await expect(page.locator('#bc-msg-form')).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+test('two distinct exchanges share one named-person chat but never cross-route explicit replies',async({page})=>{
+ await open(page,'messages/direct:'+B);
+ await page.evaluate(()=>{const s=(window as any).__bcThreeUser;s.data.exchanges.push({...s.data.exchanges[0],id:'case-two',state:'ACCEPTED',state_version:2,created_at:'2026-10-06T12:00:00Z',updated_at:'2026-10-06T12:00:00Z'});s.persist();location.hash='#messages';});
+ await expect(page.locator('.bc-msg-row')).toHaveCount(1);
+ await page.locator('.bc-msg-row').click();
+ await expect(page.locator('.bc-peer-case-chip')).toHaveCount(2);
+ await page.locator('[data-focus-peer-case="case-two"]').click();
+ await expect(page.getByRole('button',{name:'Reply about this exchange'})).toBeVisible();
+ await page.getByRole('button',{name:'Reply about this exchange'}).click();
+ await page.locator('#bc-msg-form textarea').fill('Second case message');
+ await page.locator('#bc-msg-form').evaluate((f:HTMLFormElement)=>f.requestSubmit());
+ await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.messages.find((x:any)=>x.body==='Second case message')?.case_id)).toBe('case-two');
+ expect(await page.evaluate(()=>(window as any).__bcThreeUser.data.messages.some((x:any)=>x.body==='Second case message'&&x.case_id==='guide-case'))).toBe(false);
+});
+test('refresh keeps an explicitly selected case reply and its unsent draft',async({page})=>{
+ await open(page);
+ await page.getByRole('button',{name:'Reply about this exchange'}).click();
+ const input=page.locator('#bc-msg-form textarea');await input.fill('Waiting to send this to the exchange');
+ await page.locator('[data-refresh-thread]').click();
+ await expect(page.locator('#bc-compose-context')).toContainText('About');
+ await expect(input).toHaveValue('Waiting to send this to the exchange');
+ await page.locator('[data-clear-case-context]').click();
+ await expect(page.locator('#bc-compose-context')).toBeEmpty();
+ await expect(input).toHaveValue('');
+ await page.getByRole('button',{name:'Reply about this exchange'}).click();
+ await expect(input).toHaveValue('Waiting to send this to the exchange');
+});
