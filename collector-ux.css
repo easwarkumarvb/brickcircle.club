@@ -160,3 +160,7 @@ html.bc-collector .bc-auth-modal .bc-auth-code-entry{min-height:44px!important;p
 /* Keep the 390x700 sign-in sheet within the padded viewport. Larger signup
    content still scrolls in the overlay, never a second nested modal scroller. */
 @media(max-width:600px) and (max-height:720px){html.bc-collector .bc-auth-modal .bc-form{gap:4px}}
+
+/* Maintain readable collector identity and hero actions on dark panels. */
+html.bc-collector .bc-profile-hero h1{color:#fff!important}
+html.bc-collector .bc-welcome .bc-btn.ghost{color:#fff!important;border-color:#d5dbe6!important;background:transparent!important}
