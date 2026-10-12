@@ -604,7 +604,7 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();collectorFocus=null;collectorComposeContext=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;collectorComposeContext=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();clearStoredThreadDrafts();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -1824,6 +1824,26 @@ const DIRECT_THREAD_FALLBACK='No messages yet. Say hello and arrange your first 
 const CASE_THREAD_FALLBACK='No messages yet. Keep meetup, handoff, return and issue details here.';
 const threadCaches={direct:new Map(),case:new Map()};
 const threadDrafts=new Map();
+const BC_DRAFT_PREFIX='brickcircle:chat-draft:';
+function threadDraft(key){
+  if(threadDrafts.has(key))return threadDrafts.get(key);
+  try{
+    const record=JSON.parse(sessionStorage.getItem(BC_DRAFT_PREFIX+key)||'null');
+    if(record&&typeof record.body==='string'&&record.body.length<=4000&&Date.now()-record.savedAt<86400000){
+      threadDrafts.set(key,record.body);return record.body;
+    }
+  }catch(_){}
+  return '';
+}
+function saveThreadDraft(key,body){
+  const value=String(body||'').slice(0,4000);
+  if(!value){threadDrafts.delete(key);try{sessionStorage.removeItem(BC_DRAFT_PREFIX+key)}catch(_){};return}
+  threadDrafts.set(key,value);
+  try{sessionStorage.setItem(BC_DRAFT_PREFIX+key,JSON.stringify({body:value,savedAt:Date.now()}))}catch(_){}
+}
+function clearStoredThreadDrafts(){
+  try{for(let i=sessionStorage.length-1;i>=0;i--){const key=sessionStorage.key(i);if(key?.startsWith(BC_DRAFT_PREFIX))sessionStorage.removeItem(key)}}catch(_){}
+}
 const pendingSends=new Map();
 let threadCacheUid=null;
 function threadCache(kind,id,uid){
@@ -1943,9 +1963,9 @@ function bindThreadCompose(form,kind,id,senderName){
   const key=`${uid}:${kind}:${id}`;
   const input=$('textarea[name="message"]',form);
   if(input){
-    const saved=threadDrafts.get(key);
+    const saved=threadDraft(key);
     if(saved&&input.value!==saved)input.value=saved;
-    input.oninput=()=>{threadDrafts.set(key,input.value)};
+    input.oninput=()=>{saveThreadDraft(key,input.value)};
   }
   if(pendingSends.has(key)){
     const button=$('button[type="submit"]',form);
@@ -1983,7 +2003,7 @@ function bindThreadCompose(form,kind,id,senderName){
       if(result.error){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
       const sentDraft=input?input.value:null;
       form.reset();
-      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)threadDrafts.delete(key);
+      if(sentDraft!==null&&threadDraft(key)===sentDraft)saveThreadDraft(key,'');
       try{
         await mergeThreadLatest(kind,id,submitUid,stillCurrent);
       }catch(_){
@@ -2213,7 +2233,7 @@ async function refreshThread(chat){
   if(!caseResult.error&&!messageFailure&&$('#bc-msg-error')?.dataset.errorKind!=='delivery')clearThreadError();
   const liveForm=$('#bc-msg-form'),liveInput=liveForm?$('textarea[name="message"]',liveForm):null;
   // A background read must never overwrite text/caret edited while it awaited I/O.
-  if(liveInput&&liveInput!==input){liveInput.value=threadDrafts.get(`${uid}:${kind}:${id}`)||draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
+  if(liveInput&&liveInput!==input){liveInput.value=threadDraft(`${uid}:${kind}:${id}`)||draft;if(caret)liveInput.setSelectionRange(caret[0],caret[1]);if(hadFocus)liveInput.focus()}
   updateMessageBadge();
   if(caseResult.error||messageFailure){
     showThreadError('Messages could not be refreshed.',()=>refreshThread(chat));
@@ -2293,12 +2313,12 @@ function setComposerContext(peerId,caseId=null){
     if(!e||otherId(e)!==peerId||terminalCaseStates.has(e.state)){toast('This exchange can no longer receive replies. You can still message the collector.');return}
   }
   const input=$('textarea[name="message"]',form),oldKind=form.dataset.bcComposeKind,oldId=form.dataset.bcComposeId;
-  if(input&&oldKind&&oldId)threadDrafts.set(uid+':'+oldKind+':'+oldId,input.value);
+  if(input&&oldKind&&oldId)saveThreadDraft(uid+':'+oldKind+':'+oldId,input.value);
   collectorComposeContext={uid,peerId,caseId};
   const kind=caseId?'case':'direct',id=caseId||peerId,key=uid+':'+kind+':'+id;
   form.dataset.bcComposeKind=kind;form.dataset.bcComposeId=id;
   if(input){
-    input.value=threadDrafts.get(key)||'';
+    input.value=threadDraft(key);
     input.placeholder=caseId?'Reply about this exchange…':'Message '+(S.profiles[peerId]?.display_name||'collector').split(' ')[0]+'…';
     input.setAttribute('aria-label',input.placeholder);
   }
