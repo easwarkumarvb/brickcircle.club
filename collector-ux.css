@@ -174,3 +174,10 @@ html.bc-collector .bc-welcome .bc-btn.ghost{color:#fff!important;border-color:#d
 .bc-collector-inputbar{min-width:0}
 #bc-compose-context:empty{display:none}
 @media(max-width:700px){.bc-messages-layout[data-view="thread"]{grid-template-columns:minmax(0,1fr)}.bc-messages-layout[data-view="thread"] .bc-messages-list-pane{display:none}.bc-msg-hero{position:sticky;top:0;z-index:12}.bc-msg-thread-card{min-width:0}.bc-msg-compose{position:relative}.bc-peer-case-list{scroll-snap-type:x proximity}}
+
+.bc-conversation-exchanges{position:sticky;top:66px;z-index:10;background:var(--bc-bg,#f8fafc);padding:6px 0}
+.bc-conversation-exchanges .bc-conversation-guide{margin:3px 0;padding:14px 16px;border-radius:16px}
+.bc-conversation-exchanges .bc-conversation-guide h2{font-size:clamp(16px,3.8vw,21px);line-height:1.3;margin:7px 0 4px}
+.bc-conversation-exchanges .bc-conversation-guide p{font-size:13px;line-height:1.35;margin:3px 0 8px}
+.bc-conversation-exchanges .bc-guide-checks,.bc-conversation-exchanges .bc-guide-options{margin-top:6px}
+@media(max-width:700px){.bc-conversation-exchanges{position:relative;top:auto}.bc-conversation-exchanges .bc-conversation-guide{padding:12px}.bc-conversation-exchanges .bc-guide-actions{display:flex;gap:8px;flex-wrap:wrap}.bc-conversation-exchanges .bc-guide-actions>.bc-btn{min-height:44px}}
