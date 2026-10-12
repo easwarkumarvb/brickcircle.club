@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       expected_head_sha:
-        description: Reviewed immutable PR138 SHA (allowlisted in trusted main)
+        description: Reviewed PR138 SHA 614c05d5d92d1beb6929bbc9d1445bb0796ba08d (trusted main only)
         required: true
         type: string
       confirmation:

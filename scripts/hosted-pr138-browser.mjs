@@ -9,13 +9,19 @@ import {browserLogin,browserProposal,browserFixtureSets,installTransport,canonic
 import {insertOwnedItem,serializeRedactedReport,validateStagingEmails} from './hosted-exchange-smoke.mjs';
 const expect=playwrightExpect.configure({timeout:30000});
 const READ_RPCS=['list_collector_conversations','collector_conversation_feed','mark_collector_conversation_read'];
+export function timestampMicros(value){
+ assert.equal(typeof value,'string');
+ const match=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,6}))?(?:Z|[+-]\d{2}:\d{2})$/.exec(value),millis=match?Date.parse(value):NaN;
+ assert.ok(Number.isFinite(millis),'Feed timestamps must retain a valid offset and PostgreSQL precision');
+ return BigInt(millis)*1000n+BigInt((match[1]||'').padEnd(6,'0').slice(3));
+}
 export function assertFeedPage(rows,peer,uid){
  assert.ok(Array.isArray(rows));assert.ok(rows.length<=50);
  const keys=new Set();let previous=null;
  for(const row of rows){
-  assert.ok(Number.isFinite(Date.parse(row.occurred_at)));assert.ok(['direct_message','case_message','case_event'].includes(row.source_type));assert.ok(row.source_id);
+  const occurredAt=timestampMicros(row.occurred_at);assert.ok(['direct_message','case_message','case_event'].includes(row.source_type));assert.ok(row.source_id);
   const key=JSON.stringify([row.source_type,row.source_id,row.case_id||null]);assert.ok(!keys.has(key));keys.add(key);
-  const tuple=[Date.parse(row.occurred_at),row.source_type,row.source_id];
+  const tuple=[occurredAt,row.source_type,row.source_id];
   if(previous)assert.ok(compareTuple(previous,tuple)>=0);previous=tuple;
   assert.equal(row.payload?.id,row.source_id);
   if(row.source_type==='case_event')assert.equal(row.payload.case_id,row.case_id);
@@ -24,12 +30,12 @@ export function assertFeedPage(rows,peer,uid){
  return rows;
 }
 const lexical=(a,b)=>String(a)<String(b)?-1:String(a)>String(b)?1:0;
-export function compareTuple(a,b){return a[0]-b[0]||lexical(a[1],b[1])||lexical(a[2],b[2])}
+export function compareTuple(a,b){return (a[0]<b[0]?-1:a[0]>b[0]?1:0)||lexical(a[1],b[1])||lexical(a[2],b[2])}
 export function assertRequestBounds(calls){
  for(const {name,args} of calls){
   if(name==='list_collector_conversations')assert.equal(args.p_limit,30);
   if(name==='collector_conversation_feed'){assert.equal(args.p_limit,50);assert.ok(args.p_peer_id);assert.equal(!!args.p_before_at,!!args.p_before_type);assert.equal(!!args.p_before_at,!!args.p_before_id)}
-  if(name==='mark_collector_conversation_read'){assert.ok(args.p_peer_id&&args.p_through_id&&args.p_through_type);assert.ok(Number.isFinite(Date.parse(args.p_through_at)))}
+  if(name==='mark_collector_conversation_read'){assert.ok(args.p_peer_id&&args.p_through_id&&args.p_through_type);timestampMicros(args.p_through_at)}
  }
  for(const name of READ_RPCS)assert.ok(calls.some(call=>call.name===name),`Required read-model request absent: ${name}`);
 }
