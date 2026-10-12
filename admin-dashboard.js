@@ -393,7 +393,15 @@
     if(event==='SIGNED_OUT') purge('Signed out. Sign in to your administrator account.');
     else if(lastUserId&&session?.user?.id&&lastUserId!==session.user.id) purge('Account changed. Refresh to verify administrator access.');
     else if(lastUserId&&session?.access_token) {
-      try { if(JSON.parse(atob(session.access_token.split('.')[1].replaceAll('-','+').replaceAll('_','/'))).aal !== 'aal2') purge('Authenticator verification is required to access the admin console.'); } catch { lockWrites(); }
+      try {
+        if(JSON.parse(atob(session.access_token.split('.')[1].replaceAll('-','+').replaceAll('_','/'))).aal !== 'aal2') {
+          // AAL1 during initial sign-in/enrollment is expected. Keep the pending
+          // server denial and MFA setup alive; no private records are present yet.
+          // An actual downgrade after authorized data has loaded still fails closed.
+          if(accessCertain || renderedView !== null || lastUpdated !== null || pending) purge('Authenticator verification is required to access the admin console.');
+          else lockWrites();
+        }
+      } catch { lockWrites(); }
     }
     else if(session?.user?.id) lastUserId=session.user.id;
   });

@@ -6,7 +6,7 @@ import path from 'node:path';
 const mock=fs.readFileSync(path.resolve('tests/isolated/fixtures/supabase-browser-mock.js'),'utf8');
 const liveImages=process.env.BC_LANDING_LIVE_IMAGES==='1';
 const evidence=process.env.BC_LANDING_QA_DIR;
-const ids=['42143-1','42141-1','10283-1','21309-1','10214-1','10276-1'];
+const ids=['42143-1','42115-1','10283-1','21309-1','10214-1','10276-1'];
 
 for(const width of [320,360,390,768,1440]){
   for(const enlarged of [false,true]){

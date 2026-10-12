@@ -3,4 +3,5 @@ playwright-report/
 test-results/
 .env.web-push.local
 artifacts/
-
+ux-report/
+ux-lighthouse/

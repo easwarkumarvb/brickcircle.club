@@ -1,27 +1,57 @@
 {
   "name": "BrickCircle — LEGO Set Exchange",
   "short_name": "BrickCircle",
-  "description": "Catalogue collectible LEGO sets, find reciprocal matches nearby, and exchange sets with the BrickCircle community.",
+  "description": "Buy Less. Build More. Catalogue your LEGO sets, find reciprocal collector matches nearby, and build more through community exchanges.",
   "id": "/v2.html",
   "start_url": "/v2.html?source=pwa#home",
   "scope": "/",
   "display": "standalone",
-  "display_override": ["standalone", "minimal-ui"],
+  "display_override": [
+    "standalone",
+    "minimal-ui"
+  ],
   "background_color": "#111827",
   "theme_color": "#111827",
   "orientation": "portrait-primary",
   "icons": [
     {
+      "src": "/assets/brickcircle-brand-2026-256.png",
+      "sizes": "256x256",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/brickcircle-brand-2026-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
       "src": "/assets/pwa-icon.svg",
       "sizes": "any",
       "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "purpose": "maskable"
     }
   ],
   "shortcuts": [
-    {"name":"My Sets","short_name":"My Sets","url":"/v2.html#sets"},
-    {"name":"Find Matches","short_name":"Matches","url":"/v2.html#matches"},
-    {"name":"Exchanges","short_name":"Exchanges","url":"/v2.html#exchanges"}
+    {
+      "name": "My Sets",
+      "short_name": "My Sets",
+      "url": "/v2.html#sets"
+    },
+    {
+      "name": "Find Matches",
+      "short_name": "Matches",
+      "url": "/v2.html#matches"
+    },
+    {
+      "name": "Exchanges",
+      "short_name": "Exchanges",
+      "url": "/v2.html#exchanges"
+    }
   ],
-  "categories": ["social", "lifestyle"]
+  "categories": [
+    "social",
+    "lifestyle"
+  ]
 }
