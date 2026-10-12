@@ -1978,7 +1978,7 @@ function updateThreadChat(cache,options={}){
   if(collectorFocus?.peerId===cache.id)bindCollectorCaseLinks(chat);
 }
 function bindCollectorCaseLinks(root){
-  $('[data-open-messages-case]',root).forEach(b=>b.onclick=()=>{
+  $$('[data-open-messages-case]',root).forEach(b=>b.onclick=()=>{
     const id=b.dataset.openMessagesCase,e=messageIndexByUid.get(S.user?.id)?.cases.get(id)?.case;
     if(e&&collectorFocus?.peerId===otherId(e))selectCollectorCase(collectorFocus.peerId,id);
     else navigate('messages','case:'+id);
