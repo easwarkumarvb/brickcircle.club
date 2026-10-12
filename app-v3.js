@@ -723,7 +723,13 @@ function applyNotificationChange(payload){
     // authorized message RPC/tables rather than trusting notification bodies.
     window.setTimeout(()=>syncVisibleThread(),150);
   }
-  if(payload.eventType==='INSERT'&&!row.read_at){if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');else showLifecycleNotification(row)}
+  if(payload.eventType==='INSERT'&&!row.read_at){
+    const chatting=routeName()==='messages'&&!!$('#bc-msg-chat');
+    if(!chatting||!['message_received','exchange_message'].includes(row.kind)){
+      if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');
+      else showLifecycleNotification(row);
+    }
+  }
 }
 async function reconcileNotifications(){
   const epoch=authEpoch,uid=S.user?.id;if(!uid||logoutLocked||explicitLogout)return;
@@ -794,7 +800,11 @@ function showLifecycleNotification(notification){
   root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(notification.title||view.label)}</h2><p>${esc(notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
   document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.thread)navigate('messages',view.thread);else if(view.exchangeId)navigate('messages',`case:${view.exchangeId}`);else if(notificationExchangeId(notification))navigate('messages',`case:${notificationExchangeId(notification)}`);else navigate(view.route)};return true;
 }
-function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
+function showUnreadLifecycleNotice(){
+  const chatting=routeName()==='messages'&&!!$('#bc-msg-chat');
+  const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind)&&(!chatting||!['message_received','exchange_message'].includes(item.kind)));
+  return showLifecycleNotification(notification);
+}
 function showNextUnreadNotificationNotice(){
   if(!S.user?.id||notificationPresentationActive())return false;
   return showUnreadProposalNotice()||showUnreadLifecycleNotice();
