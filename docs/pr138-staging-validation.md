@@ -1,6 +1,6 @@
 # PR138 staging validation
 
-Revalidation candidate: `3d1fc2097780c5352e2cdf66a100a38c38141407`. Product draft: https://github.com/easwarkumarvb/brickcircle.club/pull/138. This new head has client microsecond ordering, refresh-retention and displayed-read-cursor fixes. CI and a fresh protected hosted run for this exact head remain pending.
+Revalidation candidate: `614c05d5d92d1beb6929bbc9d1445bb0796ba08d`. Product draft: https://github.com/easwarkumarvb/brickcircle.club/pull/138. This new head has client microsecond ordering, refresh-retention and displayed-read-cursor fixes. CI and a fresh protected hosted run for this exact head remain pending.
 
 The separate runner refresh proposal targets trusted main and never includes the product implementation. Existing PR125 runners and their pins remain unchanged. The updated runner cannot execute from this proposal branch: trusted-main integration, manual dispatch and protected-environment review are mandatory. This new runner proposal requires separate owner merge approval. Product PR138 merge, production deployment and production migration remain unauthorized. Vercel automatic deployments remain disabled for main, the existing runner branch and the product development branch; the new `qa/pr138-staging-revalidation` branch is disabled before publication too. Re-enabling automatic main deployments or manually deploying production requires separate owner approval.
 

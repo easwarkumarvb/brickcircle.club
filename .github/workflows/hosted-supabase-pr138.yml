@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       expected_head_sha:
-        description: Reviewed PR138 SHA 3d1fc2097780c5352e2cdf66a100a38c38141407 (trusted main only)
+        description: Reviewed PR138 SHA 614c05d5d92d1beb6929bbc9d1445bb0796ba08d (trusted main only)
         required: true
         type: string
       confirmation:

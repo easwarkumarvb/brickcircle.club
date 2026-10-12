@@ -13,7 +13,7 @@ const target = () => ({ BC_HOSTED_SMOKE_CONFIRMATION:STAGING_CONFIRMATION, BC_HO
   BC_STAGING_ALLOWED_EMAIL_DOMAIN:'example.test', BC_STAGING_NOTIFICATION_MODE:'outbox-only', BC_STAGING_SUPABASE_PUBLISHABLE_KEY:'offline-placeholder' });
 test('exact trusted-main selection', () => assert.equal(validateSelection(selection()), PR138_SHA));
 test('one reviewed product head replaces the original pin, never a broader allowlist',()=>{
-  assert.equal(PR138_SHA,'3d1fc2097780c5352e2cdf66a100a38c38141407');
+  assert.equal(PR138_SHA,'614c05d5d92d1beb6929bbc9d1445bb0796ba08d');
   const old='7d84652903b176d69bfd09e2f59f3c3ec785d1a3',s=selection();s.sha=old;s.pr.head.sha=old;
   assert.throws(()=>validateSelection(s));
   assert.throws(()=>validateTarget({...target(),BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA:old}));
