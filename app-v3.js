@@ -1588,7 +1588,10 @@ let collectorFocus=null;
 function messagesThreadGuard(kind,id){
   if(!S.user||routeName()!=='messages')return false;
   if(routeId()===`${kind}:${id}`||(kind==='case'&&routeId().startsWith(`case:${id}:message:`)))return true;
-  if(kind==='case')return !!collectorFocus&&collectorFocus.uid===S.user.id&&$('#bc-msg-form')?.dataset.destination===id&&!!messageIndexByUid.get(S.user.id)?.cases.get(id)?.case;
+  if(kind==='case'){
+    const e=messageIndexByUid.get(S.user.id)?.cases.get(id)?.case;
+    return !!e&&!!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===otherId(e)&&!!$('#bc-msg-chat');
+  }
   return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct';
 }
 function parseMessagesTarget(){
@@ -2328,7 +2331,11 @@ function renderInlineProposal(peerId){
 }
 function collectorDestinationMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
-  return `<div class="bc-peer-case-list" aria-label="Exchanges with this collector">${groups.map(g=>`<button type="button" class="bc-peer-case-chip" data-focus-peer-case="${attr(g.caseId)}">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</button>`).join('')}</div><div id="bc-compose-context" role="status" aria-live="polite"></div>`;
+  return `<div class="bc-peer-case-list" aria-label="Exchanges with this collector">${groups.map(g=>`<button type="button" class="bc-peer-case-chip" data-focus-peer-case="${attr(g.caseId)}">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</button>`).join('')}</div>`;
+}
+function preferredPeerCase(peerId){
+  const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
+  return groups.find(g=>!terminalCaseStates.has(g.case.state))?.case||null;
 }
 function selectCollectorCase(peerId,caseId){
   const uid=S.user?.id,group=caseId?messageIndexByUid.get(uid)?.cases.get(caseId):null;
@@ -2337,18 +2344,21 @@ function selectCollectorCase(peerId,caseId){
   if(previous&&(previous.uid!==uid||previous.peerId!==peerId||previous.caseId!==(caseId||null)))$('#bc-collector-form')?.replaceChildren();
   collectorFocus={uid,peerId,caseId:caseId||null};
   const host=$('#bc-collector-action'),e=group?.case;
-  if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">Discuss the exchange here. Agreements and handoffs only change when both collectors confirm.</p>';
-  if(e)bindThreadCaseActions(e);
+  const displayed=e||preferredPeerCase(peerId);
+  if(host)host.innerHTML=displayed?caseConversationGuide(displayed):'<p class="bc-small">Start a conversation. When a mutual LEGO match appears, you can propose an exchange here.</p>';
+  if(displayed)bindThreadCaseActions(displayed);
   const form=$('#bc-msg-form');
+  const caseList=$('#bc-peer-case-list');
+  if(caseList)caseList.innerHTML=collectorDestinationMarkup(peerId,caseId);
   // Reading an exchange never silently changes the message destination.
   if(form){form.hidden=false;form.dataset.destination='';bindThreadCompose(form,'direct',peerId,S.profiles[peerId]?.display_name)}
   if(e){const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b]}
   const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
   $$('[data-focus-peer-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.focusPeerCase}`));
   const action=$('#bc-collector-action');
-  if(action&&e&&!terminalCaseStates.has(e.state)){
+  if(action&&displayed&&!terminalCaseStates.has(displayed.state)){
     const context=document.createElement('button');context.type='button';context.className='bc-btn bc-reply-case';context.textContent='Reply about this exchange';
-    context.onclick=()=>setPeerComposeContext(peerId,e.id);
+    context.onclick=()=>setPeerComposeContext(peerId,displayed.id);
     action.appendChild(context);
   }
   setPeerComposeContext(peerId,null);
@@ -2399,7 +2409,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   if(focusedCase&&!messageIndexByUid.get(uid)?.cases.get(focusedCase))return renderMessagesUnavailable('Conversation unavailable.');
   collectorFocus={uid,peerId,caseId:focusedCase};
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,focusedCase)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div class="bc-conversation-exchanges"><div id="bc-peer-case-list"></div><div id="bc-collector-action"></div></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar"><div id="bc-compose-context" role="status" aria-live="polite"></div><form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
