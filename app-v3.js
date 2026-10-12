@@ -1563,13 +1563,14 @@ function conversationUnread(uid,group){
 function totalUnreadCount(uid){
   const index=uid?messageIndexByUid.get(uid):null;
   if(!index)return 0;
+  if(index.readModel===true)return [...(index.summaries?.values()||[])].reduce((sum,row)=>sum+Number(row.unread_count||0),0);
   let total=0;
   index.direct.forEach(group=>{total+=conversationUnread(uid,group)});
   index.cases.forEach(group=>{total+=conversationUnread(uid,group)});
   return total;
 }
 function updateMessageBadge(){
-  const uid=S.user?.id,unread=uid?totalUnreadCount(uid):0,unknown=!!messageIndexByUid.get(uid)?.partial;
+  const uid=S.user?.id,unread=uid?totalUnreadCount(uid):0,unknown=!!messageIndexByUid.get(uid)?.partial||!!(messageIndexByUid.get(uid)?.readModel&&messageIndexByUid.get(uid)?.inboxHasOlder);
   const inbox=$('[data-open="inbox"]');
   const buttons=[...$$('[data-nav="messages"]')];
   if(inbox)buttons.push(inbox);
@@ -1585,7 +1586,7 @@ function updateMessageBadge(){
     }
     if(!badge){badge=document.createElement('span');badge.className='bc-badge';button.appendChild(badge)}
     badge.textContent=unknown?'?':unread>9?'9+':String(unread);
-    button.setAttribute('aria-label',unknown?`${base}, unread count temporarily unavailable`:`${base}, ${unread>9?'9+':unread} unread on this device`);
+    button.setAttribute('aria-label',unknown?`${base}, unread count temporarily unavailable`:`${base}, ${unread>9?'9+':unread} unread${messageIndexByUid.get(uid)?.readModel===true?'':' on this device'}`);
   });
 }
 function participantMessagesQuery(uid,cursor){
@@ -1618,7 +1619,7 @@ async function fetchPagedIndex(buildQuery,stillCurrent){
   }
   return{data:rows,error:null};
 }
-async function loadMessageIndex(uid,token){
+async function loadLegacyMessageIndex(uid,token){
   const stillCurrent=()=>S.user?.id===uid&&token===S.renderToken;
   const [direct,caseMessages,cases]=await Promise.all([
     fetchPagedIndex(cursor=>participantMessagesQuery(uid,cursor),stillCurrent),
@@ -1682,6 +1683,78 @@ async function loadMessageIndex(uid,token){
   if(!await hydrateExchangeItems(ownedCases,stillCurrent))return null;
   return index;
 }
+// Capability is account-scoped: transient or permission errors never select legacy storage.
+function collectorRpcAbsent(result){return ['PGRST202','42883'].includes(result.error?.code)||(!result.error&&result.data==null)}
+function collectorReadDenied(error){return ['42501','PGRST301','PGRST302'].includes(error?.code)}
+function collectorFeedKey(row){return `${row.source_type}:${row.source_id}`}
+function collectorFeedCompare(a,b){const lexical=(x,y)=>String(x)<String(y)?-1:String(x)>String(y)?1:0;return new Date(a.occurred_at).getTime()-new Date(b.occurred_at).getTime()||lexical(a.source_type,b.source_type)||lexical(a.source_id,b.source_id)}
+async function hydrateCollectorCases(uid,peerIds,caseIds,token){
+  if(!peerIds.length&&!caseIds.length)return true;
+  const index=messageIndex(uid),scope=`user_a.eq.${uid},user_b.eq.${uid}`;
+  const queries=[];
+  if(peerIds.length)queries.push(db.from('exchange_cases').select('*').or(scope).or(`user_a.in.(${peerIds.join(',')}),user_b.in.(${peerIds.join(',')})`).not('state','in',`(${[...terminalCaseStates].join(',')})`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(201));
+  if(caseIds.length)queries.push(db.from('exchange_cases').select('*').or(scope).in('id',caseIds));
+  const results=await Promise.all(queries.map(query=>settledTimeout(query,10000)));
+  if(S.user?.id!==uid||S.renderToken!==token)return false;
+  const denied=results.find(result=>collectorReadDenied(result.error));if(denied){index.cases.clear();throw denied.error}
+  index.caseFresh=!results.some(result=>result.error);if(!index.caseFresh){index.partial=true;return false}
+  if(peerIds.length&&results[0]?.data?.length===201){index.caseOverflow=true;index.partial=true}
+  const cases=results.flatMap(result=>result.data||[]).filter(row=>[row.user_a,row.user_b].includes(uid));
+  cases.forEach(row=>{const prior=index.cases.get(row.id);index.cases.set(row.id,{kind:'case',caseId:row.id,case:row,messages:prior?.messages||[],events:prior?.events||[],stamp:new Date(row.updated_at||row.created_at).getTime()})});
+  return !!await hydrateExchangeItems(cases,()=>S.user?.id===uid&&S.renderToken===token);
+}
+function collectorHasMoreCases(peerId,uid){
+  const index=messageIndexByUid.get(uid);if(index?.readModel!==true)return false;
+  const paging=index.casePages?.get(peerId);if(paging?.done)return false;
+  const count=[...index.cases.values()].filter(g=>g.case&&otherId(g.case)===peerId&&!terminalCaseStates.has(g.case.state)).length;
+  return count<Number(index.summaries?.get(peerId)?.active_case_count||0)||!!index.caseOverflow;
+}
+async function loadMoreCollectorCases(peerId,uid,token){
+  const index=messageIndex(uid);index.casePages??=new Map();const paging=index.casePages.get(peerId)||{};
+  let query=db.from('exchange_cases').select('*').or(`user_a.eq.${uid},user_b.eq.${uid}`).or(`user_a.eq.${peerId},user_b.eq.${peerId}`).not('state','in',`(${[...terminalCaseStates].join(',')})`).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(50);
+  if(paging.cursor)query=query.or(threadCursorPredicate(paging.cursor));
+  const result=await settledTimeout(query,10000);if(S.user?.id!==uid||S.renderToken!==token)return false;
+  if(result.error){index.partial=true;if(collectorReadDenied(result.error))throw result.error;return false}
+  const rows=(result.data||[]).filter(e=>[e.user_a,e.user_b].includes(uid)&&otherId(e)===peerId);
+  rows.forEach(e=>{const prior=index.cases.get(e.id);index.cases.set(e.id,{kind:'case',caseId:e.id,case:e,messages:prior?.messages||[],events:prior?.events||[]})});
+  paging.cursor=rows.length?{created_at:rows.at(-1).created_at,id:rows.at(-1).id}:paging.cursor;paging.done=(result.data||[]).length<50;index.casePages.set(peerId,paging);
+  return !!await hydrateExchangeItems(rows,()=>S.user?.id===uid&&S.renderToken===token);
+}
+async function loadMessageIndex(uid,token,older=false){
+  const index=messageIndex(uid);
+  if(index.readModel===false)return loadLegacyMessageIndex(uid,token);
+  const cursor=older?index.inboxCursor:null;
+  const result=await settledTimeout(db.rpc('list_collector_conversations',{p_before_at:cursor?.last_at||null,p_before_peer:cursor?.peer_id||null,p_limit:30}),10000);
+  if(S.user?.id!==uid||S.renderToken!==token)return null;
+  if(index.readModel!==true&&collectorRpcAbsent(result)){index.readModel=false;return loadLegacyMessageIndex(uid,token)}
+  if(result.error){index.partial=true;index.caseFresh=false;if(collectorReadDenied(result.error)){index.direct.clear();index.cases.clear();index.summaries?.clear();index.feeds?.clear();throw result.error}if(index.readModel===true&&index.summaries?.size)return index;throw result.error}
+  if(!Array.isArray(result.data))throw new Error('Conversation summary unavailable.');
+  index.readModel=true;index.summaries??=new Map();index.feeds??=new Map();index.partial=false;
+  const rows=result.data.filter(row=>row.peer_id&&row.peer_id!==uid);
+  rows.forEach(row=>index.summaries.set(row.peer_id,row));
+  if(older||!index.inboxCursor){index.inboxCursor=rows.at(-1)||null;index.inboxHasOlder=rows.length===30}
+  index.loadedAt=Date.now();
+  const peers=rows.map(row=>row.peer_id),missing=peers.filter(id=>!S.profiles[id]);
+  if(missing.length){const profiles=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',missing),10000);if(S.user?.id!==uid||S.renderToken!==token)return null;if(collectorReadDenied(profiles.error))throw profiles.error;if(profiles.error)index.partial=true;(profiles.data||[]).forEach(row=>S.profiles[row.id]=row)}
+  const visibleCaseIds=[collectorFocus?.caseId,collectorFocus?.replyCaseId].filter(Boolean);
+  await hydrateCollectorCases(uid,peers,visibleCaseIds,token);
+  return index;
+}
+async function loadCollectorFeed(peerId,uid,token,older=false){
+  const index=messageIndex(uid);index.feeds??=new Map();
+  const feed=index.feeds.get(peerId)||{rows:[],hasOlder:false};
+  const before=older?feed.cursor:null;
+  const result=await settledTimeout(db.rpc('collector_conversation_feed',{p_peer_id:peerId,p_before_at:before?.occurred_at||null,p_before_type:before?.source_type||null,p_before_id:before?.source_id||null,p_limit:50}),10000);
+  if(S.user?.id!==uid||S.renderToken!==token)return false;
+  if(result.error){if(collectorReadDenied(result.error)){index.feeds.delete(peerId);throw result.error}index.partial=true;return false}
+  if(!Array.isArray(result.data)){index.partial=true;return false}
+  const incoming=result.data.filter(row=>{if(!['direct_message','case_message','case_event'].includes(row.source_type)||!row.source_id||!Number.isFinite(new Date(row.occurred_at).getTime())||!row.payload||row.payload.id!==row.source_id)return false;if(row.source_type==='case_event')return !!row.case_id&&row.payload.case_id===row.case_id;if(row.source_type==='case_message'&&(!row.case_id||row.payload.case_id!==row.case_id))return false;if(row.source_type==='direct_message'&&(row.case_id||row.payload.exchange_id!=null))return false;const m=row.payload;return m.id===row.source_id&&((m.sender_id===uid&&m.recipient_id===peerId)||(m.sender_id===peerId&&m.recipient_id===uid))});
+  const priorRows=older?feed.rows:result.data.length<50?[]:feed.rows.filter(row=>incoming.length&&collectorFeedCompare(row,incoming.at(-1))<0);
+  const rows=new Map(priorRows.map(row=>[collectorFeedKey(row),row]));incoming.forEach(row=>rows.set(collectorFeedKey(row),row));
+  feed.rows=[...rows.values()].sort(collectorFeedCompare);if(older||!index.feeds.has(peerId)){feed.hasOlder=result.data.length===50;feed.cursor=result.data.at(-1)||null}
+  index.feeds.set(peerId,feed);
+  return hydrateCollectorCases(uid,[peerId],[...new Set(incoming.map(row=>row.case_id).filter(Boolean))],token);
+}
 function currentConversationKey(){
   if(routeName()!=='messages')return'';
   return routeId()||'';
@@ -1704,6 +1777,7 @@ function filteredConversationGroups(){
   };
   index.direct.forEach(group=>add(group.peerId,group));
   index.cases.forEach(group=>{const e=group.case;if(e)add(otherId(e),group)});
+  if(index.readModel===true){peers.clear();index.summaries?.forEach(summary=>peers.set(summary.peer_id,{kind:'peer',peerId:summary.peer_id,direct:null,cases:[...index.cases.values()].filter(g=>g.case&&otherId(g.case)===summary.peer_id),messages:[],stamp:new Date(summary.last_at).getTime()||0,unread:Number(summary.unread_count)||0,summary}))}
   let groups=[...peers.values()];
   if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
   if(messagesFilter==='action')groups=groups.filter(group=>index.caseFresh!==false&&group.cases.some(g=>!terminalCaseStates.has(g.case.state)&&caseNextAction(g.case).action));
@@ -1713,17 +1787,18 @@ function filteredConversationGroups(){
   return groups.sort((a,b)=>b.stamp-a.stamp);
 }
 function messagesFilterBarMarkup(){
-  return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['action','Needs my action']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
+  return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['action','Needs my action']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?` title="${messageIndexByUid.get(S.user?.id)?.readModel===true?'Unread messages':'Unread on this device'}"`:''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
 }
 function messageRow(group,uid,selected){
   const unread=group.kind==='peer'?group.unread:conversationUnread(uid,group);
   const unavailable=!!messageIndexByUid.get(uid)?.partial;
-  const unreadBadge=unavailable?'<span class="bc-small bc-msg-unread-unavailable" title="Unread count temporarily unavailable" aria-label="Unread count temporarily unavailable">?</span>':unread?`<span class="bc-msg-unread" title="Unread on this device" aria-label="${unread} unread on this device">${unread>9?'9+':unread}</span>`:'';
+  const unreadLabel=messageIndexByUid.get(uid)?.readModel===true?'Unread messages':'Unread on this device';
+  const unreadBadge=unavailable?'<span class="bc-small bc-msg-unread-unavailable" title="Unread count temporarily unavailable" aria-label="Unread count temporarily unavailable">?</span>':unread?`<span class="bc-msg-unread" title="${unreadLabel}" aria-label="${unread} ${unreadLabel.toLowerCase()}">${unread>9?'9+':unread}</span>`:'';
   if(group.kind==='peer'){
     const p=S.profiles[group.peerId]||{},latest=group.messages.slice().sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))[0];
     const caseMessage=latest?.case_id||latest?.exchange_case_id;
-    const prefix=caseMessage?(group.cases.find(c=>c.caseId===caseMessage)?.case||null):null,snippet=latest?.body||'Start the conversation';
-    return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${latest?fmtDateTime(latest.created_at):''}</span></span><span class="bc-msg-row-preview">${prefix?`${esc(itemName(prefix.item_a))} ⇄ ${esc(itemName(prefix.item_b))} · `:''}${esc(snippet)}</span></span>${!unavailable&&group.cases.some(g=>!terminalCaseStates.has(g.case.state)&&caseNextAction(g.case).action)?pill('Your turn','gold'):''}${unreadBadge}</button>`;
+    const prefix=caseMessage?(group.cases.find(c=>c.caseId===caseMessage)?.case||null):null,snippet=group.summary?.preview||latest?.body||'Start the conversation';
+    return `<button class="bc-msg-row ${selected?'selected':''}" type="button" data-message-open="direct:${attr(group.peerId)}" ${selected?'aria-current="true"':''}><span class="bc-mini-avatar">${avatar(p)}</span><span class="bc-msg-row-main"><span class="bc-msg-row-top"><span class="bc-msg-row-name">${esc(p.display_name||'Collector')}</span><span class="bc-msg-row-time">${group.summary?.last_at?fmtDateTime(group.summary.last_at):latest?fmtDateTime(latest.created_at):''}</span></span><span class="bc-msg-row-preview">${prefix?`${esc(itemName(prefix.item_a))} ⇄ ${esc(itemName(prefix.item_b))} · `:''}${esc(snippet)}</span></span>${!unavailable&&group.cases.some(g=>!terminalCaseStates.has(g.case.state)&&caseNextAction(g.case).action)?pill('Your turn','gold'):''}${unreadBadge}</button>`;
   }
   if(group.kind==='direct'){
     const p=S.profiles[group.peerId]||{};
@@ -1738,7 +1813,7 @@ function messagesListPaneMarkup(){
   const uid=S.user?.id,groups=filteredConversationGroups(),route=parseMessagesTarget();
   const selected=route?.kind==='direct'?`peer:${route.peerId}`:route?.kind==='case'?`peer:${otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{})}`:'';
   const count=groups.length;
-  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div><label class="bc-msg-search">Search collectors<input class="bc-input" type="search" data-messages-search value="${attr(messagesSearch)}" placeholder="Collector name" autocomplete="off"></label>${messagesFilterBarMarkup()}${messageIndexByUid.get(uid)?.partial?'<p class="bc-small" role="status">Some updates and unread counts are temporarily unavailable.</p>':''}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join('')}</div>`:messagesSearch.trim()||messagesFilter!=='all'?empty('💬','No matching conversations','Try another collector name or show all conversations.'):empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
+  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div><label class="bc-msg-search">Search collectors<input class="bc-input" type="search" data-messages-search value="${attr(messagesSearch)}" placeholder="Collector name" autocomplete="off"></label>${messagesFilterBarMarkup()}${messageIndexByUid.get(uid)?.partial?'<p class="bc-small" role="status">Some updates and unread counts are temporarily unavailable.</p>':''}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join('')}</div>`:messagesSearch.trim()||messagesFilter!=='all'?empty('💬','No matching conversations','Try another collector name or show all conversations.'):empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}${messageIndexByUid.get(uid)?.readModel&&messageIndexByUid.get(uid)?.inboxHasOlder?'<button class="bc-btn" type="button" data-load-more-collectors>Load more collectors</button>':''}`;
 }
 function reconcileMessageIndex(uid,kind,id){
   const index=messageIndex(uid);
@@ -1769,6 +1844,7 @@ function advanceThreadWatermark(uid,kind,id){
 function advanceCollectorWatermarks(peerId,uid){
   if(S.user?.id!==uid||collectorFocus?.uid!==uid||collectorFocus.peerId!==peerId||!$('#bc-msg-chat'))return;
   const index=messageIndexByUid.get(uid);
+  if(index?.readModel===true){markCollectorDisplayedRead(peerId,uid);return}
   const direct=index?.direct.get(peerId);
   const groups=[...(index?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
   const advance=(key,messages)=>{
@@ -1781,11 +1857,25 @@ function advanceCollectorWatermarks(peerId,uid){
   groups.forEach(group=>advance(`case:${group.caseId}`,[...group.messages,...(threadCaches.case.get(`${uid}:${group.caseId}`)?.messages||[])]));
   renderMessagesListPane();updateMessageBadge();
 }
+async function markCollectorDisplayedRead(peerId,uid){
+  const index=messageIndexByUid.get(uid),feed=index?.feeds?.get(peerId),chat=$('#bc-msg-chat'),row=feed?.rows.at(-1),token=S.renderToken;
+  if(!row||!chat||chat.bcTimelineFocus||collectorFocus?.peerId!==peerId||collectorFocus.uid!==uid||document.visibilityState==='hidden'||chat.scrollHeight-chat.clientHeight-chat.scrollTop>=80||feed.marking||feed.readTuple===collectorFeedKey(row)+row.occurred_at)return;
+  feed.marking=true;
+  try{
+    const result=await settledTimeout(db.rpc('mark_collector_conversation_read',{p_peer_id:peerId,p_through_at:row.occurred_at,p_through_type:row.source_type,p_through_id:row.source_id}),10000);
+    if(S.user?.id!==uid||S.renderToken!==token)return;
+    if(result.error){index.partial=true;if(collectorReadDenied(result.error))renderMessagesUnavailable('Conversation access could not be verified.');return}
+    feed.readTuple=collectorFeedKey(row)+row.occurred_at;
+    await loadMessageIndex(uid,token);if(S.user?.id===uid&&S.renderToken===token)renderMessagesListPane();
+  }catch(error){index.partial=true}finally{feed.marking=false}
+}
 function renderMessagesListPane(){
   const pane=$('.bc-messages-list-pane',app());
   if(!pane)return;
+  const prior=$('[data-messages-search]',pane),focused=prior&&document.activeElement===prior,selection=focused?[prior.selectionStart,prior.selectionEnd]:null;
   pane.innerHTML=messagesListPaneMarkup();
   bindMessagesListPane(pane);
+  if(focused){const next=$('[data-messages-search]',pane);next?.focus();if(next?.setSelectionRange&&selection?.[0]!=null)try{next.setSelectionRange(...selection)}catch{}}
   updateMessageBadge();
 }
 function bindMessagesListPane(root=app()){
@@ -1793,6 +1883,7 @@ function bindMessagesListPane(root=app()){
     const start=search.selectionStart,end=search.selectionEnd;messagesSearch=search.value;renderMessagesListPane();
     const next=$('[data-messages-search]');if(next){next.focus();if(next.setSelectionRange&&start!==null)try{next.setSelectionRange(start,end)}catch{}}
   };
+  const more=$('[data-load-more-collectors]',root);if(more)more.onclick=async()=>{const uid=S.user?.id,token=S.renderToken;more.disabled=true;try{await loadMessageIndex(uid,token,true)}catch(error){if(collectorReadDenied(error))return renderMessagesUnavailable('Conversation access could not be verified.');messageIndex(uid).partial=true}if(S.user?.id===uid&&S.renderToken===token)renderMessagesListPane()};
   $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
   $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
   $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
@@ -1924,6 +2015,8 @@ function collectorEventLabel(event,e){
   return labels[kind]||'Exchange updated';
 }
 function collectorTimelineMarkup(peerId,uid){
+  const serverIndex=messageIndexByUid.get(uid);
+  if(serverIndex?.readModel===true){const feed=serverIndex.feeds?.get(peerId);let day='',markup=(collectorHasMoreCases(peerId,uid)?'<button class="bc-btn" type="button" data-load-collector-cases>Load more exchange details</button>':'')+(feed?.hasOlder?earlierThreadButtonMarkup():'');(feed?.rows||[]).forEach(row=>{const next=new Date(row.occurred_at).toDateString();if(day!==next){day=next;markup+=`<div class="bc-msg-day" role="separator">${esc(fmtDate(row.occurred_at))}</div>`}const e=serverIndex.cases.get(row.case_id)?.case;if(row.source_type==='case_event')markup+=`<article class="bc-collector-event" data-timeline-case="${attr(row.case_id)}"><span>${esc(collectorEventLabel(row.payload,e))}</span><small>${fmtDateTime(row.occurred_at)}</small>${e?`<button class="bc-btn bc-case-source" type="button" data-view-collector-case="${attr(e.id)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</button>`:''}</article>`;else markup+=`<div class="bc-collector-entry" data-timeline-message="${attr(row.source_id)}"${row.case_id?` data-timeline-case="${attr(row.case_id)}"`:''}>${e?`<button type="button" class="bc-case-source" data-view-collector-case="${attr(e.id)}">About ${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</button>`:''}${messageBubble({...row.payload,created_at:row.occurred_at},S.profiles[peerId]?.display_name)}</div>`});return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>'}
   const index=messageIndexByUid.get(uid),direct=threadCaches.direct.get(`${uid}:${peerId}`);
   const cases=[...(index?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
   const rows=new Map();
@@ -1947,6 +2040,7 @@ function collectorTimelineMarkup(peerId,uid){
   return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>';
 }
 async function loadCollectorEvents(peerId,uid,token){
+  if(messageIndexByUid.get(uid)?.readModel===true)return loadCollectorFeed(peerId,uid,token);
   const groups=[...(messageIndexByUid.get(uid)?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
   const results=await Promise.all(groups.map(group=>settledTimeout(db.from('exchange_case_events').select('*').eq('case_id',group.caseId).order('created_at',{ascending:true}),10000)));
   if(S.user?.id!==uid||S.renderToken!==token)return false;
@@ -1972,6 +2066,7 @@ function updateThreadChat(cache,options={}){
   if(collectorFocus?.peerId===cache.id)bindCollectorCaseLinks(chat);
 }
 function bindCollectorCaseLinks(root){
+  const more=$('[data-load-collector-cases]',root);if(more)more.onclick=async()=>{const uid=S.user?.id,peerId=collectorFocus?.peerId,token=S.renderToken;if(!peerId)return;more.disabled=true;try{if(await loadMoreCollectorCases(peerId,uid,token)&&S.user?.id===uid&&S.renderToken===token){selectCollectorCase(peerId,collectorFocus.caseId);updateThreadChat(threadCache('direct',peerId,uid),{scrollMode:'keep'})}else if(S.user?.id===uid&&S.renderToken===token){more.disabled=false;showThreadError('Exchange details could not be loaded.',()=>more.click())}}catch(error){if(collectorReadDenied(error))renderMessagesUnavailable('Conversation access could not be verified.')}};
   $$('[data-open-messages-case],[data-view-collector-case]',root).forEach(button=>button.onclick=()=>{
     const caseId=button.dataset.viewCollectorCase||button.dataset.openMessagesCase;
     if(collectorFocus?.uid===S.user?.id)openCollectorCaseSheet(collectorFocus.peerId,caseId);
@@ -2040,7 +2135,7 @@ function bindThreadCompose(form,kind,id,senderName){
       form.reset();
       if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)persistThreadDraft(key,'');
       try{
-        await mergeThreadLatest(kind,id,submitUid,stillCurrent);
+        if(collectorFocus&&messageIndexByUid.get(submitUid)?.readModel===true){if(!await loadCollectorFeed(collectorFocus.peerId,submitUid,token))throw new Error('Conversation refresh unavailable.')}else await mergeThreadLatest(kind,id,submitUid,stillCurrent);
       }catch(_){
         if(!stillCurrent())return;
         restore();
@@ -2130,6 +2225,7 @@ async function loadEarlierThreadMessages(chat){
   const uid=S.user.id,token=S.renderToken;
   const stillCurrent=()=>S.user?.id===uid&&token===S.renderToken&&messagesThreadGuard(kind,id);
   const cache=threadCache(kind,id,uid);
+  if(collectorFocus?.peerId===id&&messageIndexByUid.get(uid)?.readModel===true){ctx.refreshing=true;try{if(await loadCollectorFeed(id,uid,token,true)&&stillCurrent())updateThreadChat(cache,{scrollMode:'prepend'});else if(stillCurrent())showThreadError('Earlier updates could not be loaded.',()=>loadEarlierThreadMessages(chat))}catch(error){if(stillCurrent()&&collectorReadDenied(error))renderMessagesUnavailable('Conversation access could not be verified.')}finally{ctx.refreshing=false}return}
   const oldest=cache.messages[0];
   if(!oldest)return;
   const button=$('[data-load-earlier]',chat);
@@ -2230,7 +2326,7 @@ async function refreshThread(chat){
   try{
    const [caseResult,messageFailure]=await Promise.all([
     kind==='case'?settledTimeout(db.from('exchange_cases').select('*').eq('id',id).maybeSingle(),10000):Promise.resolve({data:null,error:null}),
-    (async()=>{try{await mergeThreadLatest(kind,id,uid,stillCurrent);return null}catch(error){return error}})()
+    (async()=>{try{if(!(collectorFocus?.peerId===id&&messageIndexByUid.get(uid)?.readModel===true))await mergeThreadLatest(kind,id,uid,stillCurrent);return null}catch(error){return error}})()
   ]);
    if(!stillCurrent())return;
    if(collectorFocus?.peerId===id){
@@ -2286,7 +2382,8 @@ function bindMessagesPage(){
       if(!button||button.disabled)return;
       loadEarlierThreadMessages(chat);
     });
-    requestAnimationFrame(()=>{chat.scrollTop=chat.scrollHeight});
+    chat.addEventListener('scroll',()=>{if(collectorFocus&&messageIndexByUid.get(S.user?.id)?.readModel===true)markCollectorDisplayedRead(collectorFocus.peerId,S.user.id)});
+    requestAnimationFrame(()=>{if(chat.bcTimelineFocus)return;chat.scrollTop=chat.scrollHeight;if(collectorFocus)advanceCollectorWatermarks(collectorFocus.peerId,collectorFocus.uid)});
   }
 }
 function renderMessagesUnavailable(message,retry){
@@ -2364,7 +2461,7 @@ function collectorCaseSummaryMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
   if(!groups.length)return '';
   const current=groups.find(g=>g.caseId===selected)||groups.find(g=>!terminalCaseStates.has(g.case.state))||groups[0],e=current.case,next=caseNextAction(e);
-  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}">${collectorSetPairImages(g.case)}<span>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small>${esc(exchangeStageLabel(g.case))}</small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}">${next.action?esc(next.label):'View exchange'}</button></div>`;
+  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}">${collectorSetPairImages(g.case)}<span>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small>${esc(exchangeStageLabel(g.case))}</small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}" aria-haspopup="dialog" aria-label="${attr(next.action?`Review: ${next.label}`:'View exchange')}">${next.action?esc(next.label):'View exchange'}</button></div>`;
 }
 function openCollectorCaseSheet(peerId,caseId){
   selectCollectorCase(peerId,caseId);
@@ -2404,14 +2501,18 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   if(!current())return;
   if(peerError)return renderMessagesUnavailable('Collector details could not be loaded. Please retry.',()=>renderDirectThread(S.renderToken,peerId));
   if(!peer)return renderMessagesUnavailable('This collector could not be found or no longer has a public profile.');
-  const {data:rows,error:messageError}=await settledTimeout(threadLatestQuery('direct',peerId,uid),10000);
+  await indexPromise;
+  if(!current())return;
+  const {data:rows,error:messageError}=messageIndexByUid.get(uid)?.readModel===true?{data:[],error:null}:await settledTimeout(threadLatestQuery('direct',peerId,uid),10000);
   if(!current())return;
   if(messageError&&['42501','PGRST301','PGRST302'].includes(messageError.code)){threadCaches.direct.clear();threadCaches.case.clear();messageIndexByUid.get(uid)?.direct.clear();messageIndexByUid.get(uid)?.cases.clear();return renderMessagesUnavailable('Conversation access could not be verified. Please retry.',()=>renderDirectThread(S.renderToken,peerId,focusedCase,focusedMessage))}
   await indexPromise;
   if(!current())return;
   if(indexFailure){threadCaches.direct.clear();threadCaches.case.clear();return renderMessagesUnavailable('Conversation access could not be verified. Please retry.',()=>renderDirectThread(S.renderToken,peerId,focusedCase,focusedMessage))}
+  if(focusedCase&&messageIndexByUid.get(uid)?.readModel===true){const details=await settledTimeout(db.from('exchange_cases').select('*').eq('id',focusedCase).maybeSingle(),10000);if(!current())return;const e=details.data;if(details.error||!e||![e.user_a,e.user_b].includes(uid)||otherId(e)!==peerId)return renderMessagesUnavailable('Conversation unavailable.');messageIndex(uid).cases.set(e.id,{kind:'case',caseId:e.id,case:e,messages:[],events:[]});await hydrateExchangeItems([e],current)}
   const eventsAvailable=await loadCollectorEvents(peerId,uid,token),partial=!!messageError||!eventsAvailable||!!messageIndexByUid.get(uid)?.partial;
   if(messageError&&messageIndexByUid.has(uid))messageIndexByUid.get(uid).partial=true;
+  if(focusedCase&&focusedMessage&&messageIndexByUid.get(uid)?.readModel===true){const result=await settledTimeout(db.from('exchange_case_messages').select('*').eq('case_id',focusedCase).eq('id',focusedMessage).maybeSingle(),10000);if(!current())return;const m=result.data,e=messageIndex(uid).cases.get(focusedCase)?.case;if(result.error||!m||!e||m.case_id!==focusedCase||m.sender_id===m.recipient_id||![e.user_a,e.user_b].includes(m.sender_id)||![e.user_a,e.user_b].includes(m.recipient_id))return renderMessagesUnavailable('Conversation message unavailable.');const feed=messageIndex(uid).feeds.get(peerId);if(feed&&!feed.rows.some(row=>row.source_type==='case_message'&&row.source_id===m.id)){feed.rows.push({occurred_at:m.created_at,source_type:'case_message',source_id:m.id,case_id:m.case_id,payload:m});feed.rows.sort(collectorFeedCompare)}}
   if(focusedCase)await loadCollectorOverdue(focusedCase,uid,token);
   if(!current())return;
   S.profiles[peerId]=peer;
@@ -2425,6 +2526,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
   page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,null)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
   const chat=$('#bc-msg-chat');
+  if(chat)chat.bcTimelineFocus=!!focusedCase;
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
   bindCollectorCaseLinks(chat);
@@ -2433,7 +2535,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   startCollectorViewport();
   if(partial)showThreadError(messageError?'Some messages are temporarily unavailable. Known conversation history is kept.':'Exchange updates temporarily unavailable. Known messages are kept.',()=>refreshThread(chat));
   advanceCollectorWatermarks(peerId,uid);
-  if(focusedCase){const target=focusedMessage?`[data-timeline-case="${CSS.escape(focusedCase)}"][data-timeline-message="${CSS.escape(focusedMessage)}"]`:`[data-timeline-case="${CSS.escape(focusedCase)}"]`;$('#bc-msg-chat').querySelector(target)?.scrollIntoView({block:'nearest'})}
+  if(focusedCase){requestAnimationFrame(()=>{if(!current())return;const target=focusedMessage?`[data-timeline-case="${CSS.escape(focusedCase)}"][data-timeline-message="${CSS.escape(focusedMessage)}"]`:`[data-timeline-case="${CSS.escape(focusedCase)}"]`;$('#bc-msg-chat').querySelector(target)?.scrollIntoView({block:'nearest'});chat.bcTimelineFocus=false;advanceCollectorWatermarks(peerId,uid)})}
   updateMessageBadge();
 }
 async function renderMessages(token){

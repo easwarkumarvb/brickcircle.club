@@ -92,7 +92,7 @@ test('Easwar, Ramya and Dhyan share deterministic reciprocal and proposal truth'
   await page.locator('[data-view-collector-case="case-1"]').first().click();
   await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-1');
   await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Proposal pending');
-  await page.getByRole('button',{name:'Accept proposal'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Accept proposal'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('ACCEPTED');
   const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],collection:window.__bcThreeUser.data.collection,wishlist:window.__bcThreeUser.data.wishlist,events:window.__bcThreeUser.data.events}));
   expect(result.exchange.state_version).toBe(2);
@@ -143,7 +143,7 @@ test('active third-party reservation is hidden from matches and failed acceptanc
   await switchActor(page,'ramya');
   await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
   await page.locator('[data-view-collector-case="case-1"]').first().click();
-  const accept=page.getByRole('button',{name:'Accept proposal'});
+  const accept=page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Accept proposal'});
   await accept.click();
   await expect(accept).toBeEnabled();
   await expect(accept).toHaveText('Accept proposal');
@@ -175,7 +175,7 @@ test('an owner cancels an accepted pre-handoff case and both preferences remain 
   await switchActor(page,'ramya');
   await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
   await page.locator('[data-view-collector-case="case-1"]').first().click();
-  await page.getByRole('button',{name:'Accept proposal'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Accept proposal'}).click();
   await switchActor(page,'easwar');
   await page.locator('[data-nav="sets"]').first().click();
   const release=page.getByRole('button',{name:'Cancel before handoff'});

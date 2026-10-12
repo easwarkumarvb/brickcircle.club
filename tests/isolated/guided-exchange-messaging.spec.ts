@@ -254,7 +254,7 @@ test('proposal and case-message notifications focus the exact case and message',
     db.messages.push({id:'target-message',case_id:'guide-case',sender_id:B,recipient_id:A,body:'Exact notification target',created_at:stamp});
     db.notifications.push({id:'proposal-note',user_id:A,kind:'exchange_proposed',exchange_case_id:'guide-case',created_at:stamp},{id:'message-note',user_id:A,kind:'exchange_message',exchange_case_id:'guide-case',exchange_case_message_id:'target-message',created_at:stamp});
   });
-  await page.locator('[data-bc-notification-presentation] [data-close]').first().click();
+  await expect(page.locator('[data-bc-notification-presentation]')).toHaveCount(0);
   await page.locator('[data-open="notifications"]').click();await page.locator('[data-note="message-note"]').click();
   await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:guide-case:message:target-message');
   await expect(page.locator('[data-timeline-message="target-message"]')).toContainText('Exact notification target');

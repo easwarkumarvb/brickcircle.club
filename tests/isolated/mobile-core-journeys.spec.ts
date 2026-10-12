@@ -21,7 +21,9 @@ test('mobile reciprocal match is visual, concise and proposal-first',async({page
   const proposal=page.locator('#bc-inline-proposal');
   await expect(proposal).toBeVisible();
   await expect(page.getByRole('heading',{name:'Match Collector'})).toBeVisible();
-  await expect(proposal).toContainText('Propose an exchange');
+  await expect(page.getByRole('dialog').getByRole('heading',{name:'Propose an exchange'})).toBeVisible();
+  await expect(proposal.locator('[name="days"]')).toBeVisible();
+  await expect(proposal.locator('[name="message"]')).toBeVisible();
   await expect(proposal.getByRole('button',{name:'Send proposal'})).toBeVisible();
   await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
   await noHorizontalOverflow(page);
@@ -52,7 +54,8 @@ test('mobile case conversation surfaces the next valid action before message his
   await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:proposal-request-1');
   await expect(next).toContainText('Your turn');
   await expect(next).toContainText('Accept proposal');
-  await expect(page.getByRole('button',{name:'Accept proposal'})).toHaveCount(1);
+  await expect(next.locator('[data-thread-case-action="accept"]')).toHaveCount(1);
+  await expect(page.locator('[data-thread-case-action="accept"]')).toHaveCount(1);
   await expect(next.getByRole('button',{name:'Accept proposal'})).toBeVisible();
   const beforeHistory=await page.locator('#bc-collector-action').evaluate(node=>{const chat=document.querySelector('#bc-msg-chat');return !!chat&&!!(node.compareDocumentPosition(chat)&Node.DOCUMENT_POSITION_FOLLOWING)});
   expect(beforeHistory).toBeTruthy();

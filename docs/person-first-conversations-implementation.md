@@ -18,6 +18,6 @@ Normal GitHub PR CI runs isolated PostgreSQL and browser gates; results must be 
 
 ## Outstanding release gates
 
-Stage B remains incomplete: the browser retains existing protected history reads and device-local unread counts. The staged source in `supabase/proposals` is not an active migration or integrated API. Truly bounded person summaries, cursor feed integration and concurrent server-backed unread bookkeeping require verified backend work.
+Stage B now includes an additive CLI-generated projection migration and a capability-scoped browser integration: collector summaries, explicit inbox/feed paging, exact case/message links, and durable own-user read cursors. The previous proposal under `supabase/proposals` is superseded. Missing RPCs use the compatible device-local legacy path; known server support never downgrades on access or transport errors. The new PostgreSQL and cross-browser gates must certify this source before it is considered validated. No hosted migration has been applied.
 
 Hosted real-account testing is unexecuted. Existing hosted runners are pinned to older approved branches/SHAs and must not be repurposed silently. A trusted immutable candidate runner, fresh three-collector staging identities, production network exclusion and outbox-only notifications are required. Real phone/safe-area/keyboard inspection and full hosted lifecycle/RLS checks remain required before any release recommendation.
