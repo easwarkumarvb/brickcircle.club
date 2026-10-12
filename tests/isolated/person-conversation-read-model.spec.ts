@@ -177,3 +177,30 @@ test('case event payload identity and case mismatch are rejected before renderin
  await expect.poll(async()=>(await calls(page,'mark_collector_conversation_read')).length).toBeGreaterThan(0);
  expect((await calls(page,'mark_collector_conversation_read')).every((r:any)=>r.args.p_through_id==='direct-000')).toBe(true);
 });
+
+test('read acknowledgment authorization denial removes protected conversation and composer',async({page})=>{
+ await open(page,{errors:{mark_collector_conversation_read:{code:'42501',message:'Read acknowledgment not authorized'}}},'messages/direct:'+B);
+ await expect(page.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();
+ await expect(page.locator('#bc-msg-form')).toHaveCount(0);await expect(page.locator('#bc-msg-chat')).toHaveCount(0);
+ const marks=await calls(page,'mark_collector_conversation_read');expect(marks.length).toBeGreaterThan(0);
+ expect(marks.every((row:any)=>row.args.p_peer_id===B&&row.args.p_through_id==='direct-074'&&row.args.p_through_type==='direct_message'&&row.args.p_through_at===AT)).toBe(true);
+});
+
+test('transient read acknowledgment failure preserves draft messages and server unread until recovery',async({page})=>{
+ await open(page,{markClearsUnread:false});await thread(page);
+ await page.locator('#bc-msg-chat').evaluate(e=>{e.scrollTop=e.scrollHeight;e.dispatchEvent(new Event('scroll'))});
+ await expect.poll(async()=>(await calls(page,'mark_collector_conversation_read')).length).toBeGreaterThan(0);
+ const input=page.locator('#bc-msg-form textarea');await input.fill('Draft during unread acknowledgment outage');
+ await page.evaluate(({a,b})=>{
+  const config=(window as any).__readModel.config,at='2026-10-06T12:00:00.000Z';
+  config.errors.mark_collector_conversation_read={code:'XX000',message:'Temporary read acknowledgment failure'};
+  config.feeds[b].push({occurred_at:at,source_type:'direct_message',source_id:'new-mark-target',case_id:null,payload:{id:'new-mark-target',sender_id:b,recipient_id:a,exchange_id:null,body:'New message during acknowledgment outage',created_at:at}});
+ },{a:A,b:B});
+ await page.locator('[data-refresh-thread]').click();await expect(page.locator('#bc-msg-chat')).toContainText('New message during acknowledgment outage');
+ await page.locator('#bc-msg-chat').evaluate(e=>{e.scrollTop=e.scrollHeight;e.dispatchEvent(new Event('scroll'))});
+ await expect.poll(async()=>(await calls(page,'mark_collector_conversation_read')).at(-1)?.args.p_through_id).toBe('new-mark-target');
+ await expect(input).toHaveValue('Draft during unread acknowledgment outage');await expect(input).toBeEnabled();await expect(page.locator('.bc-msg-unread')).toHaveText('7');
+ await page.evaluate(()=>{const config=(window as any).__readModel.config;delete config.errors.mark_collector_conversation_read;config.markClearsUnread=true});
+ await page.locator('#bc-msg-chat').evaluate(e=>e.dispatchEvent(new Event('scroll')));
+ await expect(page.locator('.bc-msg-unread')).toHaveCount(0);await expect(input).toHaveValue('Draft during unread acknowledgment outage');
+});
