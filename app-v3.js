@@ -2141,7 +2141,19 @@ function bindThreadCompose(form,kind,id,senderName){
       const result=await settledTimeout(db.rpc(kind==='case'?'send_exchange_case_message':'send_collector_message',{...(kind==='case'?{p_case_id:id}:{p_recipient_id:id}),p_body:body,p_idempotency_key:sendOperation.requestKey}),15000);
       if(S.user?.id!==submitUid||pendingSends.get(sendKey)!==sendOperation)return;
       if(!result.error&&result.data?.ok===true){uncertainThreadSends.delete(sendKey);if(threadDrafts.get(key)?.trim()===body)persistThreadDraft(key,'')}
-      if(!stillCurrent())return;
+      if(!stillCurrent()){
+        // Same-account hydration may replace the form while its RPC is pending.
+        // Reconcile only the still-selected destination; never refresh stale UI.
+        const liveForm=activeThreadForm(submitUid,kind,id);
+        if(!liveForm)return;
+        const liveInput=$('textarea[name="message"]',liveForm);
+        if(!result.error&&result.data?.ok===true){
+          if(liveInput&&liveInput.value.trim()===body)liveInput.value='';
+        }else if(kind==='case'&&result.error?.code==='22023'&&terminalCaseStates.has(messageIndexByUid.get(submitUid)?.cases.get(id)?.case?.state)){
+          uncertainThreadSends.delete(sendKey);persistThreadDraft(key,body);showClosedReplyRecovery(collectorFocus.peerId,body);
+        }else showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');
+        return;
+      }
       if(kind==='case'&&result.error?.code==='22023'&&terminalCaseStates.has(messageIndexByUid.get(submitUid)?.cases.get(id)?.case?.state)){
         uncertainThreadSends.delete(sendKey);persistThreadDraft(key,body);restore();showClosedReplyRecovery(collectorFocus.peerId,body);return;
       }

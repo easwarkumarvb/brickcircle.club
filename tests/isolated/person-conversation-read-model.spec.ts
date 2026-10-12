@@ -88,6 +88,39 @@ test('mobile timeline and read acknowledgment preserve same-millisecond PostgreS
  for(const {args} of await calls(page,'mark_collector_conversation_read'))expect(args).toEqual({p_peer_id:B,p_through_at:later,p_through_type:'direct_message',p_through_id:'direct-001'});
 });
 
+for(const acknowledgment of ['confirmed','uncertain'])test(`same-account auth hydration reconciles ${acknowledgment} send on the replacement mobile composer`,async({page})=>{
+ await page.setViewportSize({width:390,height:844});await open(page);await thread(page);
+ await page.evaluate((acknowledgment)=>{
+  const win=window as any,db=win.BC_SUPABASE,original=db.rpc;
+  win.__hydrationSendRequests=[];win.__originalSendForm=document.querySelector('#bc-msg-form');let hold=true;
+  db.rpc=(name:string,args:any)=>{
+   if(name!=='send_collector_message')return original(name,args);
+   win.__hydrationSendRequests.push(JSON.parse(JSON.stringify(args)));
+   if(!hold)return original(name,args);hold=false;
+   return new Promise(resolve=>{win.__releaseHydrationSend=async()=>{const committed=await original(name,args);resolve(acknowledgment==='confirmed'?committed:{data:null,error:{message:'Acknowledgment lost after commit'}})}});
+  };
+ },acknowledgment);
+ const body=`Hydration ${acknowledgment} message`;
+ await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(form=>(form as HTMLFormElement).requestSubmit());
+ await expect.poll(()=>page.evaluate(()=>(window as any).__hydrationSendRequests.length)).toBe(1);
+ await page.evaluate(async()=>{await (window as any).BC_SUPABASE.auth.signInWithPassword({email:'unused@example.test',password:'unused'})});
+ await expect.poll(()=>page.evaluate(()=>(window as any).__originalSendForm.isConnected)).toBe(false);
+ await expect(page.locator('#bc-msg-form textarea')).toHaveValue(body);
+ await page.evaluate(async()=>{await (window as any).__releaseHydrationSend()});
+ await expect(page.locator('#bc-msg-form textarea')).toBeEnabled();
+ if(acknowledgment==='confirmed'){
+  await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');
+  await page.locator('#bc-msg-form').evaluate(form=>(form as HTMLFormElement).requestSubmit());
+  expect(await page.evaluate(()=>(window as any).__hydrationSendRequests.length)).toBe(1);
+ }else{
+  await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely');
+  await expect(page.locator('#bc-msg-form textarea')).toHaveValue(body);
+  await page.locator('#bc-msg-form').evaluate(form=>(form as HTMLFormElement).requestSubmit());await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');
+  const requests=await page.evaluate(()=>(window as any).__hydrationSendRequests);expect(requests).toHaveLength(2);expect(requests[1]).toEqual(requests[0]);
+ }
+ expect(await page.evaluate(body=>(window as any).__bcThreeUser.data.directMessages.filter((message:any)=>message.body===body).length,body)).toBe(1);
+});
+
 test('server unread remains authoritative until a validated visible feed cursor is acknowledged',async({page})=>{
  await page.setViewportSize({width:390,height:844});await open(page,{markClearsUnread:false});
  await expect(page.locator('.bc-msg-unread')).toHaveText('7');await expect(page.locator('main')).not.toContainText('Unread on this device');
