@@ -85,4 +85,3 @@ do $$ declare first record; second record; begin
 end;$$;
 reset role;
 rollback;
-

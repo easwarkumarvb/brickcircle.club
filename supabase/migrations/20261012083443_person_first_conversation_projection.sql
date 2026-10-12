@@ -197,13 +197,13 @@ create trigger person_conversation_case after insert or update or delete on publ
 -- and trigger installation. CREATE TRIGGER already takes the necessary locks;
 -- explicit source lock at the start retains them until commit.
 insert into public.collector_conversation_entries(user_id,peer_id,occurred_at,source_type,source_id,case_id,incoming)
-select m.sender_id,m.recipient_id,m.created_at,'direct_message',m.id,null,false from public.messages m where m.exchange_id is null and m.recipient_id is not null and m.sender_id<>m.recipient_id
-union all select m.recipient_id,m.sender_id,m.created_at,'direct_message',m.id,null,true from public.messages m where m.exchange_id is null and m.recipient_id is not null and m.sender_id<>m.recipient_id
-union all select p.u,p.v,m.created_at,'case_message',m.id,m.case_id,m.recipient_id=p.u
+select m.sender_id,m.recipient_id,m.created_at,'direct_message'::text,m.id,null::uuid,false from public.messages m where m.exchange_id is null and m.recipient_id is not null and m.sender_id<>m.recipient_id
+union all select m.recipient_id,m.sender_id,m.created_at,'direct_message'::text,m.id,null::uuid,true from public.messages m where m.exchange_id is null and m.recipient_id is not null and m.sender_id<>m.recipient_id
+union all select p.u,p.v,m.created_at,'case_message'::text,m.id,m.case_id,m.recipient_id=p.u
 from public.exchange_case_messages m join public.exchange_cases c on c.id=m.case_id
 cross join lateral (values(c.user_a,c.user_b),(c.user_b,c.user_a)) p(u,v)
 where m.sender_id in(c.user_a,c.user_b) and m.recipient_id in(c.user_a,c.user_b) and m.sender_id<>m.recipient_id
-union all select p.u,p.v,e.created_at,'case_event',e.id,e.case_id,false from public.exchange_case_events e join public.exchange_cases c on c.id=e.case_id
+union all select p.u,p.v,e.created_at,'case_event'::text,e.id,e.case_id,false from public.exchange_case_events e join public.exchange_cases c on c.id=e.case_id
 cross join lateral (values(c.user_a,c.user_b),(c.user_b,c.user_a)) p(u,v)
 where true
 on conflict do nothing;
