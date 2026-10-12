@@ -749,6 +749,7 @@ async function startNotificationRealtime(){
 function proposalNoticeSeen(notification){try{return sessionStorage.getItem(`bc_proposal_notice_seen:${S.user.id}:${notification.id}`)==='1'}catch(_){return false}}
 function markProposalNoticeSeen(notification){try{sessionStorage.setItem(`bc_proposal_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}}
 function showUnreadProposalNotice(){
+  if(routeName()==='messages')return false;
   if(!S.user?.id||notificationPresentationActive())return false;
   const notification=S.notifications.find(item=>!item.read_at&&isPendingProposalNotification(item));
   if(!notification||proposalNoticeSeen(notification))return false;
@@ -783,6 +784,7 @@ function lifecyclePresentation(notification){
 }
 function lifecycleNoticeSeen(notification){try{return sessionStorage.getItem(`bc_lifecycle_notice_seen:${S.user?.id}:${notification.id}`)==='1'}catch(_){return false}}
 function showLifecycleNotification(notification){
+  if(routeName()==='messages')return false;
   if(!isCurrentNotificationRecipient(notification)||notification.read_at||!LIFECYCLE_NOTIFICATION_KINDS.has(notification.kind)||lifecycleNoticeSeen(notification)||notificationPresentationActive())return false;
   try{sessionStorage.setItem(`bc_lifecycle_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}
   const view=lifecyclePresentation(notification),root=document.createElement('section');root.id='bc-exchange-lifecycle-notice';root.className='bc-lifecycle-notice';root.setAttribute('role','status');
@@ -2345,7 +2347,7 @@ function setCollectorReplyContext(peerId,caseId){
   if(caseId&&(!e||otherId(e)!==peerId||![e.user_a,e.user_b].includes(uid)||(terminalCaseStates.has(e.state)&&!recovery)))return toast('This exchange is read-only. You can still send a general message.');
   const form=$('#bc-msg-form');if(!form)return;
   const previous=collectorFocus.replyCaseId||null,input=$('textarea',form);
-  if(input)persistThreadDraft(`${uid}:${previous?'case':'direct'}:${previous||peerId}`,input.value);
+  if(input&&form.dataset.bound)persistThreadDraft(`${uid}:${previous?'case':'direct'}:${previous||peerId}`,input.value);
   collectorFocus.replyCaseId=caseId||null;
   form.dataset.destination=caseId||'';form.dataset.bound='true';form.hidden=false;
   if(input)input.value=recovery?.body||threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';
@@ -2391,6 +2393,7 @@ function selectCollectorCase(peerId,caseId){
   const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
 }
 async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=null){
+  clearNotificationPresentation();
   page(loading('Opening conversation…'));
   const uid=S.user?.id;
   collectorFocus=null;

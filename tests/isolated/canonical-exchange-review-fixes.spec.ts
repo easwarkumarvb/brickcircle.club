@@ -113,6 +113,7 @@ test('post-handoff issues and support are sidecars and outsiders cannot mutate t
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues.length)).toBe(1);
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues[0]?.description)).toBe('Two major pieces are missing from the set.');
 
+  await page.locator('[data-view-collector-case="case-review-fix"]').first().click();
   if(!await page.getByText('Help and issues',{exact:true}).evaluate((element:HTMLElement)=>Boolean(element.closest('details')?.open)))await page.getByText('Help and issues',{exact:true}).click();
   await page.getByRole('button',{name:'Need BrickCircle support?'}).click();
   const supportForm=page.locator('#bc-case-support');
@@ -203,6 +204,7 @@ test('share meetup proposal submits the canonical transition and persists its de
   await form.locator('[name="when"]').fill('2099-10-02T15:34');
   await form.getByRole('button',{name:'Share proposal'}).click();
   await expect(form).toHaveCount(0);
+  await page.locator('[data-view-collector-case="case-review-fix"]').first().click();
   await expect(page.getByText('Your meetup proposal is shared. Chat here if you need to adjust the plan.')).toBeVisible();
   const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],calls:window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition')}));
   expect(result.calls).toHaveLength(1);

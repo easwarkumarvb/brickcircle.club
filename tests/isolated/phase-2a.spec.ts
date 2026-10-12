@@ -67,7 +67,10 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await page.locator('#bc-inline-proposal').getByRole('button',{name:'Send proposal'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.exchanges.length)).toBe(1);
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.exchanges[0].state)).toBe('PROPOSED');
+  const caseId=await page.evaluate(()=>window.__bcIsolated.exchanges[0].id);
+  await page.locator(`[data-view-collector-case="${caseId}"]`).first().click();
   await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Proposal pending');
+  await page.locator('[data-close-collector-sheet]').click();
   await page.locator('[data-nav="sets"]').first().click();
   await page.locator('[data-settab="wishlist"]').click();
   await page.locator('[data-remove-wish="42143-1"]').click();

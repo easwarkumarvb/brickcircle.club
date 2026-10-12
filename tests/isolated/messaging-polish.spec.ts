@@ -29,12 +29,14 @@ async function noOverflow(page:Page){
 test('mobile conversations combine direct and exchange messages with exact unread badges',async({page})=>{
   await page.setViewportSize({width:390,height:844});await seed(page);
   await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveText('4');
-  await page.getByRole('button',{name:'Collectors',exact:true}).click();
+  await page.locator('[data-msg-filter="all"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await expect(page.locator('.bc-msg-row')).toContainText('Exchange meetup plan');
-  await page.locator('[data-msg-filter="exchanges"]').click();
+  await page.locator('[data-msg-filter="unread"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await expect(page.locator('.bc-msg-row')).toContainText('Exchange meetup plan');
+  await page.locator('[data-msg-filter="action"]').click();
+  await expect(page.locator('.bc-msg-row')).toHaveCount(0);
   await page.locator('[data-msg-filter="all"]').click();
   await openDirect(page);
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
