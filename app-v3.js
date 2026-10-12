@@ -1687,7 +1687,17 @@ async function loadLegacyMessageIndex(uid,token){
 function collectorRpcAbsent(result){return ['PGRST202','42883'].includes(result.error?.code)||(!result.error&&result.data==null)}
 function collectorReadDenied(error){return ['42501','PGRST301','PGRST302'].includes(error?.code)}
 function collectorFeedKey(row){return `${row.source_type}:${row.source_id}`}
-function collectorFeedCompare(a,b){const lexical=(x,y)=>String(x)<String(y)?-1:String(x)>String(y)?1:0;return new Date(a.occurred_at).getTime()-new Date(b.occurred_at).getTime()||lexical(a.source_type,b.source_type)||lexical(a.source_id,b.source_id)}
+// PostgreSQL cursor tuples retain microseconds; Date alone truncates them.
+function collectorTimestampMicros(value){
+  if(typeof value!=='string')return null;
+  const match=/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.(\d{1,6}))?(?:Z|[+-]\d{2}:\d{2})$/.exec(value),millis=match?Date.parse(value):NaN;
+  if(!Number.isFinite(millis))return null;
+  return BigInt(millis)*1000n+BigInt((match[1]||'').padEnd(6,'0').slice(3));
+}
+function collectorTimestampCompare(a,b){const x=collectorTimestampMicros(a),y=collectorTimestampMicros(b);return x===y?0:x===null?-1:y===null?1:x<y?-1:1}
+function collectorLexicalCompare(a,b){return String(a)<String(b)?-1:String(a)>String(b)?1:0}
+function collectorSummaryCompare(a,b){return collectorTimestampCompare(a.last_at,b.last_at)||collectorLexicalCompare(a.peer_id,b.peer_id)}
+function collectorFeedCompare(a,b){return collectorTimestampCompare(a.occurred_at,b.occurred_at)||collectorLexicalCompare(a.source_type,b.source_type)||collectorLexicalCompare(a.source_id,b.source_id)}
 async function hydrateCollectorCases(uid,peerIds,caseIds,token){
   if(!peerIds.length&&!caseIds.length)return true;
   const index=messageIndex(uid),scope=`user_a.eq.${uid},user_b.eq.${uid}`;
@@ -1732,8 +1742,9 @@ async function loadMessageIndex(uid,token,older=false){
   if(result.error){index.partial=true;index.caseFresh=false;if(collectorReadDenied(result.error)){index.direct.clear();index.cases.clear();index.summaries?.clear();index.feeds?.clear();throw result.error}if(index.readModel===true&&index.summaries?.size)return index;throw result.error}
   if(!Array.isArray(result.data))throw new Error('Conversation summary unavailable.');
   index.readModel=true;index.summaries??=new Map();index.feeds??=new Map();index.partial=false;
-  const rows=result.data.filter(row=>row.peer_id&&row.peer_id!==uid);
-  if(!older){const floor=rows.at(-1),compare=(a,b)=>new Date(a.last_at).getTime()-new Date(b.last_at).getTime()||(String(a.peer_id)<String(b.peer_id)?-1:String(a.peer_id)>String(b.peer_id)?1:0);index.summaries.forEach((row,id)=>{if(result.data.length<30||!floor||compare(row,floor)>=0)index.summaries.delete(id)})}
+  const rows=result.data.filter(row=>row.peer_id&&row.peer_id!==uid&&collectorTimestampMicros(row.last_at)!==null);
+  if(rows.length!==result.data.length)index.partial=true;
+  if(!older){const floor=rows.at(-1);index.summaries.forEach((row,id)=>{if(result.data.length<30||!floor||collectorSummaryCompare(row,floor)>=0)index.summaries.delete(id)})}
   rows.forEach(row=>index.summaries.set(row.peer_id,row));
   if(older||!index.inboxCursor||(!older&&result.data.length<30)){index.inboxCursor=rows.at(-1)||null;index.inboxHasOlder=rows.length===30}
   index.loadedAt=Date.now();
@@ -1753,7 +1764,7 @@ async function loadCollectorFeed(peerId,uid,token,older=false){
   if(S.user?.id!==uid||S.renderToken!==token)return false;
   if(result.error){if(collectorReadDenied(result.error)){index.feeds.delete(peerId);throw result.error}index.partial=true;return false}
   if(!Array.isArray(result.data)){index.partial=true;return false}
-  const incoming=result.data.filter(row=>{if(!['direct_message','case_message','case_event'].includes(row.source_type)||!row.source_id||!Number.isFinite(new Date(row.occurred_at).getTime())||!row.payload||row.payload.id!==row.source_id)return false;if(row.source_type==='case_event')return !!row.case_id&&row.payload.case_id===row.case_id;if(row.source_type==='case_message'&&(!row.case_id||row.payload.case_id!==row.case_id))return false;if(row.source_type==='direct_message'&&(row.case_id||row.payload.exchange_id!=null))return false;const m=row.payload;return m.id===row.source_id&&((m.sender_id===uid&&m.recipient_id===peerId)||(m.sender_id===peerId&&m.recipient_id===uid))});
+  const incoming=result.data.filter(row=>{if(!['direct_message','case_message','case_event'].includes(row.source_type)||!row.source_id||collectorTimestampMicros(row.occurred_at)===null||!row.payload||row.payload.id!==row.source_id)return false;if(row.source_type==='case_event')return !!row.case_id&&row.payload.case_id===row.case_id;if(row.source_type==='case_message'&&(!row.case_id||row.payload.case_id!==row.case_id))return false;if(row.source_type==='direct_message'&&(row.case_id||row.payload.exchange_id!=null))return false;const m=row.payload;return m.id===row.source_id&&((m.sender_id===uid&&m.recipient_id===peerId)||(m.sender_id===peerId&&m.recipient_id===uid))});
   const priorRows=older?feed.rows:result.data.length<50?[]:feed.rows.filter(row=>incoming.length&&collectorFeedCompare(row,incoming.at(-1))<0);
   const rows=new Map(priorRows.map(row=>[collectorFeedKey(row),row]));incoming.forEach(row=>rows.set(collectorFeedKey(row),row));
   feed.rows=[...rows.values()].sort(collectorFeedCompare);if(older||!index.feeds.has(peerId)||(!older&&result.data.length<50)){feed.hasOlder=result.data.length===50;feed.cursor=result.data.at(-1)||null}
@@ -1789,7 +1800,7 @@ function filteredConversationGroups(){
   if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
   const query=messagesSearch.trim().toLocaleLowerCase();
   if(query)groups=groups.filter(group=>(S.profiles[group.peerId]?.display_name||'Collector').toLocaleLowerCase().includes(query));
-  return groups.sort((a,b)=>b.stamp-a.stamp);
+  return groups.sort((a,b)=>index.readModel===true?collectorSummaryCompare(b.summary,a.summary):b.stamp-a.stamp);
 }
 function messagesFilterBarMarkup(){
   return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['action','Needs my action']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?` title="${messageIndexByUid.get(S.user?.id)?.readModel===true?'Unread messages':'Unread on this device'}"`:''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;

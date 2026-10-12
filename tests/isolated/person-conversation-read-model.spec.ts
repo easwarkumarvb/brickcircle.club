@@ -76,6 +76,18 @@ test('feed cursor preserves tuple order and IDs across equal timestamps without 
  await expect(page.locator('[data-timeline-message="direct-025"]')).toHaveCount(1);
 });
 
+test('mobile timeline and read acknowledgment preserve same-millisecond PostgreSQL microseconds',async({page})=>{
+ const earlier='2026-10-05T12:00:00.123001+00:00',later='2026-10-05T12:00:00.123999+00:00';
+ await page.setViewportSize({width:390,height:844});
+ await open(page,{summaries:[summary(B,later)],feeds:{[B]:[direct(9,earlier),direct(1,later)]}});
+ await thread(page);
+ await expect(page.locator('[data-timeline-message]').first()).toContainText('Direct 009');
+ await expect(page.locator('[data-timeline-message]').last()).toContainText('Direct 001');
+ await page.locator('#bc-msg-chat').evaluate(e=>{e.scrollTop=e.scrollHeight;e.dispatchEvent(new Event('scroll'))});
+ await expect.poll(async()=>(await calls(page,'mark_collector_conversation_read')).length).toBeGreaterThan(0);
+ for(const {args} of await calls(page,'mark_collector_conversation_read'))expect(args).toEqual({p_peer_id:B,p_through_at:later,p_through_type:'direct_message',p_through_id:'direct-001'});
+});
+
 test('server unread remains authoritative until a validated visible feed cursor is acknowledged',async({page})=>{
  await page.setViewportSize({width:390,height:844});await open(page,{markClearsUnread:false});
  await expect(page.locator('.bc-msg-unread')).toHaveText('7');await expect(page.locator('main')).not.toContainText('Unread on this device');
