@@ -2061,8 +2061,8 @@ function bindThreadCompose(form,kind,id,senderName){
         return;
       }
       if(!stillCurrent())return;
-      updateThreadChat(collectorFocus?threadCache('direct',collectorFocus.peerId,submitUid):threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
       reconcileMessageIndex(submitUid,kind,id);
+      updateThreadChat(collectorFocus?threadCache('direct',collectorFocus.peerId,submitUid):threadCache(kind,id,submitUid),{fallback:kind==='case'?CASE_THREAD_FALLBACK:DIRECT_THREAD_FALLBACK,senderName});
       if(collectorFocus)advanceCollectorWatermarks(collectorFocus.peerId,submitUid);else advanceThreadWatermark(submitUid,kind,id);
       updateMessageBadge();
       restore();
