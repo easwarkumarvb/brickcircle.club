@@ -719,6 +719,17 @@ function applyNotificationChange(payload){
   }
   updateNotificationBadge();
   if(payload.eventType==='INSERT'&&!row.read_at){if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');else showLifecycleNotification(row)}
+  // Supabase recipient-scoped notification is a wake-up signal, not a trusted chat payload.
+  if(payload.eventType==='INSERT'&&collectorFocus?.uid===S.user?.id&&routeName()==='messages'){
+    const actor=row.actor_user_id||row.metadata?.actor_user_id||row.sender_id;
+    const caseId=notificationExchangeId(row);
+    const matchingCase=caseId&&messageIndexByUid.get(S.user.id)?.cases.get(caseId)?.case;
+    if(actor===collectorFocus.peerId||(matchingCase&&otherId(matchingCase)===collectorFocus.peerId)){
+      const chat=$('#bc-msg-chat');
+      if(chat?.bcThread?.refreshing)chat.bcThread.refreshAgain=true;
+      else Promise.resolve().then(()=>syncVisibleThread());
+    }
+  }
 }
 async function reconcileNotifications(){
   const epoch=authEpoch,uid=S.user?.id;if(!uid||logoutLocked||explicitLogout)return;
@@ -1540,6 +1551,7 @@ const MESSAGE_INDEX_PAGE_SIZE=100;
 const messageIndexByUid=new Map();
 let messageIndexUid=null;
 let messagesFilter='all';
+let messagesSearch='';
 const watermarkPrefix='brickcircle:messages:seen:';
 function messageIndex(uid){
   if(messageIndexUid!==uid){messageIndexByUid.clear();messageIndexUid=uid}
@@ -1698,6 +1710,7 @@ function filteredConversationGroups(){
   index.direct.forEach(group=>add(group.peerId,group));
   index.cases.forEach(group=>{const e=group.case;if(e)add(otherId(e),group)});
   let groups=[...peers.values()];
+  if(messagesSearch.trim())groups=groups.filter(group=>(S.profiles[group.peerId]?.display_name||'Collector').toLocaleLowerCase().includes(messagesSearch.trim().toLocaleLowerCase()));
   if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
   if(messagesFilter==='exchanges')groups=groups.filter(group=>group.cases.length>0);
   if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
@@ -1728,7 +1741,7 @@ function messagesListPaneMarkup(){
   const uid=S.user?.id,groups=filteredConversationGroups(),route=parseMessagesTarget();
   const selected=route?.kind==='direct'?`peer:${route.peerId}`:route?.kind==='case'?`peer:${otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{})}`:'';
   const count=groups.length;
-  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small">${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div>${messagesFilterBarMarkup()}${groups.length?`<div class="bc-msg-rows">${groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join('')}</div>`:empty('💬','No conversations yet','Messages with matched collectors and exchange partners will appear here.','Find matches','matches')}`;
+  return `<div class="bc-msg-list-head"><h2>Conversations</h2><span class="bc-small" data-collector-count>${count?`${count} collector${count===1?'':'s'}`:'Newest first'}</span></div><label class="bc-msg-search-label">Find a collector<input class="bc-input bc-msg-search" type="search" data-message-search autocomplete="off" placeholder="Search by name" value="${attr(messagesSearch)}"></label>${messagesFilterBarMarkup()}<div class="bc-msg-rows">${groups.length?groups.map(group=>messageRow(group,uid,group.kind==='peer'?selected===`peer:${group.peerId}`:selected===conversationThreadKey(group))).join(''):'<p class="bc-small">No matching conversations. Try another name or filter.</p>'}</div>`;
 }
 function reconcileMessageIndex(uid,kind,id){
   const index=messageIndex(uid);
@@ -1779,7 +1792,19 @@ function renderMessagesListPane(){
   updateMessageBadge();
 }
 function bindMessagesListPane(root=app()){
-  $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
+  const search=$('[data-message-search]',root);
+  if(search)search.oninput=()=>{
+    messagesSearch=search.value;
+    const groups=filteredConversationGroups(),uid=S.user?.id,route=parseMessagesTarget();
+    const selected=route?.kind==='direct'?route.peerId:route?.kind==='case'?otherId(messageIndex(uid)?.cases.get(route.caseId)?.case||{}):'';
+    const rows=$('.bc-msg-rows',root);
+    if(rows){
+      rows.innerHTML=groups.length?groups.map(group=>messageRow(group,uid,group.peerId===selected)).join(''):'<p class="bc-small">No matching conversations. Try another name or filter.</p>';
+      $('[data-message-open]',rows).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
+    }
+    const count=$('[data-collector-count]',root);if(count)count.textContent=groups.length+' collectors';
+  };
+  $('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
   $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
   $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
 }
@@ -1929,8 +1954,10 @@ async function loadCollectorEvents(peerId,uid,token){
   const groups=[...(messageIndexByUid.get(uid)?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
   const results=await Promise.all(groups.map(group=>settledTimeout(db.from('exchange_case_events').select('*').eq('case_id',group.caseId).order('created_at',{ascending:true}),10000)));
   if(S.user?.id!==uid||S.renderToken!==token)return false;
-  if(results.some(result=>result.error))return false;
-  groups.forEach((group,i)=>{group.events=[...new Map((results[i].data||[]).filter(event=>event.case_id===group.caseId).map(event=>[event.id,event])).values()]});
+  groups.forEach((group,i)=>{
+    group.eventsFailed=!!results[i].error;
+    group.events=results[i].error?[]:[...new Map((results[i].data||[]).filter(event=>event.case_id===group.caseId).map(event=>[event.id,event])).values()];
+  });
   return true;
 }
 async function loadCollectorOverdue(caseId,uid,token){
@@ -2136,7 +2163,7 @@ async function reloadCaseView(id){
   if(routeName()==='exchange'&&routeId()===id)return renderExchangeDetail(id,S.renderToken);
 }
 let threadSyncTimer=null;
-function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;}
+function stopThreadSync(){clearInterval(threadSyncTimer);threadSyncTimer=null;document.documentElement.classList.remove('bc-chat-keyboard-open');}
 function syncVisibleThread(){
   const chat=$('#bc-msg-chat');
   if(document.hidden||navigator.onLine===false||!chat?.bcThread||pendingSends.has(`${S.user?.id}:${chat.bcThread.kind}:${chat.bcThread.id}`))return;
@@ -2245,6 +2272,13 @@ async function refreshThread(chat){
 }
 function bindMessagesPage(){
   stopThreadSync();threadSyncTimer=setInterval(syncVisibleThread,15000);
+  const composer=$('#bc-msg-form');
+  if(composer){
+    composer.addEventListener('focusin',()=>document.documentElement.classList.add('bc-chat-keyboard-open'));
+    composer.addEventListener('focusout',()=>{
+      setTimeout(()=>{if(!composer.contains(document.activeElement))document.documentElement.classList.remove('bc-chat-keyboard-open')},80);
+    });
+  }
   $$('[data-open-messages-case]',app()).forEach(b=>b.onclick=()=>navigate('messages',`case:${b.dataset.openMessagesCase}`));
   bindMessagesListPane();
   $$('[data-refresh-thread]',app()).forEach(b=>b.onclick=()=>refreshThread($('#bc-msg-chat')));
@@ -2388,6 +2422,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   renderInlineProposal(peerId);
   advanceCollectorWatermarks(peerId,uid);
   if(focusedCase){const target=focusedMessage?`[data-timeline-case="${CSS.escape(focusedCase)}"][data-timeline-message="${CSS.escape(focusedMessage)}"]`:`[data-timeline-case="${CSS.escape(focusedCase)}"]`;$('#bc-msg-chat').querySelector(target)?.scrollIntoView({block:'nearest'})}
+  if(collectorCases(peerId).some(group=>group.eventsFailed))showThreadError('Some exchange updates are temporarily unavailable. You can still read and send ordinary messages; retry to load exchange history.',()=>refreshThread($('#bc-msg-chat')));
   updateMessageBadge();
 }
 async function renderMessages(token){
