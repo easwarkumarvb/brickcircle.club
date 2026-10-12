@@ -1,0 +1,53 @@
+name: Isolated PR138 projection capacity
+on:
+  push:
+    branches: ['qa/pr138-projection-capacity']
+    paths: ['qa/person_conversation_capacity.py', '.github/workflows/person-conversation-capacity.yml']
+  pull_request:
+    paths: ['qa/person_conversation_capacity.py', '.github/workflows/person-conversation-capacity.yml']
+permissions:
+  contents: read
+jobs:
+  capacity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: projection_capacity
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d projection_capacity"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 614c05d5d92d1beb6929bbc9d1445bb0796ba08d
+          path: candidate
+          persist-credentials: false
+      - name: Verify frozen candidate and disabled QA deployments
+        run: |
+          test "$(git -C candidate rev-parse HEAD)" = '614c05d5d92d1beb6929bbc9d1445bb0796ba08d'
+          python3 - <<'PY'
+          import json
+          flags=json.load(open('vercel.json'))['git']['deploymentEnabled']
+          assert flags['main'] is False and flags['qa/pr138-projection-capacity'] is False
+          PY
+      - name: Backfill capacity authenticated pages actual nested plans and lock probe
+        env:
+          DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/projection_capacity
+        run: python3 qa/person_conversation_capacity.py --candidate candidate
+      - name: Retain isolated synthetic capacity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: person-conversation-capacity
+          path: artifacts/projection-capacity/
+          if-no-files-found: error
+          retention-days: 7
