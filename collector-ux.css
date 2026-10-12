@@ -181,3 +181,7 @@ html.bc-collector .bc-welcome .bc-btn.ghost{color:#fff!important;border-color:#d
 .bc-conversation-exchanges .bc-conversation-guide p{font-size:13px;line-height:1.35;margin:3px 0 8px}
 .bc-conversation-exchanges .bc-guide-checks,.bc-conversation-exchanges .bc-guide-options{margin-top:6px}
 @media(max-width:700px){.bc-conversation-exchanges{position:relative;top:auto}.bc-conversation-exchanges .bc-conversation-guide{padding:12px}.bc-conversation-exchanges .bc-guide-actions{display:flex;gap:8px;flex-wrap:wrap}.bc-conversation-exchanges .bc-guide-actions>.bc-btn{min-height:44px}}
+
+.bc-conversation-search-label{display:block;font-size:12px;font-weight:750;color:#475569;margin:8px 0 4px}
+.bc-conversation-search{width:100%;min-height:44px;border-radius:12px;margin:0 0 10px}
+@media(max-width:700px){.bc-conversation-search{font-size:16px}}
