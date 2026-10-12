@@ -1800,11 +1800,11 @@ function bindMessagesListPane(root=app()){
     const rows=$('.bc-msg-rows',root);
     if(rows){
       rows.innerHTML=groups.length?groups.map(group=>messageRow(group,uid,group.peerId===selected)).join(''):'<p class="bc-small">No matching conversations. Try another name or filter.</p>';
-      $('[data-message-open]',rows).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
+      $$('[data-message-open]',rows).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
     }
     const count=$('[data-collector-count]',root);if(count)count.textContent=groups.length+' collectors';
   };
-  $('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
+  $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
   $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
   $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
 }
