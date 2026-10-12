@@ -718,6 +718,11 @@ function applyNotificationChange(payload){
     if(index>=0)S.notifications[index]={...S.notifications[index],...row};else S.notifications.unshift(row);
   }
   updateNotificationBadge();
+  if(payload.eventType==='INSERT'&&['message_received','exchange_message'].includes(row.kind)&&routeName()==='messages'){
+    // The trusted recipient-scoped notification is a hint; refresh from the
+    // authorized message RPC/tables rather than trusting notification bodies.
+    window.setTimeout(()=>syncVisibleThread(),150);
+  }
   if(payload.eventType==='INSERT'&&!row.read_at){if(isProposalNotification(row))toast(row.body||'You have a new exchange proposal.');else showLifecycleNotification(row)}
 }
 async function reconcileNotifications(){
@@ -2257,7 +2262,9 @@ async function refreshThread(chat){
       if(picker){picker.parentElement.outerHTML=collectorDestinationMarkup(id,selected);$('#bc-case-destination').onchange=event=>{const caseId=event.target.value;navigate('messages',caseId?`case:${caseId}`:`direct:${id}`)}}
       const e=selected?messageIndexByUid.get(uid)?.cases.get(selected)?.case:null;
      if(selected&&!e)return renderMessagesUnavailable('Conversation unavailable.');
+      const explicitContext=$('#bc-msg-form')?.dataset.destination||'';
       selectCollectorCase(id,selected);
+      if(explicitContext)setPeerComposeContext(id,explicitContext);
       updateThreadChat(threadCache('direct',id,uid),{senderName,scrollMode:'keep'});
       advanceCollectorWatermarks(id,uid);
      renderMessagesListPane();
