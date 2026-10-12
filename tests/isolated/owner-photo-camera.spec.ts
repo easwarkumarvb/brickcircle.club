@@ -40,6 +40,21 @@ async function storageSpy(page:Page,pending=false){
 
 test.beforeEach(async({page})=>mockCamera(page));
 
+test('three-angle owner gallery exposes working front, side and rear photo actions',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await page.locator('[data-photo-gallery="photo-item-1"]').click();
+  const gallery=page.locator('#bc-angle-gallery');
+  await expect(gallery).toBeVisible();
+  await expect(gallery.locator('[data-photo-angle]')).toHaveCount(3);
+  await expect(gallery.locator('[data-photo-angle="front"]')).toBeVisible();
+  await expect(gallery.locator('[data-photo-angle="side"]')).toBeVisible();
+  await expect(gallery.locator('[data-photo-angle="rear"]')).toBeVisible();
+  await gallery.locator('[data-photo-angle="side"]').click();
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  await expect(page.locator('#bc-owner-photo-form h2')).toContainText('Side view');
+  expect(await page.evaluate(()=>(window as any).__camera.calls)).toEqual([]);
+});
+
 test('opening requests no permission; bounded JPEG capture, retake, explicit save and owner-scoped replacement',async({page})=>{
   test.setTimeout(60000);
   await open(page);await storageSpy(page);
