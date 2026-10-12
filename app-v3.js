@@ -1588,6 +1588,7 @@ let collectorFocus=null;
 function messagesThreadGuard(kind,id){
   if(!S.user||routeName()!=='messages')return false;
   if(routeId()===`${kind}:${id}`||(kind==='case'&&routeId().startsWith(`case:${id}:message:`)))return true;
+  if(kind==='case')return !!collectorFocus&&collectorFocus.uid===S.user.id&&$('#bc-msg-form')?.dataset.destination===id&&!!messageIndexByUid.get(S.user.id)?.cases.get(id)?.case;
   return !!collectorFocus&&collectorFocus.uid===S.user.id&&collectorFocus.peerId===id&&kind==='direct';
 }
 function parseMessagesTarget(){
@@ -2327,22 +2328,49 @@ function renderInlineProposal(peerId){
 }
 function collectorDestinationMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
-  return `<label class="bc-collector-destination">Message destination <select id="bc-case-destination" class="bc-select"><option value="" ${selected===null?'selected':''}>Collector · general chat</option>${groups.map(g=>`<option value="${attr(g.caseId)}" ${selected===g.caseId?'selected':''}>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</option>`).join('')}</select></label>`;
+  return `<div class="bc-peer-case-list" aria-label="Exchanges with this collector">${groups.map(g=>`<button type="button" class="bc-peer-case-chip" data-focus-peer-case="${attr(g.caseId)}">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))} · ${esc(exchangeStageLabel(g.case))}</button>`).join('')}</div><div id="bc-compose-context" role="status" aria-live="polite"></div>`;
 }
 function selectCollectorCase(peerId,caseId){
-  const uid=S.user?.id,group=messageIndexByUid.get(uid)?.cases.get(caseId);
+  const uid=S.user?.id,group=caseId?messageIndexByUid.get(uid)?.cases.get(caseId):null;
   if(caseId&&(!group?.case||otherId(group.case)!==peerId))return renderMessagesUnavailable('Conversation unavailable.');
   const previous=collectorFocus;
   if(previous&&(previous.uid!==uid||previous.peerId!==peerId||previous.caseId!==(caseId||null)))$('#bc-collector-form')?.replaceChildren();
   collectorFocus={uid,peerId,caseId:caseId||null};
   const host=$('#bc-collector-action'),e=group?.case;
-  if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">General chat does not change exchange terms. Select a case for its next step.</p>';
+  if(host)host.innerHTML=e?caseConversationGuide(e):'<p class="bc-small">Discuss the exchange here. Agreements and handoffs only change when both collectors confirm.</p>';
   if(e)bindThreadCaseActions(e);
-  const form=$('#bc-msg-form');if(form){const current=form.dataset.destination||'',input=$('textarea',form);if(input&&form.dataset.bound)threadDrafts.set(`${uid}:${current?'case':'direct'}:${current||peerId}`,input.value);form.dataset.destination=caseId||'';form.dataset.bound='true';const draft=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';if(input&&input.value!==draft)input.value=draft;bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name)}
-  const picker=$('#bc-case-destination');if(picker){picker.value=caseId||'';picker.disabled=pendingSends.has(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)}
+  const form=$('#bc-msg-form');
+  // Reading an exchange never silently changes the message destination.
+  if(form){form.hidden=false;form.dataset.destination='';bindThreadCompose(form,'direct',peerId,S.profiles[peerId]?.display_name)}
   if(e){const cache=threadCache('case',caseId,uid);cache.participants=[e.user_a,e.user_b]}
   const chat=$('#bc-msg-chat');if(chat?.bcThread)chat.bcThread.caseRow=e||null;
-  if(e&&terminalCaseStates.has(e.state)&&form){form.hidden=true}else if(form)form.hidden=false;
+  $$('[data-focus-peer-case]',app()).forEach(button=>button.onclick=()=>navigate('messages',`case:${button.dataset.focusPeerCase}`));
+  const action=$('#bc-collector-action');
+  if(action&&e&&!terminalCaseStates.has(e.state)){
+    const context=document.createElement('button');context.type='button';context.className='bc-btn bc-reply-case';context.textContent='Reply about this exchange';
+    context.onclick=()=>setPeerComposeContext(peerId,e.id);
+    action.appendChild(context);
+  }
+  setPeerComposeContext(peerId,null);
+}
+function setPeerComposeContext(peerId,caseId){
+  if(!S.user||collectorFocus?.uid!==S.user.id||collectorFocus.peerId!==peerId)return;
+  const group=caseId?messageIndexByUid.get(S.user.id)?.cases.get(caseId):null;
+  const e=group?.case;
+  if(caseId&&(!e||otherId(e)!==peerId||terminalCaseStates.has(e.state)))return;
+  const form=$('#bc-msg-form'),context=$('#bc-compose-context');
+  if(!form||!context)return;
+  const previous=form.dataset.destination||'';
+  if(previous===String(caseId||''))return;
+  const uid=S.user.id,input=$('textarea',form);
+  const prevKey=`${uid}:${previous?'case':'direct'}:${previous||peerId}`;
+  if(input)threadDrafts.set(prevKey,input.value);
+  form.dataset.destination=caseId||'';
+  const nextKey=`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`;
+  if(input)input.value=threadDrafts.get(nextKey)||'';
+  context.innerHTML=e?`<span class="bc-context-chip">About ${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))} <button type="button" data-clear-case-context aria-label="Return to general chat">×</button></span>`:'';
+  if(e)$('[data-clear-case-context]',context).onclick=()=>setPeerComposeContext(peerId,null);
+  bindThreadCompose(form,caseId?'case':'direct',caseId||peerId,S.profiles[peerId]?.display_name);
 }
 async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=null){
   page(loading('Opening conversation…'));
@@ -2375,7 +2403,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
   bindMessagesPage();
-  $('#bc-case-destination').onchange=event=>{const id=event.target.value;navigate('messages',id?`case:${id}`:`direct:${peerId}`)};
+
   selectCollectorCase(peerId,focusedCase);
   renderInlineProposal(peerId);
   advanceCollectorWatermarks(peerId,uid);
