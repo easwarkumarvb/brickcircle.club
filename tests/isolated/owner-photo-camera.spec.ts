@@ -51,7 +51,7 @@ test('three-angle owner gallery exposes working front, side and rear photo actio
   await expect(gallery.locator('[data-photo-angle="rear"]')).toBeVisible();
   await gallery.locator('[data-photo-angle="side"]').click();
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
-  await expect(page.locator('#bc-owner-photo-form h2')).toContainText('Side view');
+  await expect(page.locator('#bc-owner-photo-title')).toContainText('Side view');
   expect(await page.evaluate(()=>(window as any).__camera.calls)).toEqual([]);
 });
 
