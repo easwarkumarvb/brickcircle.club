@@ -1624,6 +1624,7 @@ const MESSAGE_INDEX_PAGE_SIZE=100;
 const messageIndexByUid=new Map();
 let messageIndexUid=null;
 let messagesFilter='all';
+let messagesSearch='';
 const watermarkPrefix='brickcircle:messages:seen:';
 function messageIndex(uid){
   if(messageIndexUid!==uid){messageIndexByUid.clear();messageIndexUid=uid}
@@ -1785,10 +1786,11 @@ function filteredConversationGroups(){
   if(messagesFilter==='unread')groups=groups.filter(group=>group.unread>0);
   if(messagesFilter==='exchanges')groups=groups.filter(group=>group.cases.length>0);
   if(messagesFilter==='collectors')groups=groups.filter(group=>!!group.direct);
+  if(messagesSearch.trim())groups=groups.filter(group=>(S.profiles[group.peerId]?.display_name||'Collector').toLocaleLowerCase().includes(messagesSearch.trim().toLocaleLowerCase()));
   return groups.sort((a,b)=>b.stamp-a.stamp);
 }
 function messagesFilterBarMarkup(){
-  return `<div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
+  return `<label class="bc-conversation-search-label" for="bc-conversation-search">Find a collector</label><input id="bc-conversation-search" class="bc-input bc-conversation-search" type="search" autocomplete="off" placeholder="Search by collector name" value="${attr(messagesSearch)}" aria-label="Search conversations by collector name"><div class="bc-msg-filters" role="group" aria-label="Filter conversations">${[['all','All'],['unread','Unread'],['exchanges','Exchanges'],['collectors','Collectors']].map(([value,label])=>`<button class="bc-msg-filter" type="button" data-msg-filter="${value}" aria-pressed="${messagesFilter===value}"${value==='unread'?' title="Unread on this device"':''}>${label}</button>`).join('')}<button class="bc-msg-refresh" type="button" data-refresh-messages-list>↻ Refresh</button></div>`;
 }
 function messageRow(group,uid,selected){
   const unread=group.kind==='peer'?group.unread:conversationUnread(uid,group);
@@ -1863,7 +1865,19 @@ function renderMessagesListPane(){
   updateMessageBadge();
 }
 function bindMessagesListPane(root=app()){
-  $$('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
+  const search=$('#bc-conversation-search',root);
+  if(search)search.oninput=()=>{
+    messagesSearch=search.value;
+    const pane=$('.bc-messages-list-pane',app());
+    if(!pane)return;
+    const scroll=pane.scrollTop,caret=search.selectionStart;
+    pane.innerHTML=messagesListPaneMarkup();
+    bindMessagesListPane(pane);
+    const next=$('#bc-conversation-search',pane);
+    if(next){next.focus();next.setSelectionRange(caret,caret)}
+    pane.scrollTop=scroll;
+  };
+  $('[data-msg-filter]',root).forEach(b=>b.onclick=()=>{messagesFilter=b.dataset.msgFilter;renderMessagesListPane()});
   $$('[data-refresh-messages-list]',root).forEach(b=>b.onclick=()=>refreshMessagesList());
   $$('[data-message-open]',root).forEach(b=>b.onclick=()=>navigate('messages',b.dataset.messageOpen));
 }
