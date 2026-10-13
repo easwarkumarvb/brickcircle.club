@@ -1,0 +1,22 @@
+name: Hosted photo runner guards
+on:
+  pull_request:
+    paths: ['.github/workflows/hosted-photo-*.yml', 'scripts/*hosted-photo*.mjs', 'tests/hosted/hosted-photo.test.mjs', 'vercel.json']
+  push:
+    branches: [main, qa/hosted-photo-verification]
+    paths: ['.github/workflows/hosted-photo-*.yml', 'scripts/*hosted-photo*.mjs', 'tests/hosted/hosted-photo.test.mjs', 'vercel.json']
+permissions:
+  contents: read
+jobs:
+  offline-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: node --test tests/hosted/hosted-photo.test.mjs tests/static/owner-photo-signed-url-runtime.test.mjs
