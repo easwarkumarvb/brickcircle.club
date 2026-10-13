@@ -1,5 +1,6 @@
 import fs from 'node:fs';
-import {test,expect,BrowserContext} from '@playwright/test';
+import {test,expect} from './fixtures';
+import type {BrowserContext} from '@playwright/test';
 
 const mock=fs.readFileSync('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
 const actors={

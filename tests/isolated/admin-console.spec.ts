@@ -1,4 +1,5 @@
-import {test,expect,Page} from '@playwright/test';
+import {test,expect} from './fixtures';
+import type {Page} from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
 const id='12345678-1234-1234-1234-123456789012';
