@@ -9,6 +9,7 @@ on:
       - 'app-v3.js'
       - 'tests/static/owner-photo-signed-url-runtime.test.mjs'
       - 'supabase/migrations/*owner_photo*'
+      - 'supabase/migrations/*bind_collection_photo_reads*'
       - 'supabase/migrations/*participant_collection_photo_access*'
       - 'supabase/migrations/*rls_hardening*'
       - 'supabase/migrations/*canonical_exchange_state_machine*'
@@ -64,6 +65,18 @@ jobs:
         run: |
           set -o pipefail
           psql "$DSN" -v ON_ERROR_STOP=1 -v expect_exposure=true -f qa/photo-storage/forged-reference.sql | tee photo-reference-before.txt
+      - name: Apply Storage owner binding twice to check idempotency
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261013080000_bind_collection_photo_reads_to_owner.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261013080000_bind_collection_photo_reads_to_owner.sql
+      - name: Legitimate reads and owner-only writes survive owner binding
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/permissions.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/canonical-participant.sql
+      - name: Forged references cannot authorize another owner's photograph
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/forged-reference.sql | tee photo-reference-after.txt
       - name: Retain synthetic permission evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,5 +86,6 @@ jobs:
             photo-permission-before.txt
             photo-permission-after.txt
             photo-reference-before.txt
+            photo-reference-after.txt
           if-no-files-found: ignore
           retention-days: 14
