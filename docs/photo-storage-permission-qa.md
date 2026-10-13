@@ -60,3 +60,25 @@ layer. This does not certify Storage HTTP signed URLs, upload MIME/byte checks
 or deployed migration state. Physical camera permission and iOS/Android keyboard
 checks remain separate tasks. Local PostgreSQL binaries and Docker were absent;
 new repair acceptance requires the fresh CI run, not static review alone.
+
+## Signed photo URL lifetime regression
+
+An actual-helper VM reproduction found that a 900-second Storage signed URL
+was returned unchanged after 901 seconds, with only one signing request. The
+browser cache now stores `{url, expiresAt}` and refreshes after 840 seconds,
+anchored before the signing request to allow a 60-second safety margin. A
+response that arrives beyond that safe lifetime is discarded. Existing auth
+epoch and logout guards still prevent late responses from returning or caching
+retired-account URLs; failed or empty signing responses do not poison the cache.
+Concurrent signing semantics remain unchanged.
+
+`node --test tests/static/owner-photo-signed-url-runtime.test.mjs` runs six
+regressions against the extracted application helper. The isolated permission
+workflow also runs these contracts whenever application/helper test files
+change. No hosted Storage request is needed for this validation; deployed URL
+availability still depends on the separately approved Storage policy repair.
+
+Local follow-up evidence: six helper contracts and 38 Chromium camera/photo
+replacement browser tests passed without retries. Typecheck, app syntax, release
+synchronization, both static security contracts, 55 admin API contracts and
+diff whitespace checks passed. SQL policy files are unchanged by this follow-up.

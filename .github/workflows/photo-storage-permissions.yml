@@ -6,6 +6,8 @@ on:
   pull_request:
     paths:
       - 'qa/photo-storage/**'
+      - 'app-v3.js'
+      - 'tests/static/owner-photo-signed-url-runtime.test.mjs'
       - 'supabase/migrations/*owner_photo*'
       - 'supabase/migrations/*participant_collection_photo_access*'
       - 'supabase/migrations/*rls_hardening*'
@@ -35,6 +37,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Actual signed photo URL cache and account isolation contracts
+        run: node --test tests/static/owner-photo-signed-url-runtime.test.mjs
       - name: Actual current collection and Storage policy migrations
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/base.sql
       - name: Owner writes, match and legacy participant reads, outsider and anonymous denial
