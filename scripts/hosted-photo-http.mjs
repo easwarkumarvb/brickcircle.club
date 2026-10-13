@@ -28,11 +28,27 @@ export async function assertExpiredResponse(response){
   const detail=await response.json();
   assert.ok(detail.code==='ExpiredToken'||detail.error==='ExpiredToken'||/^jwt expired$/i.test(detail.message||''),'Expected explicit expired token evidence');
 }
+const failures=new WeakMap();
+export function photoFailureReport(error){
+  return failures.get(error)||{ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:'photo HTTP verification',checks:[]};
+}
 export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))){
+  const progress={stage:'target validation',checks:[]};
+  try{return await verifyPhotoJourney(env,fetchImpl,sleep,progress);}
+  catch{
+    // Never carry server bodies, assertion operands, identities or credentials
+    // into an error or evidence file. Only our fixed checkpoint labels survive.
+    const error=new Error('Hosted photo verification failed; values withheld');
+    failures.set(error,{ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks]});
+    throw error;
+  }
+}
+async function verifyPhotoJourney(env,fetchImpl,sleep,progress){
   validateTarget(env,{publicOnly:true});
   const send=guardedFetch(fetchImpl);
   const key=env.BC_STAGING_SUPABASE_PUBLISHABLE_KEY;
-  const run=randomUUID();const checks=[];
+  const run=randomUUID();const checks=progress.checks;
+  progress.stage='fixture validation';
   const denied=async(response)=>{
     assertDenied(response);
     if(response.status===400){
@@ -42,7 +58,7 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   };
   const users=validateStagingEmails(['A','B','C'].map(label=>({label,email:env[`BC_STAGING_USER_${label}_EMAIL`],password:env[`BC_STAGING_USER_${label}_PASSWORD`]})),'example.test');
   const sets=[env.BC_STAGING_SET_A,env.BC_STAGING_SET_B];
-  assert.ok(sets.every(value=>/^\d{3,8}$/.test(value||''))&&sets[0]!==sets[1]);
+  assert.ok(sets.every(value=>/^\d{3,8}(?:-\d+)?$/.test(value||''))&&sets[0]!==sets[1]);
   const request=(path,user,method='GET',body,extra={})=>send(`${BASE}${path}`,{method,headers:{apikey:key,...(user?{Authorization:`Bearer ${user.session}`}:{}) ,...(body!==undefined?{'Content-Type':'application/json'}:{}),...extra},...(body!==undefined?{body:JSON.stringify(body)}:{})});
   const json=async(response)=>{assert.ok(response.ok,'Staging API request failed');return response.json();};
   const rpc=async(user,name,body)=>json(await request(`/rest/v1/rpc/${name}`,user,'POST',body));
@@ -53,12 +69,14 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
     const response=await send(signedUrl(value.signedURL,path));assert.ok(response.ok,'Signed download failed');
     assert.deepEqual(Buffer.from(await response.arrayBuffer()),IMAGE,'Signed download bytes changed');
   };
+  progress.stage='synthetic account authentication';
   for(const user of users){
     const result=await json(await request('/auth/v1/token?grant_type=password',null,'POST',{email:user.email,password:user.password}));
     assert.match(result.user?.id||'',/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);assert.ok(result.access_token);user.id=result.user.id;user.session=result.access_token;
     const verified=await json(await request('/auth/v1/user',user));assert.equal(verified.id,user.id);
   }
   const [a,b,c]=users;assert.equal(new Set(users.map(user=>user.id)).size,3);
+  progress.stage='owner upload update and signed bytes';
   const items=[];
   for(const [index,user] of [a,b].entries()){
     user.photo=`${user.id}/hosted-photo-${run}.png`;
@@ -71,7 +89,9 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
     await json(await request('/rest/v1/wishlists',user,'POST',{user_id:user.id,set_number:sets[1-index],priority:3},{Prefer:'return=representation'}));
   }
   checks.push('owner upload update and signed bytes');
+  progress.stage='reciprocal match signed bytes';
   await verify(a,b.photo);await verify(b,a.photo);checks.push('reciprocal match signed bytes');
+  progress.stage='canonical proposal';
   let current=(await rpc(a,'create_exchange_case',{p_offered_item_id:a.item,p_requested_item_id:b.item,p_duration_days:30,p_message:'Synthetic hosted photo QA proposal',p_idempotency_key:`${run}:proposal`})).case;
   assert.equal(current?.state,'PROPOSED');
   const transition=async(user,action)=>{
@@ -88,9 +108,12 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
     }
     checks.push(`${label} participants read outsider and anonymous denied`);
   };
+  progress.stage='PROPOSED participant permissions';
   await checkPermissions('PROPOSED');
+  progress.stage='ACCEPTED participant permissions';
   await transition(b,'accept');assert.equal(current.state,'ACCEPTED');await checkPermissions('ACCEPTED');
   // Participants can read, but cannot overwrite or create objects in the peer folder.
+  progress.stage='foreign mutation denial';
   for(const intruder of [a,c]){
     await denied(await upload(intruder,b.photo,IMAGE,'PUT'));
     await denied(await upload(intruder,`${b.id}/foreign-${run}.png`));
@@ -104,6 +127,7 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   checks.push('foreign update insert upsert move delete denied and owner bytes intact');
   // An outsider must not acquire read access by pointing their own collection
   // row at another member's object. Use only these run-owned synthetic paths.
+  progress.stage='forged reference denial';
   const forged=await json(await request('/rest/v1/collection_items?select=id,owner_photo_path',c,'POST',{user_id:c.id,set_number:sets[1],condition:'Excellent',completeness:100,original_box:false,notes:'Synthetic forged photo reference QA fixture',owner_photo_path:b.photo},{Prefer:'return=representation'}));
   assert.equal(forged.length,1);assert.equal(forged[0].owner_photo_path,b.photo);
   await denied(await sign(c,b.photo));await verify(b,b.photo);
@@ -112,6 +136,7 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   await denied(await sign(c,a.photo));await verify(a,a.photo);
   await json(await request(`/rest/v1/collection_items?id=eq.${forged[0].id}`,c,'DELETE',undefined,{Prefer:'return=representation'}));
   checks.push('outsider forged collection photo reference denied');
+  progress.stage='CANCELLED archive participant permissions';
   await transition(a,'cancel');assert.equal(current.state,'CANCELLED');
   for(const user of [a,b])await json(await request(`/rest/v1/wishlists?user_id=eq.${user.id}`,user,'DELETE',undefined,{Prefer:'return=representation'}));
   for(const user of [a,b]){
@@ -121,9 +146,11 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   await checkPermissions('CANCELLED archive without wishlists');
   // Do not download before expiration: this proves origin rejection rather than
   // accidentally accepting a CDN-cached response fetched while still valid.
+  progress.stage='signed capability expiration';
   const expired=await json(await sign(a,a.photo,1));await sleep(2500);
   await assertExpiredResponse(await send(signedUrl(expired.signedURL,a.photo)));
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
+  progress.stage='owner deletes exact dummy objects';
   // Owner deletion is limited to this run's known dummy objects; retain case rows.
   for(const user of [a,b]){
     const deleted=await json(await request(`/storage/v1/object/${BUCKET}`,user,'DELETE',{prefixes:[user.photo]}));
@@ -133,8 +160,8 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   return {ok:true,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',checks,productionRequests:0,unexpectedRequests:0};
 }
 if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.url){
-  let report={ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:'photo HTTP verification'};
+  let report;
   try{report=await runPhotoVerification(process.env);console.log('Hosted photo HTTP permission and signed download checks passed.');}
-  catch{process.exitCode=1;console.error('Hosted photo verification failed; values withheld. No schema changes attempted.');}
+  catch(error){report=photoFailureReport(error);process.exitCode=1;console.error(`Hosted photo verification failed at ${report.failedStage}; values withheld. No schema changes attempted.`);}
   await mkdir('artifacts',{recursive:true});await writeFile('artifacts/hosted-photo-http.json',serializeRedactedReport(report));
 }

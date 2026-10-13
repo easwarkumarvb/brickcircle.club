@@ -3,11 +3,12 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {inflateSync} from 'node:zlib';
 import {validateSelection,validateTarget,guardedFetch,CANDIDATE_SHA,CONFIRMATION,PROVENANCE,STAGING_REF,PRODUCTION_REF} from '../../scripts/validate-hosted-photo.mjs';
-import {runPhotoVerification,IMAGE,signedUrl,assertDenied,assertExpiredResponse} from '../../scripts/hosted-photo-http.mjs';
+import {serializeRedactedReport} from '../../scripts/hosted-exchange-smoke.mjs';
+import {runPhotoVerification,photoFailureReport,IMAGE,signedUrl,assertDenied,assertExpiredResponse} from '../../scripts/hosted-photo-http.mjs';
 const repository='easwarkumarvb/brickcircle.club';
 const prs=()=>PROVENANCE.map(p=>({number:p.number,merged:true,state:'closed',merge_commit_sha:p.merge,head:{sha:p.head,ref:p.branch,repo:{full_name:repository}},base:{ref:'main',repo:{full_name:repository}}}));
 const selection=()=>({repository,ref:'refs/heads/main',eventName:'workflow_dispatch',sha:CANDIDATE_SHA,confirmation:CONFIRMATION,prs:prs()});
-const env=()=>({BC_HOSTED_SMOKE_CONFIRMATION:CONFIRMATION,BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA:CANDIDATE_SHA,BC_STAGING_SUPABASE_PROJECT_REF:STAGING_REF,BC_PRODUCTION_SUPABASE_PROJECT_REF:PRODUCTION_REF,BC_STAGING_SUPABASE_URL:`https://${STAGING_REF}.supabase.co`,BC_STAGING_ALLOWED_EMAIL_DOMAIN:'example.test',BC_STAGING_NOTIFICATION_MODE:'outbox-only',BC_STAGING_SUPABASE_PUBLISHABLE_KEY:'public-fixture',BC_STAGING_SET_A:'42143',BC_STAGING_SET_B:'21309',...Object.fromEntries(['A','B','C'].flatMap(label=>[[`BC_STAGING_USER_${label}_EMAIL`,`${label.toLowerCase()}@example.test`],[`BC_STAGING_USER_${label}_PASSWORD`,'fixture-only']]))});
+const env=()=>({BC_HOSTED_SMOKE_CONFIRMATION:CONFIRMATION,BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA:CANDIDATE_SHA,BC_STAGING_SUPABASE_PROJECT_REF:STAGING_REF,BC_PRODUCTION_SUPABASE_PROJECT_REF:PRODUCTION_REF,BC_STAGING_SUPABASE_URL:`https://${STAGING_REF}.supabase.co`,BC_STAGING_ALLOWED_EMAIL_DOMAIN:'example.test',BC_STAGING_NOTIFICATION_MODE:'outbox-only',BC_STAGING_SUPABASE_PUBLISHABLE_KEY:'public-fixture',BC_STAGING_SET_A:'75192-1',BC_STAGING_SET_B:'10307-1',...Object.fromEntries(['A','B','C'].flatMap(label=>[[`BC_STAGING_USER_${label}_EMAIL`,`${label.toLowerCase()}@example.test`],[`BC_STAGING_USER_${label}_PASSWORD`,'fixture-only']]))});
 test('immutable merged selection rejects every altered trust boundary',()=>{
   assert.equal(validateSelection(selection()),CANDIDATE_SHA);
   for(const [field,value] of [['ref','refs/heads/qa/test'],['eventName','push'],['sha','f'.repeat(40)],['repository','other/repo'],['confirmation','yes']])assert.throws(()=>validateSelection({...selection(),[field]:value}));
@@ -81,14 +82,18 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
   };
   return {send,calls,sleep:async()=>{expired=true;}};
 }
-test('complete photo journey checks actual bytes canonical versions denial and expiry',async()=>{
+test('configured staging set IDs complete photo journey with canonical versions denial and expiry',async()=>{
   const fixture=fixtureTransport();const report=await runPhotoVerification(env(),fixture.send,fixture.sleep);
   assert.equal(report.ok,true);assert.equal(report.checks.length,9);assert.equal(report.productionRequests,0);
   assert.ok(fixture.calls.some(call=>call.body?.p_action==='cancel'));
   assert.ok(fixture.calls.some(call=>call.who==='C'&&call.body?.owner_photo_path));
+  assert.deepEqual(fixture.calls.filter(call=>call.path==='/rest/v1/collection_items'&&call.method==='POST'&&call.who!=='C').map(call=>call.body.set_number),['75192-1','10307-1']);
 });
 test('missing participant policy stops before accept or later positive claims',async()=>{
-  const fixture=fixtureTransport({missingPolicy:true});await assert.rejects(()=>runPhotoVerification(env(),fixture.send,fixture.sleep));
+  const fixture=fixtureTransport({missingPolicy:true});await assert.rejects(()=>runPhotoVerification(env(),fixture.send,fixture.sleep),error=>{
+    assert.equal(photoFailureReport(error).failedStage,'PROPOSED participant permissions');
+    assert.equal(photoFailureReport(error).checks.length,2);return true;
+  });
   assert.ok(fixture.calls.some(call=>call.path==='/rest/v1/rpc/create_exchange_case'));
   assert.ok(!fixture.calls.some(call=>call.body?.p_action==='accept'));
 });
@@ -122,6 +127,7 @@ test('workflow is manual protected pinned and never passes server secret to HTTP
   const step=source.split('name: Public-key Storage HTTP')[1].split('      - name:')[0];
   assert.ok(!step.includes('SECRET_KEY'));assert.ok(!source.includes('apply_migration'));
   const deployment=JSON.parse(await readFile('vercel.json','utf8'));assert.equal(deployment.git.deploymentEnabled['qa/hosted-photo-verification'],false);
+  assert.equal(deployment.git.deploymentEnabled['dev/hosted-photo-set-validation'],false);
 });
 
 test('uploaded dummy PNG has valid chunk checksums and decodes to one RGBA pixel',()=>{
@@ -140,4 +146,33 @@ test('uploaded dummy PNG has valid chunk checksums and decodes to one RGBA pixel
   }
   assert.deepEqual(types,['IHDR','IDAT','IEND']);
   assert.deepEqual([...inflateSync(Buffer.concat(compressed))],[0,255,255,255,255]);
+});
+
+
+test('set validation rejects malformed and duplicate fixtures before public requests',async()=>{
+  for(const sets of [['75192-1','75192-1'],['','10307-1'],['75192-', '10307-1'],['75192-name','10307-1'],[' 75192-1','10307-1']]){
+    const fixture=fixtureTransport();
+    await assert.rejects(()=>runPhotoVerification({...env(),BC_STAGING_SET_A:sets[0],BC_STAGING_SET_B:sets[1]},fixture.send,fixture.sleep),error=>{
+      assert.deepEqual(photoFailureReport(error).checks,[]);
+      assert.equal(photoFailureReport(error).failedStage,'fixture validation');return true;
+    });
+    assert.equal(fixture.calls.length,0);
+  }
+  const fixture=fixtureTransport();
+  assert.equal((await runPhotoVerification({...env(),BC_STAGING_SET_A:'75192',BC_STAGING_SET_B:'10307'},fixture.send,fixture.sleep)).ok,true);
+});
+test('failed checkpoint retains completed checks and discards raw failure details',async()=>{
+  const fixture=fixtureTransport();
+  const send=async(url,init)=>{
+    if(new URL(url).pathname==='/rest/v1/rpc/create_exchange_case')throw new Error('private-account@example.test Bearer private-token 00000000-0000-4000-8000-000000000001');
+    return fixture.send(url,init);
+  };
+  await assert.rejects(()=>runPhotoVerification(env(),send,fixture.sleep),error=>{
+    const report=photoFailureReport(error);
+    assert.equal(report.failedStage,'canonical proposal');
+    assert.deepEqual(report.checks,['owner upload update and signed bytes','reciprocal match signed bytes']);
+    assert.ok(!serializeRedactedReport(report).includes('private-'));assert.ok(!error.message.includes('private-'));
+    assert.deepEqual(Object.keys(report).sort(),['checks','failedStage','ok','target','testedHeadSha']);return true;
+  });
+  assert.equal(photoFailureReport({failedStage:'private-token',checks:['private-account@example.test']}).failedStage,'photo HTTP verification');
 });
