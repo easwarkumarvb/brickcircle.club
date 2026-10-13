@@ -1101,7 +1101,20 @@ function replaceOwnerPhoto(item){
     await refreshCore();owner.assert();renderSetsBody();toast('Set photo updated.');
   }});
 }
-async function signedOwnerPhoto(path){const epoch=authEpoch;if(!path||logoutLocked)return '';if(ownerPhotoUrls.has(path))return ownerPhotoUrls.get(path);const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);if(epoch!==authEpoch||logoutLocked)return '';if(error)throw error;const url=data?.signedUrl||'';if(url)ownerPhotoUrls.set(path,url);return url}
+async function signedOwnerPhoto(path){
+  const epoch=authEpoch;if(!path||logoutLocked)return '';
+  const now=Date.now(),cached=ownerPhotoUrls.get(path);
+  if(cached?.url&&cached.expiresAt>now)return cached.url;
+  ownerPhotoUrls.delete(path);
+  // Storage grants 15 minutes; anchor expiry before signing and refresh one minute early.
+  const expiresAt=now+840000;
+  const {data,error}=await db.storage.from('collection-photos').createSignedUrl(path,900);
+  if(epoch!==authEpoch||logoutLocked)return '';
+  if(error)throw error;
+  const url=data?.signedUrl||'';
+  if(!url||Date.now()>=expiresAt)return '';
+  ownerPhotoUrls.set(path,{url,expiresAt});return url;
+}
 async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.owner_photo_path)continue;const image=root.querySelector(`[data-edit-set="${CSS.escape(row.id)}"]`)?.closest('.bc-myset')?.querySelector('.bc-myset-visual img');if(!image)continue;try{const url=await signedOwnerPhoto(row.owner_photo_path);if(url){image.src=url;image.removeAttribute('data-set-image');image.alt='Owner photo of assembled LEGO set'}}catch(_){}}}
 async function hydrateMatchPhotos(root){
   const cards=root.querySelectorAll('.bc-match');
