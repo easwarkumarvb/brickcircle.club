@@ -28,6 +28,7 @@ test('transport never sends forbidden origins paths credentials or redirect-foll
 test('signed capability normalization rejects external and unrelated endpoint values',()=>{
   assert.ok(signedUrl('/object/sign/collection-photos/a?token=fixture').includes('/storage/v1/object/sign/'));
   for(const value of ['https://example.test/object/sign/collection-photos/a?token=fixture','/object/public/collection-photos/a?token=fixture','/object/sign/collection-photos/a'])assert.throws(()=>signedUrl(value));
+  assert.throws(()=>signedUrl('/object/sign/collection-photos/other?token=fixture','expected'));
   for(const status of [200,302,429,500,503])assert.throws(()=>assertDenied({status}));
 });
 function fixtureTransport({missingPolicy=false,forgeGap=false}={}){

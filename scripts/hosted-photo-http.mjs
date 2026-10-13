@@ -9,13 +9,14 @@ import {validateStagingEmails,serializeRedactedReport} from './hosted-exchange-s
 export const IMAGE=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==','base64');
 const BASE='https://tteyypklldgwwicrgjzt.supabase.co';
 const BUCKET='collection-photos';
-export function signedUrl(value){
+export function signedUrl(value,expectedPath){
   assert.equal(typeof value,'string');
   const url=new URL(value.startsWith('/object/')?`/storage/v1${value}`:value,BASE);
   assert.equal(url.origin,BASE);
   assert.ok(!url.username&&!url.password&&!url.hash);
   assert.ok(url.pathname.startsWith(`/storage/v1/object/sign/${BUCKET}/`));
   assert.ok(url.searchParams.get('token'));
+  if(expectedPath!==undefined)assert.equal(url.pathname,`/storage/v1/object/sign/${BUCKET}/${expectedPath}`,'Signed capability names a different object');
   return url.href;
 }
 export function assertDenied(response){
@@ -49,7 +50,7 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   const sign=(user,path,expiresIn=60)=>request(`/storage/v1/object/sign/${BUCKET}/${path}`,user,'POST',{expiresIn});
   const verify=async(user,path)=>{
     const value=await json(await sign(user,path));
-    const response=await send(signedUrl(value.signedURL));assert.ok(response.ok,'Signed download failed');
+    const response=await send(signedUrl(value.signedURL,path));assert.ok(response.ok,'Signed download failed');
     assert.deepEqual(Buffer.from(await response.arrayBuffer()),IMAGE,'Signed download bytes changed');
   };
   for(const user of users){
@@ -121,7 +122,7 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   // Do not download before expiration: this proves origin rejection rather than
   // accidentally accepting a CDN-cached response fetched while still valid.
   const expired=await json(await sign(a,a.photo,1));await sleep(2500);
-  await assertExpiredResponse(await send(signedUrl(expired.signedURL)));
+  await assertExpiredResponse(await send(signedUrl(expired.signedURL,a.photo)));
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
   // Owner deletion is limited to this run's known dummy objects; retain case rows.
   for(const user of [a,b]){
