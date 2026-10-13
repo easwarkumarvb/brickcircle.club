@@ -6,7 +6,7 @@ import {pathToFileURL} from 'node:url';
 import {validateTarget,guardedFetch,CANDIDATE_SHA} from './validate-hosted-photo.mjs';
 import {validateStagingEmails,serializeRedactedReport} from './hosted-exchange-smoke.mjs';
 // A valid one-pixel PNG. It is generated fixture data, never an owner photograph.
-export const IMAGE=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==','base64');
+export const IMAGE=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==','base64');
 const BASE='https://tteyypklldgwwicrgjzt.supabase.co';
 const BUCKET='collection-photos';
 export function signedUrl(value,expectedPath){

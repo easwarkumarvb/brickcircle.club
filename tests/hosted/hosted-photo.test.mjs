@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {inflateSync} from 'node:zlib';
 import {validateSelection,validateTarget,guardedFetch,CANDIDATE_SHA,CONFIRMATION,PROVENANCE,STAGING_REF,PRODUCTION_REF} from '../../scripts/validate-hosted-photo.mjs';
 import {runPhotoVerification,IMAGE,signedUrl,assertDenied,assertExpiredResponse} from '../../scripts/hosted-photo-http.mjs';
 const repository='easwarkumarvb/brickcircle.club';
@@ -121,4 +122,22 @@ test('workflow is manual protected pinned and never passes server secret to HTTP
   const step=source.split('name: Public-key Storage HTTP')[1].split('      - name:')[0];
   assert.ok(!step.includes('SECRET_KEY'));assert.ok(!source.includes('apply_migration'));
   const deployment=JSON.parse(await readFile('vercel.json','utf8'));assert.equal(deployment.git.deploymentEnabled['qa/hosted-photo-verification'],false);
+});
+
+test('uploaded dummy PNG has valid chunk checksums and decodes to one RGBA pixel',()=>{
+  assert.deepEqual([...IMAGE.subarray(0,8)],[137,80,78,71,13,10,26,10]);
+  let offset=8;const types=[];const compressed=[];
+  while(offset<IMAGE.length){
+    const length=IMAGE.readUInt32BE(offset);assert.ok(offset+12+length<=IMAGE.length);
+    const type=IMAGE.toString('ascii',offset+4,offset+8),bytes=IMAGE.subarray(offset+4,offset+8+length);
+    let sum=0xffffffff;
+    for(const byte of bytes){sum^=byte;for(let bit=0;bit<8;bit++)sum=(sum>>>1)^((sum&1)?0xedb88320:0);}
+    assert.equal(IMAGE.readUInt32BE(offset+8+length),(sum^0xffffffff)>>>0,`PNG ${type} checksum`);
+    const data=IMAGE.subarray(offset+8,offset+8+length);types.push(type);
+    if(type==='IHDR'){assert.equal(data.readUInt32BE(0),1);assert.equal(data.readUInt32BE(4),1);assert.equal(data[8],8);assert.equal(data[9],6);}
+    if(type==='IDAT')compressed.push(data);
+    offset+=length+12;
+  }
+  assert.deepEqual(types,['IHDR','IDAT','IEND']);
+  assert.deepEqual([...inflateSync(Buffer.concat(compressed))],[0,255,255,255,255]);
 });
