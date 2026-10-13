@@ -1,0 +1,51 @@
+name: Isolated photo storage permissions
+on:
+  workflow_dispatch:
+  push:
+    branches: ['dev/photo-storage-permission-qa']
+  pull_request:
+    paths:
+      - 'qa/photo-storage/**'
+      - 'supabase/migrations/*owner_photo*'
+      - 'supabase/migrations/*rls_hardening*'
+      - 'supabase/migrations/*canonical_exchange_state_machine*'
+      - '.github/workflows/photo-storage-permissions.yml'
+permissions:
+  contents: read
+jobs:
+  permissions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: photo_storage_qa
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d photo_storage_qa"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/photo_storage_qa
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Actual current collection and Storage policy migrations
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/base.sql
+      - name: Owner writes, match and legacy participant reads, outsider and anonymous denial
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/permissions.sql
+      - name: Canonical proposal and acceptance retain counterpart photo access
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/canonical-participant.sql | tee photo-permission-evidence.txt
+      - name: Retain synthetic permission evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: photo-storage-permission-evidence
+          path: photo-permission-evidence.txt
+          if-no-files-found: ignore
+          retention-days: 14
