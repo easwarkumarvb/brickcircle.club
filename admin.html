@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow,noarchive"><meta name="theme-color" content="#17191c">
+  <title>Marketplace Admin · BrickCircle</title>
+  <link rel="stylesheet" href="/admin-console.css?v=20261007-account-switch-r4">
+  <script defer src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4/dist/umd/supabase.min.js"></script>
+  <script defer src="/local-account-logout.js?v=20261007-account-switch-r4"></script>
+  <script defer src="/admin-dashboard.js?v=20261007-account-switch-r4"></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="topbar"><a class="brand" href="/#home"><span class="brand-mark" aria-hidden="true">BC</span> BrickCircle <span class="admin-tag">ADMIN</span></a>
+    <div class="top-actions"><a href="/#home">Marketplace ↗</a><button id="signout" type="button">Sign out</button></div>
+  </header>
+  <div class="shell">
+    <aside id="navigation" hidden><p class="nav-caption">MARKETPLACE OPERATIONS</p><nav aria-label="Admin sections">
+      <button type="button" data-section="overview" aria-current="page">Overview</button>
+      <button type="button" data-section="members">Members</button>
+      <button type="button" data-section="catalogue">Catalogue</button>
+      <button type="button" data-section="exchanges">Exchanges</button>
+      <button type="button" data-section="support">Support</button>
+      <button type="button" data-section="audit">Audit log</button>
+    </nav><div class="nav-foot">Private operations console<br>Changes require a reason and are recorded.</div></aside>
+    <main id="content" tabindex="-1">
+      <div class="page-heading"><div><p class="eyebrow">BRICKCIRCLE CONTROL ROOM</p><h1 id="page-title">Marketplace overview</h1><p id="page-description">A clear view of your collector community.</p></div><button type="button" id="refresh">Refresh</button></div>
+      <p id="status" role="status" aria-live="polite">Verifying administrator access…</p>
+      <div id="access-actions" hidden><a class="button primary" id="marketplace-signin" href="/#signin">Sign in on BrickCircle</a><button id="switch-account" type="button">Use another account</button></div>
+      <section id="dashboard" hidden aria-label="Marketplace data">
+        <form id="search-form" class="search-bar" hidden><label for="search">Search records</label><div><input id="search" type="search" maxlength="100" autocomplete="off" placeholder="Search"><button type="submit">Search</button></div><p id="search-hint"></p></form>
+        <div id="record-filters" class="search-bar" hidden><div id="structured-filters" hidden><label for="record-status">Status / stage</label><select id="record-status"></select><label for="record-age">Request age</label><select id="record-age"><option value="">Any age</option><option value="older_7_days">Older than 7 days</option><option value="older_30_days">Older than 30 days</option></select></div><p id="filter-summary"></p><button type="button" id="clear-filters">Clear filters</button></div>
+        <div id="results"></div>
+        <div id="pagination" class="pagination" hidden><p id="page-count"></p><div><button id="previous" type="button">Previous</button><button id="next" type="button">Next</button></div></div>
+      </section>
+    </main>
+  </div>
+  <dialog id="detail-dialog" aria-labelledby="detail-title"><div class="dialog-head"><h2 id="detail-title">Record details</h2><button type="button" id="close-detail" aria-label="Close record details">Close</button></div><div id="detail-body"></div></dialog>
+  <dialog id="change-dialog" aria-labelledby="change-title" aria-describedby="change-description"><form id="change-form">
+    <div class="dialog-head"><h2 id="change-title">Review admin change</h2><button type="button" id="cancel-change">Cancel</button></div>
+    <p id="change-description"></p><label for="change-value">New status</label><select id="change-value" required></select>
+    <label for="change-reason">Reason / internal support note</label><textarea id="change-reason" required minlength="10" maxlength="1000" rows="5" placeholder="Explain why this change is needed (10–1000 characters)"></textarea>
+    <p class="muted">This note is visible to administrators in the audit log. Avoid unnecessary personal information.</p>
+    <p id="change-status" role="status" aria-live="polite"></p><button id="confirm-change" class="primary" type="submit">Confirm and record change</button>
+  </form></dialog>
+  <dialog id="mfa-dialog" aria-labelledby="mfa-title"><form id="mfa-form">
+    <div class="dialog-head"><h2 id="mfa-title">Verify administrator sign-in</h2><button type="button" id="cancel-mfa">Cancel</button></div>
+    <p>Use an authenticator app to unlock the private marketplace console.</p>
+    <div id="mfa-setup" hidden><p>Scan this QR code in your authenticator app, then enter its six-digit code.</p><img id="mfa-qr" alt="Authenticator setup QR code" width="200" height="200"><details><summary>Enter a setup key manually</summary><p id="mfa-secret"></p></details><p class="muted">Keep the setup key private. BrickCircle does not store it in browser storage.</p></div>
+    <label for="mfa-code">Six-digit authenticator code</label><input id="mfa-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required>
+    <p id="mfa-status" role="status" aria-live="polite"></p><button id="verify-mfa" type="submit" class="primary">Verify and unlock</button>
+  </form></dialog>
+</body></html>

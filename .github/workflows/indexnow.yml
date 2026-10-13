@@ -1,0 +1,65 @@
+name: IndexNow public page notification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'how-it-works.html'
+      - 'afol-lego-exchange.html'
+      - 'safety.html'
+      - 'faq.html'
+      - 'cities.html'
+      - 'city/**'
+      - 'seo.css'
+      - 'sitemap.xml'
+      - 'robots.txt'
+      - '3b06f08373b5a5a1c992b5d9f9b0109a.txt'
+      - '.github/workflows/indexnow.yml'
+  workflow_dispatch:
+
+jobs:
+  notify-indexnow:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait briefly for Vercel production deployment
+        run: sleep 75
+
+      - name: Verify IndexNow key is live
+        run: |
+          set -e
+          KEY='3b06f08373b5a5a1c992b5d9f9b0109a'
+          BODY="$(curl -fsSL --retry 5 --retry-delay 10 "https://www.brickcircle.club/${KEY}.txt")"
+          test "$BODY" = "$KEY"
+
+      - name: Submit public BrickCircle URLs to IndexNow
+        run: |
+          cat > /tmp/indexnow.json <<'JSON'
+          {
+            "host": "www.brickcircle.club",
+            "key": "3b06f08373b5a5a1c992b5d9f9b0109a",
+            "keyLocation": "https://www.brickcircle.club/3b06f08373b5a5a1c992b5d9f9b0109a.txt",
+            "urlList": [
+              "https://www.brickcircle.club/",
+              "https://www.brickcircle.club/how-it-works.html",
+              "https://www.brickcircle.club/afol-lego-exchange.html",
+              "https://www.brickcircle.club/safety.html",
+              "https://www.brickcircle.club/faq.html",
+              "https://www.brickcircle.club/cities.html",
+              "https://www.brickcircle.club/city/bengaluru.html",
+              "https://www.brickcircle.club/city/london.html",
+              "https://www.brickcircle.club/city/new-york.html",
+              "https://www.brickcircle.club/city/berlin.html",
+              "https://www.brickcircle.club/city/tokyo.html",
+              "https://www.brickcircle.club/city/singapore.html",
+              "https://www.brickcircle.club/city/sydney.html",
+              "https://www.brickcircle.club/city/toronto.html",
+              "https://www.brickcircle.club/city/paris.html",
+              "https://www.brickcircle.club/city/dubai.html"
+            ]
+          }
+          JSON
+          curl -fsS --retry 3 --retry-delay 10 \
+            -H 'Content-Type: application/json; charset=utf-8' \
+            --data-binary @/tmp/indexnow.json \
+            https://api.indexnow.org/indexnow

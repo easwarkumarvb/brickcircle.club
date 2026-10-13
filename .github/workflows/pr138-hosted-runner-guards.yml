@@ -1,0 +1,36 @@
+name: PR138 hosted runner offline guards
+on:
+  pull_request:
+    paths:
+      - 'scripts/*pr138*'
+      - 'tests/hosted/*pr138*'
+      - '.github/workflows/*pr138*'
+permissions:
+  contents: read
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - name: Selection, target, transport and report guards
+        run: node --test tests/hosted/hosted-pr138.test.mjs tests/hosted/hosted-pr138-browser.test.mjs
+      - name: Immutable product assets for offline UI validation
+        uses: actions/checkout@v4
+        with:
+          ref: c6444d635889f6956c3fdc6b1e0657060d182cef
+          path: candidate
+          persist-credentials: false
+      - run: npx --no-install playwright install --with-deps chromium
+      - name: Offline transport and schema contracts
+        run: node scripts/hosted-pr138-browser.mjs --offline
+      - name: Offline candidate sheets, replies and reload
+        env:
+          BC_HOSTED_CANDIDATE_PATH: candidate
+        run: node scripts/hosted-pr138-browser.mjs --offline-browser
