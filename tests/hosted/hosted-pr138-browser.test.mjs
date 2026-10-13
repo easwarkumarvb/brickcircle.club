@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
 import {assertFeedPage,assertRequestBounds,assertVisibleReadCursors,assertReadModelReady,assertPublicBrowserEnvironment,compareTuple,timestampMicros} from '../../scripts/hosted-pr138-browser.mjs';
 import {assertOutboxOnly} from '../../scripts/audit-hosted-pr138-outbox.mjs';
 import {transportAllowed,stagingApplication,canonicalArchiveEvents} from '../../scripts/hosted-pr125-browser.mjs';
@@ -81,4 +82,34 @@ test('PR138 runner pins identity and emits only redacted fixed artifacts without
  assert.match(PR138_SHA,/^[a-f0-9]{40}$/);const source=readFileSync('scripts/hosted-pr138-browser.mjs','utf8'),audit=readFileSync('scripts/audit-hosted-pr138-outbox.mjs','utf8');
  assert.match(source,/testedPullRequestNumber:138,testedHeadSha:PR138_SHA/);assert.match(source,/serializeRedactedReport\(report\)/);assert.match(source,/artifacts\/hosted-pr138-browser\.json/);assert.doesNotMatch(source,/\.screenshot\(|tracing\.start|console\.log\(.*(?:password|email|args)/);
  assert.match(audit,/artifacts\/hosted-pr138-outbox\.json/);assert.match(audit,/from\('notification_email_deliveries'\)/);assert.doesNotMatch(audit,/functions\.invoke|fetch\(|\.rpc\(/);
+});
+
+test('actual lost-response orchestration identifies failing checkpoints without exposing fixture values and always removes interception',async()=>{
+ const source=readFileSync('scripts/hosted-pr138-browser.mjs','utf8'),start=source.indexOf('export async function lostResponseRetry('),end=source.indexOf('export async function personLifecycle(',start);
+ assert.ok(start>=0&&end>start);
+ for(const caseId of [null,'private-case-id'])for(const fault of [null,'warning','restore','retry-key','duplicate-source']){
+  const checkpoints=[],listeners=new Map(),body='private-message-body',peerId='private-peer-id';let input='',count=0,cleaned=false;
+  const context=vm.createContext({assert,explicitReply:async()=>{},generalReply:async()=>{},expect:locator=>({
+   toContainText:async()=>assert.notEqual(fault,'warning','Missing delivery warning'),toBeVisible:async()=>{},toHaveCount:async()=>{},toBeEnabled:async()=>{},
+   toHaveValue:async expected=>assert.equal(input,expected)
+  })});
+  vm.runInContext(source.slice(start,end).replace('export async function','async function'),context);
+  const target='https://staging.invalid/rest/v1/rpc/'+(caseId?'send_exchange_case_message':'send_collector_message');
+  const page={on:(name,listener)=>listeners.set(name,listener),off:name=>listeners.delete(name),route:async()=>{},unroute:async()=>{cleaned=true},
+   reload:async()=>{if(fault==='restore')input='wrong restored text'},locator:selector=>({fill:async value=>{input=value},evaluate:async()=>{
+    const args={p_idempotency_key:count===1&&fault==='retry-key'?'different-private-key':'private-original-key',p_body:body,...(caseId?{p_case_id:caseId}:{p_recipient_id:peerId})};
+    listeners.get('request')({url:()=>target,postDataJSON:()=>args});count++;
+   },click:async()=>{
+    assert.equal(selector,'#bc-msg-error [data-retry-thread]');
+    const args={p_idempotency_key:fault==='retry-key'?'different-private-key':'private-original-key',p_body:body,...(caseId?{p_case_id:caseId}:{p_recipient_id:peerId})};
+    listeners.get('request')({url:()=>target,postDataJSON:()=>args});count++;
+   }})};
+  const message={id:'private-source-id',body,...(caseId?{case_id:caseId}:{recipient_id:peerId,exchange_id:null})};
+  const client={from:()=>({select:()=>({eq:async()=>({data:fault==='duplicate-source'?[message,message]:[message],error:null})})})};
+  const operation=context.lostResponseRetry(page,{url:'https://staging.invalid',caseId,peerId,body,client},label=>checkpoints.push(label));
+  if(fault){await assert.rejects(operation);assert.equal(checkpoints.at(-1),{warning:'delivery warning',restore:'restored separate draft','retry-key':'exact retry requests','duplicate-source':'canonical source deduplication'}[fault]);}
+  else{assert.equal(await operation,message);assert.equal(count,2);assert.equal(checkpoints.at(-1),'clear preserved draft explicitly');assert.ok(checkpoints.includes('initial submit')&&checkpoints.includes('reload conversation')&&checkpoints.includes('guarded original retry'));assert.equal(input,'')}
+  assert.equal(cleaned,true);assert.equal(listeners.size,0);
+  assert.ok(checkpoints.every(label=>!label.includes('private')&&!label.includes(body)&&!label.includes(peerId)));
+ }
 });
