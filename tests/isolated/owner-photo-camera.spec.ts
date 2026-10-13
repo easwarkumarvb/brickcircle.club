@@ -221,6 +221,7 @@ for(const [label,width,height] of [['desktop',1280,900],['mobile',390,640]] as c
   // Explicit watermark prevents these mock previews being mistaken for hardware QA.
   await page.evaluate(()=>{const marker=document.createElement('div');marker.textContent='TEST ONLY · MOCKED CAMERA · NO HARDWARE';marker.style.cssText='position:fixed;top:0;left:0;right:0;z-index:999999;background:#fff3a0;color:#111;text-align:center;font:12px sans-serif;padding:4px';document.body.appendChild(marker)});
   await page.screenshot({path:testInfo.outputPath(`owner-photo-camera-${label}-live-test-only.png`),fullPage:true});
+  await testInfo.attach('synthetic-camera-live',{path:testInfo.outputPath(`owner-photo-camera-${label}-live-test-only.png`),contentType:'image/png'});
   for(const name of ['Take photo','Choose file','Capture photo','Cancel camera']){
     const box=await form(page).getByRole('button',{name,exact:true}).boundingBox();expect(box!.height).toBeGreaterThanOrEqual(44);expect(box!.width).toBeGreaterThanOrEqual(44);
   }
@@ -228,6 +229,7 @@ for(const [label,width,height] of [['desktop',1280,900],['mobile',390,640]] as c
   await expect(page.getByRole('dialog',{name:/Change photo/})).toBeVisible();await expect(form(page).getByRole('status')).toHaveAttribute('aria-live','polite');
   await form(page).getByRole('button',{name:'Capture photo',exact:true}).click();await expect(form(page).locator('#bc-owner-photo-preview')).toBeVisible();
   await page.screenshot({path:testInfo.outputPath(`owner-photo-camera-${label}-captured-test-only.png`),fullPage:true});
+  await testInfo.attach('synthetic-camera-captured',{path:testInfo.outputPath(`owner-photo-camera-${label}-captured-test-only.png`),contentType:'image/png'});
 });
 
 declare global {interface Window {__bcIsolated:any}}
