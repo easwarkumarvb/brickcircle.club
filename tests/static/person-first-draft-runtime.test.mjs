@@ -21,12 +21,12 @@ test('persisted drafts are bounded by 4000 characters and the latest 50 destinat
   assert.equal(saved.entries.length,50);assert.equal(saved.entries[0].key,'alice:direct:10');assert.equal(saved.entries.at(-1).key,'alice:direct:59');
 });
 test('draft and uncertain exact intent restore together after reload without crossing account boundaries',()=>{
-  const first=runtime();first.run("uncertainThreadSends.set('alice:case:c1',{uid:'alice',key:'alice:case:c1',body:'Exact body',requestKey:'stable-key',caseId:'c1'});persistThreadDraft('alice:case:c1','Exact body');persistThreadDraft('bob:case:c1','Other account')");
+  const first=runtime();first.run("uncertainThreadSends.set('alice:case:c1',{uid:'alice',key:'alice:case:c1',kind:'case',id:'c1',body:'Exact body',requestKey:'stable-key'});persistThreadDraft('alice:case:c1','Exact body');persistThreadDraft('bob:case:c1','Other account')");
   assert.equal(first.storage.getItem('bc_thread_drafts:bob'),null);
   const second=runtime({'bc_thread_drafts:alice':first.storage.getItem('bc_thread_drafts:alice'),'bc_thread_drafts:bob':'{}'});second.run("restoreThreadDrafts('alice')");
   assert.equal(second.run("threadDrafts.get('alice:case:c1')"),'Exact body');
   assert.equal(second.run("uncertainThreadSends.get('alice:case:c1').requestKey"),'stable-key');
-  assert.equal(second.run("uncertainThreadSends.get('alice:case:c1').caseId"),'c1');
+  assert.equal(second.run("uncertainThreadSends.get('alice:case:c1').id"),'c1');
   assert.equal(second.storage.getItem('bc_thread_drafts:bob'),null);
 });
 test('expired and malformed draft stores cannot restore messages',()=>{
@@ -34,6 +34,14 @@ test('expired and malformed draft stores cannot restore messages',()=>{
   const r=runtime({'bc_thread_drafts:alice':JSON.stringify(old)});r.run("restoreThreadDrafts('alice')");
   assert.equal(r.run('threadDrafts.size'),0);assert.equal(r.storage.getItem('bc_thread_drafts:alice'),null);
   r.storage.setItem('bc_thread_drafts:alice','not json');assert.doesNotThrow(()=>r.run("restoreThreadDrafts('alice')"));assert.equal(r.run('threadDrafts.size'),0);
+});
+test('bounded draft storage prioritizes original uncertain intents even when current drafts are empty',()=>{
+ const first=runtime();first.run("for(let i=0;i<4;i++){const key='alice:case:pending'+i;uncertainThreadSends.set(key,{uid:'alice',key,kind:'case',id:'pending'+i,body:'Original '+i,requestKey:'key-'+i});persistThreadDraft(key,'')}for(let i=0;i<60;i++)persistThreadDraft('alice:direct:other'+i,'New draft '+i)");
+ const saved=JSON.parse(first.storage.getItem('bc_thread_drafts:alice'));assert.equal(saved.entries.length,50);assert.equal(saved.entries.filter(entry=>entry.uncertain).length,4);
+ const second=runtime({'bc_thread_drafts:alice':JSON.stringify(saved)});second.run("restoreThreadDrafts('alice')");assert.equal(second.run('uncertainThreadSends.size'),4);assert.equal(second.run('threadDrafts.size'),46);
+ saved.savedAt=Date.now()-25*60*60*1000;const expired=runtime({'bc_thread_drafts:alice':JSON.stringify(saved)});expired.run("restoreThreadDrafts('alice')");assert.equal(expired.run('uncertainThreadSends.size'),0);assert.equal(expired.run('threadDrafts.size'),0);
+ const crowded=runtime();crowded.run("for(let i=0;i<60;i++){const key='alice:case:p'+i;uncertainThreadSends.set(key,{uid:'alice',key,kind:'case',id:'p'+i,body:'Original',requestKey:'key-'+i});persistThreadDraft(key,'')}");
+ const bounded=JSON.parse(crowded.storage.getItem('bc_thread_drafts:alice'));assert.equal(bounded.entries.length,50);assert.equal(bounded.entries[0].key,'alice:case:p10');
 });
 test('restore rejects foreign drafts and foreign uncertain operations',()=>{
   const saved={savedAt:Date.now(),entries:[{key:'bob:case:c1',body:'foreign'},{key:'alice:case:c1',body:'own',uncertain:{uid:'bob',key:'alice:case:c1',body:'foreign operation',requestKey:'bad'}}]};
@@ -61,8 +69,8 @@ test('restore rejects invalid timestamps and malformed uncertain delivery payloa
   for(const savedAt of [undefined,'yesterday',Date.now()+60000]){
     const r=runtime({'bc_thread_drafts:alice':JSON.stringify({savedAt,entries:[{key:'alice:case:c1',body:'draft'}]})});r.run("restoreThreadDrafts('alice')");assert.equal(r.run('threadDrafts.size'),0);
   }
-  for(const patch of [{body:'different body'},{body:'x'.repeat(4001)},{requestKey:''},{requestKey:'x'.repeat(201)}]){
-    const uncertain={uid:'alice',key:'alice:case:c1',body:'draft',requestKey:'safe-key',...patch};
+  for(const patch of [{kind:'wrong'},{id:'foreign'},{uid:'bob'},{key:'alice:case:other'},{body:''},{body:123},{body:'x'.repeat(4001)},{requestKey:''},{requestKey:'x'.repeat(201)}]){
+    const uncertain={uid:'alice',key:'alice:case:c1',kind:'case',id:'c1',body:'draft',requestKey:'safe-key',...patch};
     const r=runtime({'bc_thread_drafts:alice':JSON.stringify({savedAt:Date.now(),entries:[{key:'alice:case:c1',body:'draft',uncertain}]})});r.run("restoreThreadDrafts('alice')");
     assert.equal(r.run("threadDrafts.get('alice:case:c1')"),'draft');assert.equal(r.run('uncertainThreadSends.size'),0);
   }
@@ -104,6 +112,6 @@ test('actual composer retries original request key and exact case after uncertai
 });
 test('actual composer refuses edited uncertain text and rejects a fresh closed case send',async()=>{
   const r=composeRuntime();r.run("bindThreadCompose(form,'case','c1','Bob')");await r.run('form.onsubmit({preventDefault(){}})');
-  r.run("input.value='edited uncertain text'");await r.run('form.onsubmit({preventDefault(){}})');assert.equal(r.run('requests.length'),1);assert.match(r.run('errors.at(-1)'),/Retry its original text/);
+  r.run("input.value='edited uncertain text'");await r.run('form.onsubmit({preventDefault(){}})');assert.equal(r.run('requests.length'),1);assert.match(r.run('errors.at(-1)'),/Retry the same message safely/);
   r.run("uncertainThreadSends.clear();caseRow.state='COMPLETED';input.value='fresh closed message'");await r.run('form.onsubmit({preventDefault(){}})');assert.equal(r.run('requests.length'),1);assert.match(r.run('errors.at(-1)'),/exchange is closed/);
 });

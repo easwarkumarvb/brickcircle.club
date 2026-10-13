@@ -121,6 +121,25 @@ for(const acknowledgment of ['confirmed','uncertain'])test(`same-account auth hy
  expect(await page.evaluate(body=>(window as any).__bcThreeUser.data.directMessages.filter((message:any)=>message.body===body).length,body)).toBe(1);
 });
 
+for(const destination of ['general','exact'])for(const edited of ['edited next draft',''])test(`mobile ${destination} uncertain retry survives ${edited?'edited':'cleared'} text and reload without replacing the next draft`,async({page})=>{
+ await page.setViewportSize({width:390,height:844});await open(page);await thread(page);
+ const selectExact=async()=>{await page.locator('[data-view-collector-case="case-one"]').first().click();await page.locator('[data-reply-case="case-one"]').click()};
+ if(destination==='exact')await selectExact();
+ const rpc=destination==='exact'?'send_exchange_case_message':'send_collector_message',body=`Original ${destination} uncertain message`;
+ await page.evaluate(rpc=>{const win=window as any,db=win.BC_SUPABASE,original=db.rpc;db.rpc=async(name:string,args:any)=>{if(name!==rpc)return original(name,args);win.__originalUncertainRequest=JSON.parse(JSON.stringify(args));await original(name,args);return {data:null,error:{message:'Response lost after commit'}}} },rpc);
+ await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(form=>(form as HTMLFormElement).requestSubmit());
+ await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely');
+ const original=await page.evaluate(()=>(window as any).__originalUncertainRequest);
+ await page.locator('#bc-msg-form textarea').fill(edited);await page.reload();await expect(page.locator('#bc-msg-form')).toBeVisible();
+ await expect(page.locator('[data-clear-reply-context]')).toHaveCount(0);
+ if(destination==='exact')await selectExact();
+ await expect(page.locator('#bc-msg-form textarea')).toHaveValue(edited);await expect(page.locator('#bc-msg-error [data-retry-thread]')).toBeVisible();
+ await page.evaluate(rpc=>{const win=window as any,db=win.BC_SUPABASE,original=db.rpc;db.rpc=(name:string,args:any)=>{if(name===rpc)win.__retriedUncertainRequest=JSON.parse(JSON.stringify(args));return original(name,args)}},rpc);
+ await page.locator('#bc-msg-error [data-retry-thread]').click();await expect(page.locator('#bc-msg-form textarea')).toBeEnabled();await expect(page.locator('#bc-msg-form textarea')).toHaveValue(edited);
+ expect(await page.evaluate(()=>(window as any).__retriedUncertainRequest)).toEqual(original);
+ expect(await page.evaluate(({destination,body})=>{const db=(window as any).__bcThreeUser.data;return (destination==='exact'?db.messages:db.directMessages).filter((message:any)=>message.body===body).length},{destination,body})).toBe(1);
+});
+
 test('server unread remains authoritative until a validated visible feed cursor is acknowledged',async({page})=>{
  await page.setViewportSize({width:390,height:844});await open(page,{markClearsUnread:false});
  await expect(page.locator('.bc-msg-unread')).toHaveText('7');await expect(page.locator('main')).not.toContainText('Unread on this device');

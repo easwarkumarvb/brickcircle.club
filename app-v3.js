@@ -1950,6 +1950,7 @@ const pendingSends=new Map();
 const uncertainThreadSends=new Map();
 const THREAD_DRAFT_TTL=24*60*60*1000;
 const THREAD_DRAFT_STORAGE='bc_thread_drafts:';
+function validUncertainThreadSend(pending,uid,key){return !!pending&&pending.uid===uid&&pending.key===key&&['direct','case'].includes(pending.kind)&&typeof pending.id==='string'&&pending.id.length>0&&pending.id.length<=200&&key===`${uid}:${pending.kind}:${pending.id}`&&typeof pending.body==='string'&&pending.body.trim().length>0&&pending.body.length<=4000&&typeof pending.requestKey==='string'&&pending.requestKey.length>0&&pending.requestKey.length<=200}
 function scrubThreadStorage(keepUid=null){
   try{Object.keys(sessionStorage).filter(key=>key.startsWith(THREAD_DRAFT_STORAGE)&&key!==`${THREAD_DRAFT_STORAGE}${keepUid}`).forEach(key=>sessionStorage.removeItem(key))}catch(_){}
 }
@@ -1957,14 +1958,18 @@ function persistThreadDraft(key,value){
   const uid=S.user?.id;if(!uid||!key.startsWith(`${uid}:`))return;
   const text=String(value||'').slice(0,4000);
   if(text)threadDrafts.set(key,text);else threadDrafts.delete(key);
-  const entries=[...threadDrafts.entries()].filter(([entry])=>entry.startsWith(`${uid}:`)).slice(-50).map(([key,body])=>({key,body,uncertain:uncertainThreadSends.get(key)||null}));
+  const uncertainKeys=[...uncertainThreadSends].filter(([key,pending])=>validUncertainThreadSend(pending,uid,key)).map(([key])=>key).slice(-50);
+  const draftKeys=[...threadDrafts.keys()].filter(key=>key.startsWith(`${uid}:`)&&!uncertainKeys.includes(key)).slice(-(50-uncertainKeys.length));
+  const keys=uncertainKeys.length===50?uncertainKeys:[...draftKeys,...uncertainKeys];
+  const entries=keys.map(key=>({key,body:threadDrafts.get(key)||'',uncertain:validUncertainThreadSend(uncertainThreadSends.get(key),uid,key)?uncertainThreadSends.get(key):null}));
   try{sessionStorage.setItem(`${THREAD_DRAFT_STORAGE}${uid}`,JSON.stringify({savedAt:Date.now(),entries}))}catch(_){}
 }
 function restoreThreadDrafts(uid){
   scrubThreadStorage(uid);
   try{const saved=JSON.parse(sessionStorage.getItem(`${THREAD_DRAFT_STORAGE}${uid}`)||'null');
     if(!saved||!Number.isFinite(saved.savedAt)||saved.savedAt>Date.now()||Date.now()-saved.savedAt>THREAD_DRAFT_TTL){sessionStorage.removeItem(`${THREAD_DRAFT_STORAGE}${uid}`);return}
-    (saved.entries||[]).slice(-50).forEach(entry=>{if(typeof entry.key!=='string'||!entry.key.startsWith(`${uid}:`)||typeof entry.body!=='string')return;threadDrafts.set(entry.key,entry.body.slice(0,4000));const pending=entry.uncertain;if(pending&&pending.uid===uid&&pending.key===entry.key&&typeof pending.body==='string'&&pending.body===entry.body&&pending.body.length<=4000&&typeof pending.requestKey==='string'&&pending.requestKey.length>0&&pending.requestKey.length<=200)uncertainThreadSends.set(entry.key,pending)})
+    if(!Array.isArray(saved.entries))return;
+    saved.entries.slice(-50).forEach(entry=>{if(!entry||typeof entry.key!=='string'||!entry.key.startsWith(`${uid}:`)||typeof entry.body!=='string')return;if(entry.body)threadDrafts.set(entry.key,entry.body.slice(0,4000));const pending=entry.uncertain;if(validUncertainThreadSend(pending,uid,entry.key))uncertainThreadSends.set(entry.key,pending)})
   }catch(_){}
 }
 
@@ -2099,6 +2104,7 @@ function bindThreadCompose(form,kind,id,senderName){
   const uid=S.user?.id;
   const key=`${uid}:${kind}:${id}`;
   const input=$('textarea[name="message"]',form);
+  const showRecovery=operation=>{if(!activeThreadForm(uid,kind,id))return;showThreadError('Delivery could not be confirmed. Retry sends the original message; your current draft is kept. Retry the same message safely.',()=>{if(S.user?.id!==uid||uncertainThreadSends.get(key)!==operation||pendingSends.has(key))return;const liveForm=activeThreadForm(uid,kind,id);if(liveForm?.bcRetryUncertain)return liveForm.bcRetryUncertain(operation)},'delivery')};
   if(input){
     const saved=threadDrafts.get(key);
     if(saved&&input.value!==saved)input.value=saved;
@@ -2110,7 +2116,7 @@ function bindThreadCompose(form,kind,id,senderName){
     if(input)input.disabled=true;
     showThreadStatus('Sending…');
   }
-  form.onsubmit=async ev=>{
+  form.onsubmit=async(ev,retryOperation=null)=>{
     ev.preventDefault();
     if(!S.user){showAuth();return}
     if(!messagesThreadGuard(kind,id)||collectorFocus&&(kind==='case'?collectorFocus.replyCaseId!==id:!!collectorFocus.replyCaseId))return;
@@ -2118,7 +2124,8 @@ function bindThreadCompose(form,kind,id,senderName){
     const stillCurrent=()=>S.user?.id===submitUid&&token===S.renderToken&&messagesThreadGuard(kind,id)&&activeThreadForm(submitUid,kind,id)===form;
     const sendKey=`${submitUid}:${kind}:${id}`;
     if(pendingSends.has(sendKey)){showThreadStatus('Sending…');return}
-    const body=String(new FormData(form).get('message')||'').trim();
+    if(retryOperation&&uncertainThreadSends.get(sendKey)!==retryOperation)return;
+    const body=retryOperation?retryOperation.body:String(new FormData(form).get('message')||'').trim();
     if(!body){toast('Write a message before sending.');return}
     const button=$('button[type="submit"]',form);
     if(!button||button.disabled)return;
@@ -2129,9 +2136,9 @@ function bindThreadCompose(form,kind,id,senderName){
     }
     clearThreadError();
     const prior=uncertainThreadSends.get(sendKey);
-    if(prior&&prior.body!==body){showThreadError('An earlier send is unconfirmed. Retry its original text before sending a different message.');return}
+    if(prior&&prior.body!==body){showRecovery(prior);return}
     const sendOperation=prior||{uid:submitUid,key:sendKey,kind,id,body,requestKey:crypto.randomUUID()};
-    uncertainThreadSends.set(sendKey,sendOperation);persistThreadDraft(sendKey,body);
+    uncertainThreadSends.set(sendKey,sendOperation);persistThreadDraft(sendKey,retryOperation?(input?.value||''):body);
     pendingSends.set(sendKey,sendOperation);
     button.disabled=true;if(input)input.disabled=true;const clearReply=$('[data-clear-reply-case]');if(clearReply)clearReply.disabled=true;
 
@@ -2140,7 +2147,7 @@ function bindThreadCompose(form,kind,id,senderName){
     try{
       const result=await settledTimeout(db.rpc(kind==='case'?'send_exchange_case_message':'send_collector_message',{...(kind==='case'?{p_case_id:id}:{p_recipient_id:id}),p_body:body,p_idempotency_key:sendOperation.requestKey}),15000);
       if(S.user?.id!==submitUid||pendingSends.get(sendKey)!==sendOperation)return;
-      if(!result.error&&result.data?.ok===true){uncertainThreadSends.delete(sendKey);if(threadDrafts.get(key)?.trim()===body)persistThreadDraft(key,'')}
+      if(!result.error&&result.data?.ok===true){uncertainThreadSends.delete(sendKey);const saved=threadDrafts.get(key)||'';persistThreadDraft(key,saved.trim()===body?'':saved)}
       if(!stillCurrent()){
         // Same-account hydration may replace the form while its RPC is pending.
         // Reconcile only the still-selected destination; never refresh stale UI.
@@ -2150,18 +2157,19 @@ function bindThreadCompose(form,kind,id,senderName){
         if(!result.error&&result.data?.ok===true){
           if(liveInput&&liveInput.value.trim()===body)liveInput.value='';
         }else if(kind==='case'&&result.error?.code==='22023'&&terminalCaseStates.has(messageIndexByUid.get(submitUid)?.cases.get(id)?.case?.state)){
-          uncertainThreadSends.delete(sendKey);persistThreadDraft(key,body);showClosedReplyRecovery(collectorFocus.peerId,body);
-        }else showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');
+          const keptDraft=liveInput?.value||threadDrafts.get(key)||body;
+          uncertainThreadSends.delete(sendKey);persistThreadDraft(key,keptDraft);showClosedReplyRecovery(collectorFocus.peerId,keptDraft);
+        }else showRecovery(sendOperation);
         return;
       }
       if(kind==='case'&&result.error?.code==='22023'&&terminalCaseStates.has(messageIndexByUid.get(submitUid)?.cases.get(id)?.case?.state)){
-        uncertainThreadSends.delete(sendKey);persistThreadDraft(key,body);restore();showClosedReplyRecovery(collectorFocus.peerId,body);return;
+        const keptDraft=input?.value||threadDrafts.get(key)||body;
+        uncertainThreadSends.delete(sendKey);persistThreadDraft(key,keptDraft);restore();showClosedReplyRecovery(collectorFocus.peerId,keptDraft);return;
       }
-      if(result.error||result.data?.ok!==true){restore();showThreadError('Delivery could not be confirmed. Your draft is kept. Retry the same message safely.',null,'delivery');return}
+      if(result.error||result.data?.ok!==true){restore();showRecovery(sendOperation);return}
       uncertainThreadSends.delete(sendKey);
       const sentDraft=input?input.value:null;
-      form.reset();
-      if(sentDraft!==null&&threadDrafts.get(key)===sentDraft)persistThreadDraft(key,'');
+      if(sentDraft!==null&&sentDraft.trim()===body)form.reset();
       try{
         if(collectorFocus&&messageIndexByUid.get(submitUid)?.readModel===true){if(!await loadCollectorFeed(collectorFocus.peerId,submitUid,token))throw new Error('Conversation refresh unavailable.')}else await mergeThreadLatest(kind,id,submitUid,stillCurrent);
       }catch(_){
@@ -2192,12 +2200,15 @@ function bindThreadCompose(form,kind,id,senderName){
       }
     }
   };
+  form.bcRetryUncertain=operation=>{if(S.user?.id!==uid||uncertainThreadSends.get(key)!==operation||pendingSends.has(key)||activeThreadForm(uid,kind,id)!==form)return;return form.onsubmit({preventDefault(){}},operation)};
+  const recovery=uncertainThreadSends.get(key);if(recovery&&!pendingSends.has(key))showRecovery(recovery);
 }
 function showClosedReplyRecovery(peerId,body){
+  const uid=S.user?.id,replyCaseId=collectorFocus?.replyCaseId;
   showThreadError('This exchange closed before the message was sent. Your text is kept.',null,'delivery');
   const box=$('#bc-msg-error');if(!box)return;
   const copy=document.createElement('button');copy.type='button';copy.className='bc-btn';copy.textContent='Copy to general chat';box.appendChild(copy);
-  copy.onclick=()=>{if(collectorFocus?.peerId!==peerId)return;setCollectorReplyContext(peerId,null);const input=$('#bc-msg-form textarea');if(input){input.value=body;persistThreadDraft(`${S.user.id}:direct:${peerId}`,body);input.focus()}clearThreadError()};
+  copy.onclick=()=>{if(!uid||S.user?.id!==uid||collectorFocus?.uid!==uid||collectorFocus.peerId!==peerId||collectorFocus.replyCaseId!==replyCaseId)return;setCollectorReplyContext(peerId,null);const input=$('#bc-msg-form textarea');if(input){input.value=body;persistThreadDraft(`${uid}:direct:${peerId}`,body);input.focus()}clearThreadError()};
 }
 function showThreadError(message,retry,errorKind='refresh'){
   const card=$('.bc-msg-thread-card',app());if(!card)return;
@@ -2475,7 +2486,7 @@ function setCollectorReplyContext(peerId,caseId){
   if(input&&form.dataset.bound)persistThreadDraft(`${uid}:${previous?'case':'direct'}:${previous||peerId}`,input.value);
   collectorFocus.replyCaseId=caseId||null;
   form.dataset.destination=caseId||'';form.dataset.bound='true';form.hidden=false;
-  if(input)input.value=recovery?.body||threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';
+  if(input)input.value=threadDrafts.get(`${uid}:${caseId?'case':'direct'}:${caseId||peerId}`)||'';
   const context=$('#bc-collector-reply-context');if(context)context.outerHTML=collectorDestinationMarkup(peerId,caseId);
   bindCollectorReplyContext(peerId);
   if(e){const cache=threadCache('case',e.id,uid);cache.participants=[e.user_a,e.user_b]}

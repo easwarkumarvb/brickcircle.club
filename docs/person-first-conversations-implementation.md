@@ -37,3 +37,9 @@ Stage B includes an additive CLI-generated projection migration and capability-s
 A focused review also reproduced a separate composer acknowledgment race on the actual runtime: form replacement during a send can leave confirmed text enabled with its original retry key removed, or hide the uncertain-delivery warning. The scoped development fix has six runtime regressions and two mobile auth-hydration browser regressions. Its new commit requires fresh exact-head CI and hosted validation; the earlier head's evidence must not be represented as validation of later source.
 
 Physical iOS/Android keyboard, safe-area and touch inspection, production-specific capacity/lock budgeting and final release review remain outstanding. Existing trusted hosted runners pin exact approved SHAs and must not be silently repurposed.
+
+### Original-send recovery follow-up
+
+Unconfirmed sends now persist their original body, exact destination and idempotency key independently of the editable draft, including an empty draft. An explicit Retry sends that original intent while keeping any edited current draft. Definite closed-case rejection retires the uncertain intent and preserves edited text for explicit Copy to general chat. Stale retry and copy callbacks are scoped to the originating account and destination.
+
+All 27 extracted-runtime conversation contracts, syntax checks and TypeScript checks pass locally. Four mobile-browser reload/retry cases cover edited and cleared drafts in general and exact-case chat. Fresh CI and protected staging certification of this follow-up remain required; the successful hosted run at 614c05d does not certify these later client changes. Canonical server-owned exchange writers and safety controls are unchanged by this follow-up.
