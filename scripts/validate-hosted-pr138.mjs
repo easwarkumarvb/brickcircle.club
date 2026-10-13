@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 export const STAGING_CONFIRMATION = 'RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE';
 
-export const PR138_SHA = '614c05d5d92d1beb6929bbc9d1445bb0796ba08d';
+export const PR138_SHA = 'c6444d635889f6956c3fdc6b1e0657060d182cef';
 export const STAGING_REF = 'tteyypklldgwwicrgjzt';
 export const PRODUCTION_REF = 'nsxtromjdpdscknadxez';
 

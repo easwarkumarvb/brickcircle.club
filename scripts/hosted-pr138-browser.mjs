@@ -62,18 +62,29 @@ export async function explicitReply(page,id){await openDetails(page,id);await pa
 export async function generalReply(page){const clear=page.locator('[data-clear-reply-context]');if(await clear.count())await clear.click();await expect(clear).toHaveCount(0)}
 async function send(page,body){await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(form=>form.requestSubmit());await expect(page.locator('#bc-msg-form textarea')).toHaveValue('')}
 async function refresh(page){const button=page.locator('[data-refresh-thread]');await button.click();await expect(button).toBeEnabled()}
-export async function lostResponseRetry(page,{url,caseId,peerId,body,client,runId}){
+export async function lostResponseRetry(page,{url,caseId,peerId,body,client,runId},substage=()=>{}){
+ substage('select reply destination');
  if(caseId)await explicitReply(page,caseId);else await generalReply(page);
  const rpc=caseId?'send_exchange_case_message':'send_collector_message',target=url+'/rest/v1/rpc/'+rpc,requests=[];let lost=false;
  const capture=request=>{if(request.url()===target)requests.push(request.postDataJSON())};page.on('request',capture);
- await page.route(target,async route=>{if(lost)return route.continue();const response=await route.fetch();assert.ok(response.ok());lost=true;await route.abort('connectionfailed')});
+ substage('install lost-response route');await page.route(target,async route=>{if(lost)return route.continue();const response=await route.fetch();assert.ok(response.ok());lost=true;await route.abort('connectionfailed')});
  try{
-  await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(form=>form.requestSubmit());await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely');
-  await page.reload();await expect(page.locator('#bc-msg-form')).toBeVisible();await expect(page.locator('[data-clear-reply-context]')).toHaveCount(0);
+  substage('initial submit');await page.locator('#bc-msg-form textarea').fill(body);await page.locator('#bc-msg-form').evaluate(form=>form.requestSubmit());
+  substage('delivery warning');await expect(page.locator('#bc-msg-error')).toContainText('Retry the same message safely');
+  const preservedDraft=caseId?'PR138 preserved edited recovery draft':'';
+  substage(caseId?'edit separate draft after uncertainty':'clear draft after uncertainty');await page.locator('#bc-msg-form textarea').fill(preservedDraft);
+  substage('reload conversation');await page.reload();await expect(page.locator('#bc-msg-form')).toBeVisible();
+  substage('default destination after reload');await expect(page.locator('[data-clear-reply-context]')).toHaveCount(0);
+  substage('select retry destination');
   if(caseId)await explicitReply(page,caseId);
-  await expect(page.locator('#bc-msg-form textarea')).toHaveValue(body);await page.locator('#bc-msg-form').evaluate(form=>form.requestSubmit());await expect(page.locator('#bc-msg-form textarea')).toHaveValue('');
+  substage('restored separate draft');await expect(page.locator('#bc-msg-form textarea')).toHaveValue(preservedDraft);
+  substage('guarded original retry');await page.locator('#bc-msg-error [data-retry-thread]').click();
+  substage('confirmed separate draft preserved');await expect(page.locator('#bc-msg-form textarea')).toBeEnabled();await expect(page.locator('#bc-msg-form textarea')).toHaveValue(preservedDraft);
+  substage('exact retry requests');
   assert.equal(requests.length,2);assert.equal(requests[0].p_idempotency_key,requests[1].p_idempotency_key);assert.equal(requests[0].p_body,body);assert.equal(requests[1].p_body,body);if(caseId)assert.equal(requests[1].p_case_id,caseId);else assert.equal(requests[1].p_recipient_id,peerId);
+  substage('canonical source deduplication');
   const result=await client.from(caseId?'exchange_case_messages':'messages').select('*').eq('body',body);assert.ifError(result.error);assert.equal(result.data.length,1);if(caseId)assert.equal(result.data[0].case_id,caseId);else{assert.equal(result.data[0].recipient_id,peerId);assert.equal(result.data[0].exchange_id,null)}
+  substage('clear preserved draft explicitly');await page.locator('#bc-msg-form textarea').fill('');
   return result.data[0];
  }finally{page.off('request',capture);await page.unroute(target)}
 }
@@ -107,10 +118,11 @@ async function run(env=process.env){
   stage='three real browser logins';browser=await chromium.launch();const pages=[],captures=[],diagnostics={deniedSocket:0,deniedProduction:0,deniedExternal:0};
   for(const [index,user] of users.entries()){const context=await browser.newContext({serviceWorkers:'block',viewport:{width:390,height:844}});await installTransport(context,config,env.BC_HOSTED_CANDIDATE_PATH,diagnostics);const page=await context.newPage();page.on('dialog',dialog=>dialog.accept());const requests=[];page.on('request',request=>{const name=request.url().split('/rest/v1/rpc/')[1];if(READ_RPCS.includes(name))requests.push({name,args:request.postDataJSON()})});captures.push(requests);await browserLogin(page,user,()=>{},sessions[index].id);pages.push(page)}
   const [pa,pb,pc]=pages;
-  stage='person-first proposal exact physical pairs';const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId});
+  stage='person-first proposal exact physical pairs';const {case1,case2}=await browserProposal(pa,{url:config.url,a,b,sets,items,runId},detail=>{stage='person-first proposal '+detail});
+  stage='general and two exact reply destinations';
   await openConversation(pa,`direct:${b.id}`);await send(pa,'PR138 general first');await explicitReply(pa,case1);await send(pa,'PR138 exact first case');await explicitReply(pa,case2);await send(pa,'PR138 exact second case');await generalReply(pa);
-  await pa.locator('#bc-msg-form textarea').fill('PR138 general reload draft');await explicitReply(pa,case1);await pa.locator('#bc-msg-form textarea').fill('PR138 exact reload draft');await pa.reload();await expect(pa.locator('#bc-msg-form textarea')).toHaveValue('PR138 general reload draft');await explicitReply(pa,case1);await expect(pa.locator('#bc-msg-form textarea')).toHaveValue('PR138 exact reload draft');
-  const retried=await lostResponseRetry(pa,{url:config.url,caseId:case1,body:'PR138 committed lost response',client:a.client,runId});const notes=await b.client.from('notifications').select('id').eq('exchange_case_message_id',retried.id);assert.ifError(notes.error);assert.equal(notes.data.length,1);await lostResponseRetry(pa,{url:config.url,caseId:null,peerId:b.id,body:'PR138 direct committed lost response',client:a.client,runId});passed('General-by-default chat; exact two-case replies; reload drafts; committed-response-lost retry once and one notification');
+  stage='general and exact draft reload';await pa.locator('#bc-msg-form textarea').fill('PR138 general reload draft');await explicitReply(pa,case1);await pa.locator('#bc-msg-form textarea').fill('PR138 exact reload draft');await pa.reload();await expect(pa.locator('#bc-msg-form textarea')).toHaveValue('PR138 general reload draft');await explicitReply(pa,case1);await expect(pa.locator('#bc-msg-form textarea')).toHaveValue('PR138 exact reload draft');
+  const retried=await lostResponseRetry(pa,{url:config.url,caseId:case1,body:'PR138 committed lost response',client:a.client,runId},detail=>{stage='exact reply recovery '+detail});stage='exact reply recovery one notification';const notes=await b.client.from('notifications').select('id').eq('exchange_case_message_id',retried.id);assert.ifError(notes.error);assert.equal(notes.data.length,1);await lostResponseRetry(pa,{url:config.url,caseId:null,peerId:b.id,body:'PR138 direct committed lost response',client:a.client,runId},detail=>{stage='general reply recovery '+detail});passed('General-by-default chat; exact two-case replies; reload drafts; committed-response-lost retry once and one notification');
   stage='server merged feed pagination and unread cursors';
   for(let i=0;i<55;i++){const result=await a.client.rpc('send_collector_message',{p_recipient_id:b.id,p_body:`PR138 cursor ${String(i).padStart(3,'0')}`,p_idempotency_key:runId+':feed:'+i});assert.ifError(result.error)}
   await openConversation(pb,`direct:${a.id}`);await expect(pb.locator('[data-load-earlier]')).toBeVisible();await pb.locator('[data-load-earlier]').click();await expect(pb.locator('#bc-msg-chat')).toContainText('PR138 general first');
