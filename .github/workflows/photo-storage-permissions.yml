@@ -2,7 +2,7 @@ name: Isolated photo storage permissions
 on:
   workflow_dispatch:
   push:
-    branches: ['dev/photo-storage-permission-qa']
+    branches: ['dev/photo-storage-permission-qa', 'qa/hosted-photo-review']
   pull_request:
     paths:
       - 'qa/photo-storage/**'
@@ -60,6 +60,10 @@ jobs:
         run: |
           set -o pipefail
           psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/canonical-participant.sql | tee photo-permission-after.txt
+      - name: Strictly reproduce forged collection photo reference exposure
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -v expect_exposure=true -f qa/photo-storage/forged-reference.sql | tee photo-reference-before.txt
       - name: Retain synthetic permission evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,5 +72,6 @@ jobs:
           path: |
             photo-permission-before.txt
             photo-permission-after.txt
+            photo-reference-before.txt
           if-no-files-found: ignore
           retention-days: 14
