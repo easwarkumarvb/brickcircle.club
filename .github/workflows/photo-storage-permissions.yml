@@ -7,8 +7,10 @@ on:
     paths:
       - 'qa/photo-storage/**'
       - 'supabase/migrations/*owner_photo*'
+      - 'supabase/migrations/*participant_collection_photo_access*'
       - 'supabase/migrations/*rls_hardening*'
       - 'supabase/migrations/*canonical_exchange_state_machine*'
+      - 'supabase/migrations/*canonical_participant_collection_photo_access*'
       - '.github/workflows/photo-storage-permissions.yml'
 permissions:
   contents: read
@@ -37,15 +39,27 @@ jobs:
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/base.sql
       - name: Owner writes, match and legacy participant reads, outsider and anonymous denial
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/permissions.sql
-      - name: Canonical proposal and acceptance retain counterpart photo access
+      - name: Strictly reproduce the pre-fix canonical photo gap
         run: |
           set -o pipefail
-          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/canonical-participant.sql | tee photo-permission-evidence.txt
+          psql "$DSN" -v ON_ERROR_STOP=1 -v expect_missing=true -f qa/photo-storage/canonical-participant.sql | tee photo-permission-before.txt
+      - name: Apply SELECT-only participant repair twice to check idempotency
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261013044724_canonical_participant_collection_photo_access.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261013044724_canonical_participant_collection_photo_access.sql
+      - name: Existing owner writes and privacy remain intact after repair
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/permissions.sql
+      - name: Repaired canonical proposal, acceptance and archive permissions
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/canonical-participant.sql | tee photo-permission-after.txt
       - name: Retain synthetic permission evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: photo-storage-permission-evidence
-          path: photo-permission-evidence.txt
+          path: |
+            photo-permission-before.txt
+            photo-permission-after.txt
           if-no-files-found: ignore
           retention-days: 14
