@@ -31,12 +31,15 @@ test('PASSWORD_RECOVERY validates, retries and preserves the signed-in session',
 
 test('legacy disputed exchange keeps participant conversation while progression stays paused',async({page})=>{
   await page.goto('/v2.html?isolated=disputed#exchange/ex1');
+  await page.locator('[data-view-collector-case="ex1"]').first().click();
   const guide=page.getByRole('region',{name:'Exchange next step'});
   await expect(guide).toContainText('Legacy issue');
-  await expect(page.locator('#bc-case-destination')).toHaveValue('ex1');
+  await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
   const chat=page.locator('#bc-msg-form');
   await expect(chat).toBeVisible();
   await expect(guide.locator('[data-thread-case-action]')).toHaveCount(0);
+  await page.locator('[data-reply-case="ex1"]').click();
+  await expect(page.locator('#bc-collector-reply-context')).toHaveAttribute('data-reply-case-id','ex1');
   await chat.locator('[name="message"]').fill('I have documented the issue.');
   await chat.evaluate((element:HTMLFormElement)=>element.requestSubmit());
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.messages.length)).toBe(1);
@@ -45,10 +48,12 @@ test('legacy disputed exchange keeps participant conversation while progression 
 
 test('completed exchange remains terminal with read-only participant history',async({page})=>{
   await page.goto('/v2.html?isolated=completed#exchange/ex1');
+  await page.locator('[data-view-collector-case="ex1"]').first().click();
   const guide=page.getByRole('region',{name:'Exchange next step'});
   await expect(guide).toContainText('Completed');
-  await expect(page.locator('#bc-case-destination')).toHaveValue('ex1');
-  await expect(page.locator('#bc-msg-form')).toBeHidden();
+  await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
+  await expect(page.locator('#bc-msg-form')).toBeVisible();
+  await expect(page.locator('[data-reply-case="ex1"]')).toHaveCount(0);
   await expect(guide.locator('[data-thread-case-action]:not([data-thread-case-action="review"])')).toHaveCount(0);
 });
 

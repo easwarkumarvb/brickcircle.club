@@ -23,6 +23,8 @@ jobs:
       - run: npm run syntax-check
       - name: Beta security contract suite
         run: npm run test:security-contracts
+      - name: Person-first draft recovery contract
+        run: npm run test:conversation-contracts
       - name: Owner review recovery contract
         run: npm run test:owner-review-recovery
       - name: Collector avatar pipeline contract
@@ -37,8 +39,20 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Guided conversation reconnect stability
         run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts --project=chromium --grep "collector case selector focuses exact case, and reconnect preserves draft" --retries=0 --repeat-each=3
+      - name: Person-first mobile conversation acceptance
+        run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts --project=chromium --grep "viewing an exact exchange|reload restores|320px collector chat|two collectors complete|closing an explicitly|one chronological timeline|reciprocal match" --retries=0
       - name: Chromium isolated functional suite
         run: npm run test:isolated:chromium
+      - name: Retain conversation regression failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: person-first-conversation-failures
+          path: |
+            test-results/**/test-failed-*.png
+            test-results/**/error-context.md
+            test-results/**/trace.zip
+          if-no-files-found: ignore
       - name: Upload Chromium admin screenshots
         uses: actions/upload-artifact@v4
         with:

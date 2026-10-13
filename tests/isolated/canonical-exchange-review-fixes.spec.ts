@@ -30,12 +30,12 @@ async function openActor(context:BrowserContext,actor:keyof typeof actors,databa
   const page=await context.newPage();
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',route=>route.fulfill({contentType:'application/javascript',body:mock}));
   await page.goto(`/v2.html?isolated=three-user#${route}`);
-  if(route.startsWith('exchange/'))await expect(page.locator('#bc-case-destination')).toHaveValue(route.slice('exchange/'.length));
+  if(route.startsWith('exchange/')){await page.locator(`[data-view-collector-case="${route.slice('exchange/'.length)}"]`).first().click();await expect(page.getByRole('region',{name:'Exchange next step'})).toBeVisible()}
   return page;
 }
 
 async function submitStructuredReview(page:any,ratings={overall:'4',reliability:'5',accuracy:'4',communication:'5',condition:'4',again:'yes'},comment='Safe meetup and accurate set.'){
-  await page.getByRole('button',{name:'Leave review'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Leave review'}).click();
   const form=page.locator('#bc-peer-review-form');
   await form.locator('select[name="overall_rating"]').selectOption(ratings.overall);
   await form.locator('select[name="return_reliability"]').selectOption(ratings.reliability);
@@ -50,10 +50,11 @@ async function submitStructuredReview(page:any,ratings={overall:'4',reliability:
 test('completed canonical case uses structured double-blind peer reviews and prevents duplicates',async({browser})=>{
   const completed=seed(exchange('COMPLETED',{completed_at:now,handoff_at:now,handoff_a_at:now,handoff_b_at:now}));
   const easwarContext=await browser.newContext(),easwar=await openActor(easwarContext,'easwar',completed);
-  await expect(easwar.getByRole('button',{name:'Leave review'})).toBeVisible();
+  await expect(easwar.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Leave review'})).toBeVisible();
   await submitStructuredReview(easwar);
   await expect.poll(()=>easwar.evaluate(()=>window.__bcThreeUser.data.peerReviews.length)).toBe(1);
-  await expect(easwar.locator('#bc-collector-action')).toContainText('You reviewed Ramya');
+  await easwar.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await expect(easwar.getByRole('region',{name:'Exchange next step'})).toContainText('You reviewed Ramya');
   const first=await easwar.evaluate(()=>({data:JSON.parse(JSON.stringify(window.__bcThreeUser.data)),calls:window.__bcThreeUser.rpcCalls}));
   expect(first.data.peerReviews).toHaveLength(1);
   expect(first.data.peerReviews[0]).toMatchObject({reviewer_id:actors.easwar.id,reviewee_id:actors.ramya.id,overall_rating:4,return_reliability:5,set_accuracy:4,communication:5,condition_accuracy:4,would_exchange_again:true});
@@ -63,9 +64,10 @@ test('completed canonical case uses structured double-blind peer reviews and pre
   await easwarContext.close();
 
   const ramyaContext=await browser.newContext(),ramya=await openActor(ramyaContext,'ramya',first.data);
-  await expect(ramya.getByRole('button',{name:'Leave review'})).toBeVisible();
+  await expect(ramya.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Leave review'})).toBeVisible();
   await submitStructuredReview(ramya,{overall:'5',reliability:'5',accuracy:'5',communication:'5',condition:'5',again:'yes'},'Would exchange again.');
-  await expect(ramya.locator('#bc-collector-action')).toContainText('You reviewed Easwar');
+  await ramya.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await expect(ramya.getByRole('region',{name:'Exchange next step'})).toContainText('You reviewed Easwar');
 
   const duplicate=await ramya.evaluate(async()=>{
     return window.supabase.createClient().rpc('submit_peer_exchange_review',{
@@ -84,11 +86,11 @@ test(`pre-handoff cancellation at ${width}px remains available after one-sided h
   const snapshot=seed(exchange('HANDOFF_PENDING',{handoff_a_at:now,handoff_b_at:null,owner_preference_a:true,owner_preference_b:true}));
   const context=await browser.newContext({viewport:{width,height:844}}),page=await openActor(context,'easwar',snapshot);
   await page.locator('.bc-guide-options summary').click();
-  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
+  await expect(page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
   page.on('dialog',async dialog=>{if(dialog.type()==='prompt')await dialog.accept('Changed plans before mutual handoff');else await dialog.accept()});
-  await page.getByRole('button',{name:'Cancel before handoff'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Cancel before handoff'}).click();
   await expect(page.getByText('Cancelled',{exact:true}).first()).toBeVisible();
-  await expect(page.locator('#bc-collector-action')).toContainText('Closed');
+  await expect(page.locator('#bc-collector-action')).toContainText('Cancelled');
   const result=await page.evaluate(()=>({data:window.__bcThreeUser.data,calls:window.__bcThreeUser.rpcCalls}));
   expect(result.data.exchanges[0].state).toBe('CANCELLED');
   expect(result.data.exchanges[0].state).not.toBe('HANDOFF_ISSUE');
@@ -101,9 +103,9 @@ test(`pre-handoff cancellation at ${width}px remains available after one-sided h
 test('post-handoff issues and support are sidecars and outsiders cannot mutate them',async({browser})=>{
   const snapshot=seed(exchange('ACTIVE',{handoff_at:now,handoff_a_at:now,handoff_b_at:now,return_due_at:'2026-10-30T12:00:00.000Z'}));
   const context=await browser.newContext(),page=await openActor(context,'easwar',snapshot);
-  await expect(page.getByRole('button',{name:'Cancel before handoff'})).toHaveCount(0);
+  await expect(page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Cancel before handoff'})).toHaveCount(0);
   await page.getByText('Help and issues',{exact:true}).click();
-  await page.getByRole('button',{name:'Report an issue'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Report an issue'}).click();
   const issueForm=page.locator('#bc-case-issue');
   await issueForm.locator('select[name="category"]').selectOption('missing_pieces');
   await issueForm.locator('textarea[name="description"]').fill('Two major pieces are missing from the set.');
@@ -111,8 +113,9 @@ test('post-handoff issues and support are sidecars and outsiders cannot mutate t
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues.length)).toBe(1);
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.issues[0]?.description)).toBe('Two major pieces are missing from the set.');
 
+  await page.locator('[data-view-collector-case="case-review-fix"]').first().click();
   if(!await page.getByText('Help and issues',{exact:true}).evaluate((element:HTMLElement)=>Boolean(element.closest('details')?.open)))await page.getByText('Help and issues',{exact:true}).click();
-  await page.getByRole('button',{name:'Need BrickCircle support?'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Need BrickCircle support?'}).click();
   const supportForm=page.locator('#bc-case-support');
   await supportForm.locator('select[name="category"]').selectOption('technical');
   await supportForm.locator('textarea[name="note"]').fill('The exchange screen is not updating correctly.');
@@ -143,7 +146,7 @@ test('mutual handoff is required before ACTIVE',async({browser})=>{
   const snapshot=seed(exchange('HANDOFF_PENDING',{handoff_a_at:null,handoff_b_at:null}));
   const easwarContext=await browser.newContext(),easwar=await openActor(easwarContext,'easwar',snapshot);
   easwar.on('dialog',dialog=>dialog.accept());
-  await easwar.getByRole('button',{name:'Confirm physical handoff'}).click();
+  await easwar.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Confirm physical handoff'}).click();
   const afterFirst=await easwar.evaluate(()=>JSON.parse(JSON.stringify(window.__bcThreeUser.data)));
   expect(afterFirst.exchanges[0].state).toBe('HANDOFF_PENDING');
   expect(afterFirst.exchanges[0].handoff_a_at).toBeTruthy();
@@ -152,7 +155,7 @@ test('mutual handoff is required before ACTIVE',async({browser})=>{
 
   const ramyaContext=await browser.newContext(),ramya=await openActor(ramyaContext,'ramya',afterFirst);
   ramya.on('dialog',dialog=>dialog.accept());
-  await ramya.getByRole('button',{name:'Confirm physical handoff'}).click();
+  await ramya.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Confirm physical handoff'}).click();
   const afterSecond=await ramya.evaluate(()=>window.__bcThreeUser.data.exchanges[0]);
   expect(afterSecond.state).toBe('ACTIVE');
   expect(afterSecond.handoff_a_at).toBeTruthy();
@@ -176,13 +179,15 @@ test('Messages combines case and direct history in one collector timeline with e
   const caseMessage={id:'case-message',case_id:'case-review-fix',sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'Meetup detail in the case',created_at:now};
   const directMessage={id:'direct-message',exchange_id:null,sender_id:actors.ramya.id,recipient_id:actors.easwar.id,body:'General collector question',created_at:'2026-09-09T13:00:00.000Z'};
   const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACCEPTED'),{messages:[caseMessage],directMessages:[directMessage]}));
+  await page.locator('[data-close-collector-sheet]').click();
   await page.locator('.bc-desktop-nav [data-nav="messages"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await page.locator('[data-message-open="direct:'+actors.ramya.id+'"]').click();
   await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
   await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
-  await page.locator('#bc-case-destination').selectOption('case-review-fix');
-  await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-review-fix');
+  await page.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
+  await page.locator('[data-close-collector-sheet]').click();
   await expect(page.locator('.bc-msg-hero h1')).toContainText('Ramya');
   await expect(page.locator('#bc-msg-chat')).toContainText(directMessage.body);
   await expect(page.locator('#bc-msg-chat')).toContainText(caseMessage.body);
@@ -192,13 +197,14 @@ test('Messages combines case and direct history in one collector timeline with e
 test('share meetup proposal submits the canonical transition and persists its details',async({browser})=>{
   const expectedAt=new Date('2099-10-02T15:34').toISOString();
   const context=await browser.newContext(),page=await openActor(context,'easwar',seed(exchange('ACCEPTED')));
-  await page.getByRole('button',{name:'Plan public meetup'}).click();
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Plan public meetup'}).click();
   const form=page.locator('#bc-case-meetup');
   await form.locator('[name="venue"]').fill('Udupi Garden');
   await form.locator('[name="area"]').fill('Sanjaynagar');
   await form.locator('[name="when"]').fill('2099-10-02T15:34');
   await form.getByRole('button',{name:'Share proposal'}).click();
   await expect(form).toHaveCount(0);
+  await page.locator('[data-view-collector-case="case-review-fix"]').first().click();
   await expect(page.getByText('Your meetup proposal is shared. Chat here if you need to adjust the plan.')).toBeVisible();
   const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],calls:window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition')}));
   expect(result.calls).toHaveLength(1);
@@ -230,7 +236,10 @@ test('proposal and message retries reuse keys while a committed transition disab
 
   const workflowContext=await browser.newContext(),workflow=await openActor(workflowContext,'easwar',seed(exchange('INSPECTION',{safety_ack_a_at:now,safety_ack_b_at:now})));
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('exchange_case_transition'));
-  const arrive=workflow.getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toHaveCount(0);await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
+  const arrive=workflow.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'I have arrived'});await arrive.click();await expect(workflow.getByText('Network response was lost after commit')).toBeVisible();await expect(arrive).toHaveCount(0);await expect(workflow.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
+  if(await workflow.locator('dialog.bc-collector-sheet').isVisible())await workflow.locator('[data-close-collector-sheet]').click();
+  await workflow.locator('[data-view-collector-case="case-review-fix"]').first().click();
+  await workflow.locator('[data-reply-case="case-review-fix"]').click();
   await workflow.evaluate(()=>window.__bcThreeUser.loseNextResponse('send_exchange_case_message'));
   const messageButton=workflow.locator('#bc-msg-form button');
   // Use the native form lifecycle atomically: a WebKit mouse click can scroll
@@ -258,9 +267,9 @@ test('two independently signed-in browsers wait for mutual arrival before initia
     const easwarContext=await browser.newContext(),ramyaContext=await browser.newContext();
     const easwar=await openActor(easwarContext,'easwar',snapshot),ramya=await openActor(ramyaContext,'ramya',snapshot);
     await expect(easwar.getByText(/Waiting for the other collector to arrive/)).toBeVisible();
-    await expect(easwar.getByRole('button',{name:returning?'I inspected my returned set':'I inspected the set'})).toHaveCount(0);
-    const arrive=ramya.getByRole('button',{name:returning?'I arrived for return':'I have arrived'});await expect(arrive).toBeVisible();await arrive.click();
-    await expect(ramya.getByRole('button',{name:returning?'I inspected my returned set':'I inspected the set'})).toBeVisible();
+    await expect(easwar.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:returning?'I inspected my returned set':'I inspected the set'})).toHaveCount(0);
+    const arrive=ramya.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:returning?'I arrived for return':'I have arrived'});await expect(arrive).toBeVisible();await arrive.click();
+    await expect(ramya.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:returning?'I inspected my returned set':'I inspected the set'})).toBeVisible();
     await easwarContext.close();await ramyaContext.close();
   }
 });

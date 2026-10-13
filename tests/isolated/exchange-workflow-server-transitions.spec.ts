@@ -20,7 +20,12 @@ test('case messages derive the recipient and produce a durable deduplicated noti
   expect(migration).toContain('other_user:=private.bc_case_other_user(c,me)');
   expect(migration).toContain("'exchange_message'");
   expect(migration).toContain("'case-message:'");
-  expect(source).toContain("canonicalRpc('send_exchange_case_message'");
+  const compose=source.slice(source.indexOf('function bindThreadCompose('),source.indexOf('function showClosedReplyRecovery('));
+  expect(compose).toContain("kind==='case'?'send_exchange_case_message':'send_collector_message'");
+  expect(compose).toContain('collectorFocus.replyCaseId!==id');
+  expect(compose).toContain('p_case_id:id');
+  expect(compose).toContain('p_idempotency_key:sendOperation.requestKey');
+  expect(compose).not.toContain('p_recipient_id:otherId');
   expect(source).toContain("notification?.exchange_case_id");
 });
 

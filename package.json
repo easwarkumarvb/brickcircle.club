@@ -16,7 +16,8 @@
     "test:qa-all": "playwright test",
     "test:security-contracts": "node tests/static/legacy-exchange-rpc-lockdown.test.js && node tests/static/admin-dashboard-authorization.test.js && node --test tests/static/admin-marketplace-api.test.mjs",
     "test:owner-review-recovery": "node tests/static/owner-review-recovery.test.js",
-    "test:collector-avatar": "node tests/static/collector-avatar-pipeline.test.js"
+    "test:collector-avatar": "node tests/static/collector-avatar-pipeline.test.js",
+    "test:conversation-contracts": "node --test tests/static/person-first-draft-runtime.test.mjs tests/static/person-first-timestamp-runtime.test.mjs tests/static/person-first-compose-rerender.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.57.4"

@@ -29,16 +29,18 @@ async function noOverflow(page:Page){
 test('mobile conversations combine direct and exchange messages with exact unread badges',async({page})=>{
   await page.setViewportSize({width:390,height:844});await seed(page);
   await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveText('4');
-  await page.getByRole('button',{name:'Collectors',exact:true}).click();
+  await page.locator('[data-msg-filter="all"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await expect(page.locator('.bc-msg-row')).toContainText('Exchange meetup plan');
-  await page.locator('[data-msg-filter="exchanges"]').click();
+  await page.locator('[data-msg-filter="unread"]').click();
   await expect(page.locator('.bc-msg-row')).toHaveCount(1);
   await expect(page.locator('.bc-msg-row')).toContainText('Exchange meetup plan');
+  await page.locator('[data-msg-filter="action"]').click();
+  await expect(page.locator('.bc-msg-row')).toHaveCount(0);
   await page.locator('[data-msg-filter="all"]').click();
   await openDirect(page);
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
-  await expect(page.locator('#bc-case-destination option')).toHaveCount(2);
+  await expect(page.locator('[data-view-collector-case]')).not.toHaveCount(0);await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
   await expect(page.locator('.bc-mobile-nav [data-nav="messages"] .bc-badge')).toHaveCount(0);
   await page.getByRole('button',{name:'Back to Messages'}).click();
   await page.locator('[data-msg-filter="unread"]').click();
@@ -81,11 +83,11 @@ test('older collectors remain discoverable behind more than 1000 recent messages
   await expect(page.locator('.bc-msg-row')).toHaveCount(2);
   await expect(page.locator('[data-message-open="direct:'+OTHER+'"]')).toContainText('Older conversation');
 });
-test('closed exchanges keep history read-only and expose recoverable load failures',async({page})=>{
+test('closed exchanges retain general collector chat and history and expose recoverable load failures',async({page})=>{
   await seed(page,3,'COMPLETED');
   await page.evaluate(id=>{location.hash='messages/case:'+id},CASE);
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
-  await expect(page.locator('#bc-msg-form')).toBeHidden();
+  await expect(page.locator('#bc-msg-form')).toBeVisible();await expect(page.locator('[data-clear-reply-case]')).toHaveCount(0);
   await page.evaluate(()=>{(window as any).__bcIsolated.failTables=['exchange_case_messages']});
   await page.locator('[data-refresh-thread]').click();
   await expect(page.locator('#bc-msg-error')).toBeVisible();
@@ -211,4 +213,18 @@ test('a success arriving after send timeout retains the original retry key',asyn
   await expect(input).toHaveValue('');
   const result=await page.evaluate(()=>{const s=(window as any).__bcIsolated;return {count:s.messages.filter((m:any)=>m.body==='Late confirmed delivery').length,keys:s.rpcCalls.filter((r:any)=>r.name==='send_collector_message').map((r:any)=>r.args.p_idempotency_key)}});
   expect(result.count).toBe(1);expect(result.keys).toHaveLength(2);expect(result.keys[0]).toBe(result.keys[1]);
+});
+
+test('one unavailable history source keeps healthy collector messages and drafts recoverable',async({page})=>{
+  await seed(page);await openDirect(page);
+  const input=page.locator('#bc-msg-form textarea');await input.fill('Draft through partial failure');
+  await page.evaluate(()=>{(window as any).__bcIsolated.failTables=['exchange_case_messages']});
+  await page.locator('[data-refresh-thread]').click();
+  await expect(page.locator('#bc-msg-chat')).toContainText('Direct 0000');
+  await expect(input).toHaveValue('Draft through partial failure');
+  await expect(page.locator('#bc-msg-error')).toBeVisible();
+  await page.evaluate(()=>{(window as any).__bcIsolated.failTables=[]});
+  await page.locator('[data-refresh-thread]').click();
+  await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
+  await expect(input).toHaveValue('Draft through partial failure');
 });

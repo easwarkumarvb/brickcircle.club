@@ -1,0 +1,46 @@
+name: Isolated person conversation PostgreSQL
+on:
+  workflow_dispatch:
+  push:
+    branches: ['dev/person-first-conversations']
+    paths: ['supabase/migrations/*person_first_conversation*', 'qa/person_conversation*', '.github/workflows/person-conversation-read-model.yml']
+  pull_request:
+    paths: ['supabase/migrations/*person_first_conversation*', 'qa/person_conversation*', '.github/workflows/person-conversation-read-model.yml']
+permissions:
+  contents: read
+jobs:
+  read-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: conversation_read_model
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d conversation_read_model"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/conversation_read_model
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Disposable production-compatible schema and source RLS
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_base.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_legacy_seed.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260916052934_canonical_exchange_state_machine.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/person_conversation_setup.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261005173802_guided_exchange_messaging.sql
+      - name: Additive projection migration in one transaction
+        run: psql "$DSN" -1 -v ON_ERROR_STOP=1 -f supabase/migrations/20261012083443_person_first_conversation_projection.sql
+      - name: Canonical custody lifecycle and idempotency with projection triggers active
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/canonical_exchange_state_machine.sql
+      - name: RLS cursor pagination backfill deletes and message retries
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/person_conversation_projection_test.sql
+      - name: Concurrent read and incoming message serialization
+        run: python3 qa/person_conversation_race_test.py
