@@ -27,7 +27,7 @@
         },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://nsxtromjdpdscknadxez.supabase.co wss://nsxtromjdpdscknadxez.supabase.co https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://www.googletagmanager.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://images.brickset.com https://images.weserv.nl https://nsxtromjdpdscknadxez.supabase.co wss://nsxtromjdpdscknadxez.supabase.co https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com; media-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
         }
       ]
     },
