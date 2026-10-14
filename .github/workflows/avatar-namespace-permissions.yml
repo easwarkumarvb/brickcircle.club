@@ -1,0 +1,41 @@
+name: Isolated avatar namespace permissions
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['supabase/migrations/*avatar_write_namespace*', 'supabase/bootstrap/non-ddl/storage-policies.sql', 'qa/avatar_namespace*', '.github/workflows/avatar-namespace-permissions.yml']
+  push:
+    branches: ['dev/**', 'codex/**']
+    paths: ['supabase/migrations/*avatar_write_namespace*', 'supabase/bootstrap/non-ddl/storage-policies.sql', 'qa/avatar_namespace*', '.github/workflows/avatar-namespace-permissions.yml']
+permissions:
+  contents: read
+jobs:
+  real-role-permissions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: avatar_namespace_qa
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d avatar_namespace_qa"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/avatar_namespace_qa
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Load exact legacy avatar policies in disposable PostgreSQL
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/avatar_namespace_setup.sql
+      - name: Prove owner-ID foreign namespace rename before repair
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/avatar_namespace_before.sql
+      - name: Apply forward repair twice to prove replay safety
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014133000_avatar_write_namespace_binding.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014133000_avatar_write_namespace_binding.sql
+      - name: Real-role write denials, own writes, public reads and other bucket regression
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/avatar_namespace_after.sql
