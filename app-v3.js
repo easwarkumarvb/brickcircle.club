@@ -5,6 +5,7 @@ const SUPABASE_URL='https://nsxtromjdpdscknadxez.supabase.co';
 const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
 const SUPPORT_EMAIL='support@brickcircle.club';
 let lastHiddenAt=0,lastVisibleAt=Date.now(),lastRoute='';
+let hiddenTransitionGeneration=0,consumedResumeGeneration=0,resumeValidationFlight=null;
 async function resilientAuthLock(name,acquireTimeout,fn){
   const locks=navigator?.locks;if(!locks?.request)return fn();
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),acquireTimeout>0?Math.min(acquireTimeout,3500):3500);
@@ -283,10 +284,25 @@ async function recoverSession(){
   return null;
 }
 async function validateResume(){
-  const epoch=authEpoch;if(document.hidden||logoutLocked||explicitLogout)return;const session=await recoverSession();if(!session||epoch!==authEpoch||logoutLocked||explicitLogout)return;
-  const remembered=lastRoute||(()=>{try{return sessionStorage.getItem('bc_last_route')||''}catch(_){return ''}})();
-  if((location.hash||'#home')==='#home'&&remembered&&remembered!=='#home')location.hash=remembered;
-  await refreshRoute();
+  const epoch=authEpoch,generation=hiddenTransitionGeneration,uid=S.user?.id;
+  if(!S.booted||!generation||generation===consumedResumeGeneration||document.hidden||logoutLocked||explicitLogout)return;
+  const existing=resumeValidationFlight;
+  if(existing&&existing.epoch===epoch&&existing.generation===generation&&existing.uid===uid)return existing.promise;
+  const flight={epoch,generation,uid,promise:null};
+  resumeValidationFlight=flight;
+  const current=()=>epoch===authEpoch&&generation===hiddenTransitionGeneration&&S.user?.id===uid&&!document.hidden&&!logoutLocked&&!explicitLogout;
+  flight.promise=(async()=>{
+    try{
+      const session=await withTimeout(recoverSession(),8000);
+      if(!session||session.user?.id!==uid||!current())return;
+      const remembered=lastRoute||(()=>{try{return sessionStorage.getItem('bc_last_route')||''}catch(_){return ''}})();
+      if((location.hash||'#home')==='#home'&&remembered&&remembered!=='#home')location.hash=remembered;
+      await refreshRoute();
+      if(current())consumedResumeGeneration=generation;
+    }catch(_){ /* Failed recovery remains eligible for a later focus retry. */ }
+    finally{if(resumeValidationFlight===flight)resumeValidationFlight=null}
+  })();
+  return flight.promise;
 }
 
 function track(event,properties={}){
@@ -2821,8 +2837,8 @@ function handleAuthChange(event,session,confirmedInteractive=false){
 }
 db.auth.onAuthStateChange(handleAuthChange);
 window.addEventListener('hashchange',()=>{if(document.getElementById('bc-overlay')?.bcDispose)closeOverlay();if(S.booted)renderRoute()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){lastHiddenAt=Date.now();rememberRoute();return}lastVisibleAt=Date.now();validateResume().catch(()=>{});reconcileNotifications().catch(()=>{})});
-window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();rememberRoute()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){lastHiddenAt=Date.now();hiddenTransitionGeneration++;rememberRoute();return}lastVisibleAt=Date.now();validateResume().catch(()=>{});reconcileNotifications().catch(()=>{})});
+window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();hiddenTransitionGeneration++;rememberRoute()});
 window.addEventListener('pageshow',event=>{lastVisibleAt=Date.now();if(event.persisted)validateResume().catch(()=>{})});
 window.addEventListener('focus',()=>{lastVisibleAt=Date.now();validateResume().catch(()=>{})});
 window.addEventListener('online',()=>reconcileNotifications().catch(()=>{}));

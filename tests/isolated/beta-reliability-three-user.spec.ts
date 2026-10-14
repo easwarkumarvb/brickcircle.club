@@ -40,9 +40,12 @@ async function addWanted(page:any,setNumber:string,query:string){
 
 async function makeAvailable(page:any){
   await page.locator('[data-nav="sets"]').first().click();
-  await page.locator('[data-exchangeable]').check();
+  const toggle=page.locator('[data-exchangeable]');
+  await expect(toggle).not.toBeChecked();
+  await toggle.click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id)?.available_for_exchange)).toBe(true);
   await expect(page.locator('.bc-toast')).toHaveText('This set is saved as Available to Exchange.');
+  await expect(toggle).toBeChecked();
 }
 
 async function switchActor(page:any,actor:'easwar'|'ramya'|'dhyan'){

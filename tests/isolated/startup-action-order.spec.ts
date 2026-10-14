@@ -96,3 +96,66 @@ for(const destination of ['profile','signout'] as const){
     await expect(page.locator('.bc-toast').filter({hasText:'Added to your wishlist.'})).toHaveCount(0);
   });
 }
+
+test('ordinary focus preserves the active picker without starting another authentication hydration',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  await page.locator('[data-change-photo="photo-item-1"]').click();
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  const audit=await page.evaluate(()=>{
+    const auth=(window as any).BC_SUPABASE.auth,original=auth.getSession.bind(auth);
+    let calls=0;auth.getSession=(...args:any[])=>{calls++;return original(...args)};
+    const main=document.getElementById('bc-main'),picker=document.getElementById('bc-owner-photo-form');
+    for(let n=0;n<3;n++)window.dispatchEvent(new Event('focus'));
+    return {calls,mainUnchanged:main===document.getElementById('bc-main'),pickerUnchanged:picker===document.getElementById('bc-owner-photo-form')};
+  });
+  expect(audit).toEqual({calls:0,mainUnchanged:true,pickerUnchanged:true});
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+});
+
+test('concurrent genuine resume events share one authentication validation and preserve the recovery grace',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  await page.evaluate(()=>{
+    const auth=(window as any).BC_SUPABASE.auth,original=auth.getSession.bind(auth);
+    const gate:any={calls:0};(window as any).__resumeGate=gate;
+    auth.getSession=()=>{
+      gate.calls++;const captured=original();
+      return new Promise(resolve=>{gate.release=()=>resolve(captured)});
+    };
+    (window as any).__resumeMain=document.getElementById('bc-main');
+    window.dispatchEvent(new Event('pagehide'));
+    window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+    window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('focus'));
+  });
+  expect(await page.evaluate(()=>(window as any).__resumeGate.calls)).toBe(1);
+  await page.evaluate(()=>(window as any).__resumeGate.release());
+  await expect.poll(()=>page.evaluate(()=>document.getElementById('bc-main')!==(window as any).__resumeMain)).toBe(true);
+  await expect(page.locator('[data-change-photo="photo-item-1"]')).toBeVisible();
+  const calls=await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));return (window as any).__resumeGate.calls});
+  expect(calls).toBe(1);
+});
+
+test('a newer hidden transition retires the old resume response even at the same clock timestamp',async({page})=>{
+  await page.clock.install();
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  await page.evaluate(()=>{
+    const auth=(window as any).BC_SUPABASE.auth,original=auth.getSession.bind(auth);
+    const gate:any={calls:0,releases:[]};(window as any).__resumeGate=gate;
+    auth.getSession=()=>{gate.calls++;const captured=original();return new Promise(resolve=>gate.releases.push(()=>resolve(captured)))};
+    (window as any).__resumeMain=document.getElementById('bc-main');
+    window.dispatchEvent(new Event('pagehide'));window.dispatchEvent(new Event('focus'));
+    window.dispatchEvent(new Event('pagehide'));window.dispatchEvent(new Event('focus'));
+  });
+  expect(await page.evaluate(()=>(window as any).__resumeGate.calls)).toBe(2);
+  await page.evaluate(async()=>{
+    (window as any).__resumeGate.releases[0]();
+    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  });
+  expect(await page.evaluate(()=>document.getElementById('bc-main')===(window as any).__resumeMain)).toBe(true);
+  await page.evaluate(()=>(window as any).__resumeGate.releases[1]());
+  await expect.poll(()=>page.evaluate(()=>document.getElementById('bc-main')!==(window as any).__resumeMain)).toBe(true);
+  await expect(page.locator('[data-change-photo="photo-item-1"]')).toBeVisible();
+});
