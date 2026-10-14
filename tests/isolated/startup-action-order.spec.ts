@@ -93,6 +93,6 @@ for(const destination of ['profile','signout'] as const){
     expect(await page.evaluate(()=>document.querySelector('#bc-main .bc-page')===(window as any).__newView)).toBe(true);
     if(destination==='profile')await expect(page.locator('.bc-profile-hero h1')).toHaveText('Isolated Collector');
     else await expect(page.locator('.bc-signin')).toBeVisible();
-    await expect(page.locator('.bc-toast')).not.toHaveText('Added to your wishlist.');
+    await expect(page.locator('.bc-toast').filter({hasText:'Added to your wishlist.'})).toHaveCount(0);
   });
 }
