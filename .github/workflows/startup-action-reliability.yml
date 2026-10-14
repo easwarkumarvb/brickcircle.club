@@ -49,6 +49,21 @@ jobs:
         run: npx playwright test --config=playwright.isolated.config.ts tests/isolated/startup-action-order.spec.ts tests/isolated/beta-reliability-three-user.spec.ts tests/isolated/owner-photo-camera.spec.ts --project=${{ matrix.browser }} --retries=0 --repeat-each=3
       - name: Authentication callback and account switching regression
         run: npx playwright test --config=playwright.isolated.config.ts tests/isolated/account-switching.spec.ts tests/isolated/registration-verification.spec.ts tests/isolated/phase-2b-auth.spec.ts tests/isolated/notification-realtime-auth-order.spec.ts --project=${{ matrix.browser }} --retries=0
+      - name: Print bounded isolated failure context
+        if: failure()
+        run: |
+          node - <<'JS'
+          const fs=require('node:fs'),path=require('node:path');
+          function walk(dir){
+            if(!fs.existsSync(dir))return;
+            for(const entry of fs.readdirSync(dir,{withFileTypes:true})){
+              const p=path.join(dir,entry.name);
+              if(entry.isDirectory())walk(p);
+              else if(entry.name==='error-context.md')console.log(p+'\n'+fs.readFileSync(p,'utf8').slice(0,10000));
+            }
+          }
+          walk('test-results');
+          JS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:

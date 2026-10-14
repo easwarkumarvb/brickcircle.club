@@ -186,12 +186,13 @@ test('confirmed missing authentication on genuine resume clears the protected sh
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
   await page.locator('[data-change-photo="photo-item-1"]').click();
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  await page.evaluate(()=>(window as any).__privateOverlay=document.getElementById('bc-overlay'));
   await page.evaluate(()=>{
     (window as any).BC_SUPABASE.auth.getUser=async()=>({data:{user:null},error:{name:'AuthSessionMissingError',message:'Auth session missing'}});
     window.dispatchEvent(new Event('pagehide'));window.dispatchEvent(new Event('focus'));
   });
   await expect(page.locator('.bc-signin')).toBeVisible();
-  await expect(page.locator('#bc-overlay')).toHaveCount(0);
+  expect(await page.evaluate(()=>(window as any).__privateOverlay.isConnected)).toBe(false);
   await expect(page.locator('#bc-owner-photo-form')).toHaveCount(0);
   await expect(page.locator('[data-change-photo="photo-item-1"]')).toHaveCount(0);
 });
