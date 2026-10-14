@@ -88,6 +88,40 @@ do $$ declare r jsonb; n integer; begin
   begin perform public.admin_growth_report(null); raise exception 'null days allowed'; exception when invalid_parameter_value then null; end;
 end $$;
 reset role;
+-- The canonical writer stamps cancelled_at for all four non-completion outcomes.
+-- Only true CANCELLED cases belong in the cancellation KPI and cohort.
+insert into public.exchange_cases(id,user_a,user_b,item_a,item_b,proposer_id,recipient_id,duration_days,state,owner_preference_a,owner_preference_b,created_at,cancelled_at)
+select ('20000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,a.id,b.id,a.id,b.id,a.id,b.id,30,
+ (array['CANCELLED','DECLINED','WITHDRAWN','EXPIRED'])[(n-1)%4+1],true,true,
+ case when n<=4 then now()-interval '1 day' else (date_trunc('day',now() at time zone 'UTC')-interval '7 days') at time zone 'UTC' end,
+ case when n<=4 then now()-interval '1 hour' else ((date_trunc('day',now() at time zone 'UTC')-interval '6 days') at time zone 'UTC')-interval '1 hour' end
+from generate_series(1,8) n cross join auth.users a cross join auth.users b
+where a.id='00000000-0000-4000-8000-000000000001' and b.id='00000000-0000-4000-8000-000000000002';
+-- A real allowlisted administrator acting on someone else's case is not a
+-- collector participant. Both current and previous activity must exclude them.
+insert into private.exchange_admins(user_id) values('00000000-0000-4000-8000-000000000004');
+insert into public.exchange_case_events(case_id,event_type,resulting_state,actor_user_id,state_version,idempotency_key,created_at)
+select id,'legacy_quarantine_reconciled',state,'00000000-0000-4000-8000-000000000004',1,'administrator-'||id::text,cancelled_at
+from public.exchange_cases where id::text like '20000000-%';
+-- Duplicate events for the same participant count once; genuine previous-window
+-- activity remains visible even though the case ended without completion.
+insert into public.exchange_case_events(case_id,event_type,resulting_state,actor_user_id,state_version,idempotency_key,created_at)
+select id,'decline',state,user_b,1,'participant-'||id::text,cancelled_at
+from public.exchange_cases where id='20000000-0000-4000-8000-000000000006';
+insert into public.exchange_case_events(case_id,event_type,resulting_state,actor_user_id,state_version,idempotency_key,created_at)
+select id,'fixture',state,user_b,1,'participant-repeat-'||id::text,cancelled_at
+from public.exchange_cases where id='20000000-0000-4000-8000-000000000006';
+set local role authenticated;
+do $$declare r jsonb;begin
+ r:=public.admin_growth_report(7);
+ assert (r#>>'{metrics,cancellations,current}')::int=1, 'current declined, withdrawn and expired excluded';
+ assert (r#>>'{metrics,cancellations,previous}')::int=1, 'previous declined, withdrawn and expired excluded';
+ assert (r#>>'{exchange_cohort,cancelled}')::int=1, 'cohort counts only true cancellation';
+ assert (r#>>'{exchange_cohort,proposed}')::int=7, 'all current proposal outcomes remain in cohort';
+ assert (r#>>'{metrics,active_exchange_collectors,current}')::int=1, 'current nonparticipant administrator excluded';
+ assert (r#>>'{metrics,active_exchange_collectors,previous}')::int=1, 'previous participant deduped and administrator excluded';
+end$$;
+reset role;
 update auth.sessions set not_after=now()-interval '1 second' where id='00000000-0000-4000-9000-000000000001';
 set local role authenticated;
 do $$ begin begin perform public.admin_growth_report(); raise exception 'expired session allowed'; exception when insufficient_privilege then null; end; end $$;

@@ -23,13 +23,15 @@ begin
   ), metric_rows as (
     select w.label,
       (select count(*) from auth.users u where u.created_at>=w.lo and u.created_at<w.hi) new_registrations,
-      (select count(distinct e.actor_user_id) from public.exchange_case_events e where e.created_at>=w.lo and e.created_at<w.hi) active_exchange_collectors,
+      (select count(distinct e.actor_user_id) from public.exchange_case_events e
+       join public.exchange_cases c on c.id=e.case_id
+       where e.created_at>=w.lo and e.created_at<w.hi and e.actor_user_id in(c.user_a,c.user_b)) active_exchange_collectors,
       (select count(*) from public.exchange_cases c where c.created_at>=w.lo and c.created_at<w.hi) proposals,
       (select count(*) from public.exchange_cases c where c.accepted_at>=w.lo and c.accepted_at<w.hi) accepted,
       (select count(*) from public.exchange_cases c where c.handoff_at>=w.lo and c.handoff_at<w.hi) handoffs,
       (select count(*) from completions c where c.completed_at>=w.lo and c.completed_at<w.hi) completed_exchanges,
       (select count(*) from repeat_rows r where r.label=w.label) repeat_collectors,
-      (select count(*) from public.exchange_cases c where c.cancelled_at>=w.lo and c.cancelled_at<w.hi) cancellations
+      (select count(*) from public.exchange_cases c where c.state='CANCELLED' and c.cancelled_at>=w.lo and c.cancelled_at<w.hi) cancellations
     from windows w
   ), metrics as (
     select pg_catalog.jsonb_object_agg(key,value) body from (
@@ -72,7 +74,7 @@ begin
     'version',1,'days',p_days,'generated_at',v_end,'start_at',v_start,'end_at',v_end,'previous_start_at',v_previous,
     'metrics',(select body from metrics),
     'activation',(select pg_catalog.jsonb_build_object('registered',count(*),'email_verified',count(*) filter(where email_confirmed_at<v_end),'ready',count(*) filter(where ready)) from readiness where created_at>=v_start),
-    'exchange_cohort',(select pg_catalog.jsonb_build_object('proposed',count(*),'accepted',count(*) filter(where accepted_at<v_end),'handed_off',count(*) filter(where handoff_at<v_end),'completed',count(*) filter(where state='COMPLETED' and completed_at<v_end),'cancelled',count(*) filter(where cancelled_at<v_end)) from public.exchange_cases where created_at>=v_start and created_at<v_end),
+    'exchange_cohort',(select pg_catalog.jsonb_build_object('proposed',count(*),'accepted',count(*) filter(where accepted_at<v_end),'handed_off',count(*) filter(where handoff_at<v_end),'completed',count(*) filter(where state='COMPLETED' and completed_at<v_end),'cancelled',count(*) filter(where state='CANCELLED' and cancelled_at<v_end)) from public.exchange_cases where created_at>=v_start and created_at<v_end),
     'daily',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(d) order by d.date) from daily_rows d),'[]'::jsonb),
     'cities',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(c) order by c.registered desc,c.country,c.city) from city_rows c),'[]'::jsonb),
     'health',pg_catalog.jsonb_build_object(
@@ -83,7 +85,7 @@ begin
     'coverage',pg_catalog.jsonb_build_array('Canonical exchange activity only; visits and logins are not tracked.','Today is partial in UTC; comparison uses the same elapsed duration.','Readiness, cities and health are current snapshots, not historical activation.','Proposal cohorts are still maturing; later stages are observed by report end.','Available sets are current unlocked inventory, not reciprocal match opportunities.','Legacy migration timestamps may reflect incomplete historical stages.'),
     'definitions',pg_catalog.jsonb_build_object(
       'new_registrations','Auth account creation in the half-open window; profile timestamps are not signup evidence.',
-      'active_exchange_collectors','Distinct non-null actors of canonical exchange events; not site visitors.',
+      'active_exchange_collectors','Distinct participant actors of canonical exchange events; nonparticipant administrators and system actors excluded; not site visitors.',
       'proposals','Canonical cases created in the window, including imported cases.',
       'accepted','Cases with acceptance timestamp in the window.',
       'handoffs','Cases with actual handoff timestamp in the window.',
