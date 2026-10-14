@@ -27,3 +27,9 @@ Local browser binaries are unavailable. These browser cases and the existing cam
 ## Operational limitation
 
 Ambiguous saves intentionally may leave an unreferenced candidate or a previous object behind. Reconciliation requires confirmed ownership and current metadata; this change does not introduce automatic orphan sweeping, which could delete an object from an in-flight commit. Development branch deployments are disabled in `vercel.json`.
+
+## Three-user fixture correction after initial CI
+
+Initial combined PR #149 CI run `38506721335` failed the three-user exchange browser journeys: the independent three-user Supabase substitute still returned a plain Promise from collection INSERT. The new application requires `.insert(...).select(...)`; that mock committed a row before throwing on the missing `.select`, so the photo dialog stayed open and blocked the following navigation. This was fixture incompatibility, not an authorization to bypass positive photo-save confirmation.
+
+The fixture now executes INSERT when awaited and supports its persisted returning representation. Its UPDATE already returns the originally matched changed rows; IS NULL now also matches a legacy unset path. The journey helper waits for the real success toast and dialog closure before proceeding. Four actual-fixture Node VM regressions pass for returned owner/path identity, default null representation, previous-path compare-and-set/stale zero rows and legacy IS NULL attachment. Baseline VM reproduction confirmed INSERT had no `.select` method while already committing its row. Syntax, typecheck and diff checks pass; full three-browser CI rerun is still required. No product, SQL, RLS or exchange lifecycle control was weakened.

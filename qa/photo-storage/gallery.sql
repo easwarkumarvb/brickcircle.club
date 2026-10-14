@@ -15,6 +15,8 @@ with removed as(delete from public.collection_item_photo_angles where angle='rea
 do $$ begin
  begin insert into public.collection_item_photo_angles values('81000000-0000-4000-8000-000000000002',auth.uid(),'rear','00000000-0000-4000-8000-000000000801/forged.jpg',now()); raise exception 'foreign item write allowed'; exception when insufficient_privilege then null; end;
  begin insert into public.collection_item_photo_angles values('81000000-0000-4000-8000-000000000001',auth.uid(),'rear','00000000-0000-4000-8000-000000000802/forged.jpg',now()); raise exception 'foreign folder write allowed'; exception when check_violation then null; end;
+ begin update public.collection_item_photo_angles set owner_id='00000000-0000-4000-8000-000000000802',storage_path='00000000-0000-4000-8000-000000000802/forged.jpg' where item_id='81000000-0000-4000-8000-000000000001'; raise exception 'ownership transfer allowed'; exception when insufficient_privilege then null; end;
+ begin update public.collection_item_photo_angles set item_id='81000000-0000-4000-8000-000000000002' where item_id='81000000-0000-4000-8000-000000000001'; raise exception 'foreign item reassignment allowed'; exception when insufficient_privilege then null; end;
 end $$;
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000802';
 insert into public.collection_item_photo_angles(item_id,owner_id,angle,storage_path) values('81000000-0000-4000-8000-000000000002',auth.uid(),'side','00000000-0000-4000-8000-000000000802/b-side.jpg');
@@ -40,6 +42,9 @@ set local role authenticated;
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000801';
 select public.qa_gallery_assert((select count(*)=1 from public.collection_item_photo_angles where owner_id<>auth.uid()));
 select public.qa_gallery_assert((select count(*)=1 from storage.objects where name like '%b-side.jpg'));
+set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000802';
+select public.qa_gallery_assert((select count(*)=1 from public.collection_item_photo_angles where owner_id<>auth.uid()));
+select public.qa_gallery_assert((select count(*)=1 from storage.objects where name like '%a-side.jpg'));
 set local "request.jwt.claim.sub"='00000000-0000-4000-8000-000000000803';
 select public.qa_gallery_assert((select count(*)=0 from public.collection_item_photo_angles));
 select public.qa_gallery_assert((select count(*)=0 from storage.objects));

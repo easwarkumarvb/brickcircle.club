@@ -26,6 +26,8 @@ async function addOwned(page:any,setNumber:string,query:string){
   await form.locator('#bc-owner-photo-input').setInputFiles({name:`${setNumber}.jpg`,mimeType:'image/jpeg',buffer:Buffer.from(`isolated-${setNumber}`)});
   await form.getByRole('button',{name:'Add to My Sets'}).click();
   await expect.poll(()=>page.evaluate((set:string)=>window.__bcThreeUser.data.collection.some((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id&&row.set_number===set),setNumber)).toBe(true);
+  await expect(form).not.toBeVisible();
+  await expect(page.locator('.bc-toast')).toHaveText('Added to My Sets with your owner photo.');
   await page.evaluate(()=>window.bcV3Refresh());
 }
 

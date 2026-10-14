@@ -85,29 +85,33 @@ function visibleRows(table,query){
   if(table==='reviews')rows=data.reviews;
   if(table==='lego_sets')rows=sets;
   if(table==='collection_items'&&!query.ins.some(([key])=>key==='id'))rows=rows.filter(row=>row.user_id===active().id);
-  for(const [key,value] of query.filters)rows=rows.filter(row=>row[key]===value);
+  for(const [key,value,operator] of query.filters)rows=rows.filter(row=>operator==='is'&&value===null?row[key]==null:row[key]===value);
   for(const [key,values] of query.ins)rows=rows.filter(row=>values.includes(row[key]));
   return rows.map(row=>table==='collection_items'||table==='wishlists'?{...row,lego_sets:sets.find(set=>set.set_number===row.set_number)}:{...row});
 }
 function chain(table){
   const query={filters:[],ins:[],mode:'select',patch:null,selected:false,
-    select(){query.selected=true;return query},eq(key,value){query.filters.push([key,value]);return query},in(key,values){query.ins.push([key,values]);return query},or(value){query.orFilter=value;return query},order(key,options){if(key==='created_at')query.descending=options?.ascending===false;return query},limit(value){query.limitValue=value;return query},range(){return query},is(key,value){query.filters.push([key,value]);return query},
+    select(){query.selected=true;return query},eq(key,value){query.filters.push([key,value]);return query},in(key,values){query.ins.push([key,values]);return query},or(value){query.orFilter=value;return query},order(key,options){if(key==='created_at')query.descending=options?.ascending===false;return query},limit(value){query.limitValue=value;return query},range(){return query},is(key,value){query.filters.push([key,value,'is']);return query},
     update(patch){query.mode='update';query.patch=patch;return query},delete(){query.mode='delete';return query},
     upsert(patch){const profile=data.profiles.find(row=>row.id===patch.id);if(profile)Object.assign(profile,patch);else data.profiles.push({...patch,created_at:NOW});persist();return Promise.resolve({data:[patch],error:null})},
-    insert(value){
-      const rows=Array.isArray(value)?value:[value];
-      for(const row of rows){
-        if(table==='collection_items'&&!data.collection.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number))data.collection.push({id:`collection-${data.collection.length+1}`,...row,available_for_exchange:row.available_for_exchange||false,created_at:NOW});
-        if(table==='wishlists'&&!data.wishlist.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number))data.wishlist.push({id:`wishlist-${data.wishlist.length+1}`,...row,priority:row.priority||3,created_at:NOW});
-        if(table==='exchange_case_messages')data.messages.push({id:`message-${data.messages.length+1}`,...row,created_at:NOW});
-        if(table==='messages')data.directMessages.push({id:`direct-${data.directMessages.length+1}`,...row,exchange_id:null,created_at:NOW});
-      }
-      persist();return Promise.resolve({data:null,error:null});
-    },
+    insert(value){query.mode='insert';query.rows=Array.isArray(value)?value:[value];return query},
     maybeSingle(){return Promise.resolve({data:visibleRows(table,query)[0]||null,error:null})},
     then(resolve){
-      const matches=row=>query.filters.every(([key,value])=>row[key]===value)&&query.ins.every(([key,values])=>values.includes(row[key]));
+      const matches=row=>query.filters.every(([key,value,operator])=>operator==='is'&&value===null?row[key]==null:row[key]===value)&&query.ins.every(([key,values])=>values.includes(row[key]));
       let result=visibleRows(table,query);
+      if(query.mode==='insert'){
+        const added=[];
+        // INSERT is executed when awaited, and select() requests its persisted representation.
+        for(const row of query.rows){
+          let created;
+          if(table==='collection_items'&&!data.collection.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number)){created={id:`collection-${data.collection.length+1}`,...row,available_for_exchange:row.available_for_exchange||false,created_at:NOW};data.collection.push(created)}
+          if(table==='wishlists'&&!data.wishlist.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number)){created={id:`wishlist-${data.wishlist.length+1}`,...row,priority:row.priority||3,created_at:NOW};data.wishlist.push(created)}
+          if(table==='exchange_case_messages'){created={id:`message-${data.messages.length+1}`,...row,created_at:NOW};data.messages.push(created)}
+          if(table==='messages'){created={id:`direct-${data.directMessages.length+1}`,...row,exchange_id:null,created_at:NOW};data.directMessages.push(created)}
+          if(created)added.push({...created});
+        }
+        persist();result=query.selected?added:null;
+      }
       if(query.mode==='select'&&query.limitValue&&['messages','exchange_case_messages','exchange_cases'].includes(table)){
         const earlier=query.orFilter?.match(/created_at\.lt\.([^,)]+)/)?.[1],tie=query.orFilter?.match(/id\.lt\.([^,)]+)/)?.[1];
         if(earlier)result=result.filter(row=>row.created_at<earlier||(row.created_at===earlier&&String(row.id)<tie));
