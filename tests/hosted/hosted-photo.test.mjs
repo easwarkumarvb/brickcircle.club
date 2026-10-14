@@ -105,7 +105,46 @@ test('forged collection reference access fails verification before archive succe
 test('expiration accepts explicit Storage expired token but rejects arbitrary bad requests',async()=>{
   await assertExpiredResponse(new Response(JSON.stringify({code:'ExpiredToken',message:'The provided token has expired.'}),{status:400}));
   await assertExpiredResponse(new Response(JSON.stringify({message:'jwt expired'}),{status:403}));
-  for(const detail of [{code:'InvalidRequest'},{message:'invalid signature'},{code:'23514'},{statusCode:403,message:'permission denied'}])await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify(detail),{status:400})));
+  for(const field of ['code','error'])await assertExpiredResponse(new Response(JSON.stringify({[field]:'InvalidJWT',message:'"exp" claim timestamp check failed'}),{status:400}));
+  for(const detail of [{code:'InvalidRequest'},{message:'invalid signature'},{code:'23514'},{statusCode:403,message:'permission denied'},
+    {code:'InvalidJWT'}, {error:'InvalidJWT',message:'signature verification failed'}, {code:'InvalidJWT',message:'"nbf" claim timestamp check failed'},
+    {code:'InvalidJWT',message:'"exp" claim timestamp check failed extra'}, {code:'InvalidJWT',message:'"exp" claim timestamp check failed '},
+    {message:'"exp" claim timestamp check failed'}, {code:'InvalidRequest',message:'"exp" claim timestamp check failed'},null,[]])await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify(detail),{status:400})));
+  for(const status of [200,302,401,403,404,429,500,503])await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({error:'InvalidJWT',message:'"exp" claim timestamp check failed'}),{status})));
+  await assert.rejects(()=>assertExpiredResponse(new Response('not JSON',{status:400})));
+});
+test('JOSE expiry wrapper completes the mocked journey without weakening permissions',async()=>{
+  const fixture=fixtureTransport();
+  const send=async(url,init)=>{
+    const response=await fixture.send(url,init);
+    return new URL(url).pathname.startsWith('/storage/v1/object/sign/')&&(!init.method||init.method==='GET')&&response.status===400
+      ?new Response(JSON.stringify({error:'InvalidJWT',message:'"exp" claim timestamp check failed'}),{status:400}):response;
+  };
+  const report=await runPhotoVerification(env(),send,fixture.sleep);
+  assert.equal(report.ok,true);assert.equal(report.checks.length,9);
+});
+test('expiry failure preserves only bounded status and fixed response classification',async()=>{
+  for(const [body,status,responseClass] of [
+    [JSON.stringify({code:'InvalidJWT',message:'private-account@example.test private-token https://private.test'}),400,'invalid-jwt-other'],
+    [JSON.stringify({code:'private-token',message:'private-account@example.test'}),400,'unrecognized-json'],
+    ['private-account@example.test private-token https://private.test',400,'non-json'],
+    [JSON.stringify({error:'InvalidJWT',message:'"exp" claim timestamp check failed'}),503,'jose-expired-invalid-jwt'],
+  ]){
+    const fixture=fixtureTransport();
+    const send=async(url,init)=>{
+      const response=await fixture.send(url,init);
+      return new URL(url).pathname.startsWith('/storage/v1/object/sign/')&&(!init.method||init.method==='GET')&&response.status===400
+        ?new Response(body,{status}):response;
+    };
+    await assert.rejects(()=>runPhotoVerification(env(),send,fixture.sleep),error=>{
+      const report=photoFailureReport(error);
+      assert.equal(report.failedStage,'signed capability expiration');assert.equal(report.checks.length,7);
+      assert.deepEqual(report.expiryDiagnostic,{httpStatus:status,responseClass});
+      assert.deepEqual(Object.keys(report).sort(),['checks','expiryDiagnostic','failedStage','ok','target','testedHeadSha']);
+      assert.ok(!serializeRedactedReport(report).includes('private-'));assert.ok(!error.message.includes('private-'));return true;
+    });
+    assert.ok(!fixture.calls.some(call=>call.path==='/storage/v1/object/collection-photos'&&call.method==='DELETE'&&call.who==='A'&&call.body.prefixes[0].startsWith('00000000-0000-4000-8000-000000000001/')));
+  }
 });
 test('changed signed download bytes fail verification',async()=>{
   const fixture=fixtureTransport();
@@ -128,6 +167,7 @@ test('workflow is manual protected pinned and never passes server secret to HTTP
   assert.ok(!step.includes('SECRET_KEY'));assert.ok(!source.includes('apply_migration'));
   const deployment=JSON.parse(await readFile('vercel.json','utf8'));assert.equal(deployment.git.deploymentEnabled['qa/hosted-photo-verification'],false);
   assert.equal(deployment.git.deploymentEnabled['dev/hosted-photo-set-validation'],false);
+  assert.equal(deployment.git.deploymentEnabled['qa/hosted-photo-expiry-compat'],false);
 });
 
 test('uploaded dummy PNG has valid chunk checksums and decodes to one RGBA pixel',()=>{

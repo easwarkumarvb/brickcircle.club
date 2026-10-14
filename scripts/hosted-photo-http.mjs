@@ -23,10 +23,25 @@ export function assertDenied(response){
   // Infrastructure failures must not masquerade as access-control evidence.
   assert.ok([400,401,403,404].includes(response.status),'Expected permission denial');
 }
+const expiryFailures=new WeakMap();
 export async function assertExpiredResponse(response){
-  assert.ok([400,401,403].includes(response.status),'Expected expired capability response');
-  const detail=await response.json();
-  assert.ok(detail.code==='ExpiredToken'||detail.error==='ExpiredToken'||/^jwt expired$/i.test(detail.message||''),'Expected explicit expired token evidence');
+  // Storage also wraps JOSE's specific exp-claim failure in InvalidJWT. Neither
+  // InvalidJWT alone nor an arbitrary bad request proves capability expiration.
+  let responseClass='non-json';
+  try{
+    const detail=await response.json();
+    const object=detail&&typeof detail==='object'&&!Array.isArray(detail)?detail:{};
+    if(object.code==='ExpiredToken'||object.error==='ExpiredToken')responseClass='expired-token';
+    else if(typeof object.message==='string'&&/^jwt expired$/i.test(object.message))responseClass='legacy-jwt-expired';
+    else if(object.code==='InvalidJWT'||object.error==='InvalidJWT')responseClass=object.message==='"exp" claim timestamp check failed'?'jose-expired-invalid-jwt':'invalid-jwt-other';
+    else responseClass='unrecognized-json';
+  }catch{ /* Parsing failures remain a fixed category, never a raw body. */ }
+  const httpStatus=Number.isInteger(response.status)&&response.status>=100&&response.status<=599?response.status:null;
+  if(![400,401,403].includes(httpStatus)||!['expired-token','legacy-jwt-expired','jose-expired-invalid-jwt'].includes(responseClass)||(responseClass==='jose-expired-invalid-jwt'&&httpStatus!==400)){
+    const error=new Error('Expected explicit expired capability evidence');
+    expiryFailures.set(error,{httpStatus,responseClass});
+    throw error;
+  }
 }
 const failures=new WeakMap();
 export function photoFailureReport(error){
@@ -37,9 +52,10 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   try{return await verifyPhotoJourney(env,fetchImpl,sleep,progress);}
   catch{
     // Never carry server bodies, assertion operands, identities or credentials
-    // into an error or evidence file. Only our fixed checkpoint labels survive.
+    // into an error or evidence file. Only fixed labels and bounded expiry
+    // status/classification fields survive.
     const error=new Error('Hosted photo verification failed; values withheld');
-    failures.set(error,{ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks]});
+    failures.set(error,{ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks],...(progress.expiryDiagnostic?{expiryDiagnostic:progress.expiryDiagnostic}:{})});
     throw error;
   }
 }
@@ -148,7 +164,9 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress){
   // accidentally accepting a CDN-cached response fetched while still valid.
   progress.stage='signed capability expiration';
   const expired=await json(await sign(a,a.photo,1));await sleep(2500);
-  await assertExpiredResponse(await send(signedUrl(expired.signedURL,a.photo)));
+  const expiryResponse=await send(signedUrl(expired.signedURL,a.photo));
+  try{await assertExpiredResponse(expiryResponse);}
+  catch(error){progress.expiryDiagnostic=expiryFailures.get(error);throw error;}
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
   progress.stage='owner deletes exact dummy objects';
   // Owner deletion is limited to this run's known dummy objects; retain case rows.

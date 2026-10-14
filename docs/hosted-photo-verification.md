@@ -66,10 +66,16 @@ and expired-capability failures are accepted; infrastructure failures and arbitr
 bad requests are not permission evidence.
 
 A fresh one-second capability is never downloaded while valid, then must fail
-after expiration with explicit `ExpiredToken` (or legacy `jwt expired`) evidence;
+after expiration with explicit `ExpiredToken`, legacy `jwt expired`, or an exact
+HTTP 400 `InvalidJWT` code/error paired with JOSE's `"exp" claim timestamp check failed` message;
 a newly signed capability must succeed. Current Storage returns HTTP 400 for
 `ExpiredToken`, as defined in its [official error codes](https://github.com/supabase/storage/blob/master/src/internal/errors/codes.ts).
-An arbitrary HTTP 400 or invalid-signature error is not accepted as expiry proof. This avoids deriving
+Storage's [JWT verifier](https://github.com/supabase/storage/blob/master/src/internal/auth/jwt.ts)
+uses JOSE, and its [object signature verifier](https://github.com/supabase/storage/blob/master/src/storage/object.ts)
+wraps verification failures in `InvalidJWT`. JOSE's
+[claim validator](https://github.com/panva/jose/blob/main/src/lib/jwt_claims_set.ts)
+uses that exact message for expiration. An arbitrary `InvalidJWT`, other claim failure,
+HTTP 400 or invalid-signature error is not accepted as expiry proof. This avoids deriving
 expiration evidence from a previously cached successful response. Existing
 candidate runtime tests independently prove the application's fifteen-minute URL
 cache refresh, failure recovery and account-switch/logout isolation without
@@ -88,7 +94,11 @@ uploaded. Reports contain fixed check descriptions, candidate SHA and aggregate
 counts; they exclude identifiers, email addresses, credentials, photo paths,
 signed capabilities, raw API errors and request traces. No browser storage or
 screenshots are uploaded. On failure, the HTTP report includes only the fixed
-checkpoint label and checks completed before that checkpoint. Raw exceptions and
+checkpoint label and checks completed before that checkpoint. A rejected expiration
+response also adds only its bounded HTTP status and a fixed classification enum
+(`expired-token`, `legacy-jwt-expired`, `jose-expired-invalid-jwt`, `invalid-jwt-other`,
+`unrecognized-json`, or `non-json`). Raw error codes, messages, bodies and capability
+URLs are never copied into reports. Raw exceptions and
 API response details are discarded; an unknown exception cannot supply report
 fields. A failed run does not claim any later permission or journey checks.
 
@@ -103,6 +113,14 @@ camera hardware, mobile keyboard/safe areas, visual baselines or the full browse
 exchange journey; existing browser CI and later physical-device checks cover those
 separate requirements.
 
-No hosted run or migration was performed while preparing this runner. Branch
-`qa/hosted-photo-verification` has Vercel automatic deployment disabled before
-publication; `main` remains disabled.
+Hosted run [38495468640](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/38495468640)
+completed seven permission checkpoints and then failed at signed capability
+expiration. Its audit found 16 pending outbox rows and zero provider attempts.
+Bounded gateway logs showed the expired download returned HTTP 400; its response
+body was withheld, so the JOSE response form above is source-supported compatibility,
+not a confirmed observation from that run. Fresh protected hosted verification is
+still required for expiration, subsequent fresh signing and owner cleanup.
+
+No hosted run or migration was performed while preparing this compatibility change.
+Branches `qa/hosted-photo-verification` and `qa/hosted-photo-expiry-compat` have Vercel
+automatic deployment disabled before publication; `main` remains disabled.
