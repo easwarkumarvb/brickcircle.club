@@ -73,7 +73,9 @@
       "dev/permanent-ux-qa": false,
       "dev/photo-storage-permission-qa": false,
       "qa/hosted-photo-review": false,
-      "dev/pending-modules-completion": false
+      "dev/pending-modules-completion": false,
+      "dev/admin-growth-reporting": false,
+      "dev/security-audit-hardening": false
     }
   }
 }

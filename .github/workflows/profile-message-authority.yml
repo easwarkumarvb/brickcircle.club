@@ -1,0 +1,50 @@
+name: Isolated profile and message authority PostgreSQL
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['supabase/migrations/**', 'supabase/tests/**', 'qa/profile_message_authority*', '.github/workflows/profile-message-authority.yml']
+  push:
+    branches: ['dev/**', 'codex/**']
+    paths: ['supabase/migrations/**', 'supabase/tests/**', 'qa/profile_message_authority*', '.github/workflows/profile-message-authority.yml']
+permissions:
+  contents: read
+jobs:
+  real-role-authority:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17.11
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: profile_message_authority
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d profile_message_authority"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/profile_message_authority
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Disposable production-compatible source permissions and actual RPCs
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_base.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_legacy_seed.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/profile_message_authority_setup.sql
+      - name: Reproduce original self-forgery and future unread-cursor bypass
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/profile_message_authority_before.sql
+      - name: Latest peer lifecycle and review privacy migrations
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261001210000_peer_trust_exchange_hardening.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261002124500_peer_trust_privacy_and_legacy_guard.sql
+      - name: Forward repair twice to prove replay safety
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014110000_profile_and_message_write_authority.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014110000_profile_and_message_write_authority.sql
+      - name: Real authenticated and anonymous denials and allowed browser RPCs
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/profile_message_authority_after.sql
+      - name: Canonical mutual handoff return and peer-review regression
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/peer_trust_exchange_hardening.sql
