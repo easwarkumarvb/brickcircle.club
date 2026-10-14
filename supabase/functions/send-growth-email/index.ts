@@ -1,4 +1,4 @@
-import { createClient } from 'npm:@supabase/supabase-js@2';
+import { createClient } from 'npm:@supabase/supabase-js@2.57.4';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
@@ -34,7 +34,7 @@ Deno.serve(async (req: Request) => {
     .order('created_at', { ascending: true })
     .limit(10);
 
-  if (loadError) return json({ error: loadError.message }, 500);
+  if (loadError) return json({ error: 'Could not load email queue' }, 500);
 
   let sent = 0;
   let failed = 0;

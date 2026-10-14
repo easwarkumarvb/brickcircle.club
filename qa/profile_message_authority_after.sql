@@ -29,6 +29,12 @@ do $$ begin
   raise exception 'Message delete unexpectedly permitted';
  exception when insufficient_privilege then null; end;
 end $$;
+do $$ begin
+ begin
+  update public.profiles set display_name=repeat('x',101) where id=auth.uid();
+  raise exception 'Oversized profile field unexpectedly accepted';
+ exception when check_violation then null; end;
+end $$;
 -- Same columns as app onboarding upsert and profile editor.
 insert into public.profiles(id,display_name,country,city,updated_at)
 values(auth.uid(),'Edited A','India','Bengaluru','2099-01-01')

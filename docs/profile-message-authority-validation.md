@@ -52,3 +52,5 @@ The superseded submit_exchange_case_review RPC was left intact: existing
 canonical regression fixtures still invoke it. It can publish a separate legacy
 review, but cannot reveal stored double-blind structured peer reviews. Retiring
 that writer requires coordinating fixture/API compatibility separately.
+
+The first isolated run 38536693773 correctly stopped at the before-repair reproduction: its fixture omitted the pre-existing sanitized public-profile SELECT policy. A read-only production catalog check confirmed the actual anon/authenticated USING(true) policy. The fixture now includes that policy; its original assertion was retained. New streamed JSON tests passed locally (5), along with the 55 existing injected administrator API tests. Profile field-size bounds and application-wide browser headers are source-only follow-ups.

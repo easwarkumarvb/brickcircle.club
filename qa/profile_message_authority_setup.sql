@@ -19,6 +19,8 @@ create table public.public_profiles (
   avatar_url text,rating numeric,review_count integer,identity_verified boolean,
   member_since timestamptz,updated_at timestamptz,founding_member_number smallint
 );
+-- Sanitized projection policy from the production checkpoint, retained by hardening.
+create policy "public profile projection readable" on public.public_profiles for select to anon,authenticated using (true);
 create table public.exchange_preferences(user_id uuid primary key);
 \ir ../supabase/migrations/20260829_membership_program_v31.sql
 \ir ../supabase/migrations/20260829072229_beta_release_rls_hardening.sql

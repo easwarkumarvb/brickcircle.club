@@ -1,3 +1,4 @@
+import {readBoundedJSON,RequestBodyError} from '../_shared/bounded-json.mjs';
 import {createClient} from 'npm:@supabase/supabase-js@2.57.4';
 import {dispatchNotificationEmail,type BrevoMessage,type EmailDelivery,type EmailNotification} from './core.ts';
 
@@ -23,7 +24,8 @@ Deno.serve(async(req:Request)=>{
   const brevoKey=Deno.env.get('BREVO_API_KEY');
   if(!supabaseUrl||!serviceRoleKey||!brevoKey)return json({error:'Email worker is not configured'},503);
 
-  const input=await req.json().catch(()=>({}));
+  let input;
+  try { input=await readBoundedJSON(req); } catch(error) { return json({error:error instanceof RequestBodyError?error.message:'Invalid JSON.'},error instanceof RequestBodyError?error.status:400); }
   const requestedId=String(input?.record?.id||input?.delivery_id||'');
   if(requestedId&&!uuid.test(requestedId))return json({error:'Invalid delivery id'},400);
 

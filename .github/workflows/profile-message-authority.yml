@@ -48,3 +48,15 @@ jobs:
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/profile_message_authority_after.sql
       - name: Canonical mutual handoff return and peer-review regression
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/peer_trust_exchange_hardening.sql
+
+  api-inputs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: node --test tests/static/admin-marketplace-api.test.mjs tests/static/bounded-json-runtime.test.mjs

@@ -59,6 +59,16 @@ begin
  execute 'revoke update ('||columns_sql||') on public.messages from public,anon,authenticated';
 end; $$;
 
+-- Bound member-controlled display fields without rewriting historical rows.
+do $$ begin
+ if not exists(select 1 from pg_catalog.pg_constraint where conrelid='public.profiles'::regclass and conname='profiles_display_bounds') then
+  alter table public.profiles add constraint profiles_display_bounds check (
+   char_length(display_name)<=100 and char_length(country)<=100 and char_length(city)<=100
+   and char_length(bio)<=2000 and char_length(avatar_url)<=2048
+  ) not valid;
+ end if;
+end; $$;
+
 -- Direct INSERT is retained for the existing SECURITY INVOKER messaging RPC.
 -- Enforce its validation and chronological authority at the underlying table.
 create or replace function public.bc_prepare_exchange_message()

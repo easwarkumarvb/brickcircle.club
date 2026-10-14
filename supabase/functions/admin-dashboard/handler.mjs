@@ -1,3 +1,4 @@
+import {readBoundedJSON,RequestBodyError} from '../_shared/bounded-json.mjs';
 // Dependency injection keeps the same authentication boundary testable in Node and Deno.
 export function createHandler(createClient, env) {
   const isUUID=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -36,10 +37,8 @@ export function createHandler(createClient, env) {
       if (req.method === 'POST') {
         if (!req.headers.get('Content-Type')?.toLowerCase().startsWith('application/json'))
           return response(415, {error: 'JSON required.'});
-        if (Number(req.headers.get('Content-Length')) > 8192) return response(413, {error: 'Request too large.'});
-        const raw = await req.text();
-        if (new TextEncoder().encode(raw).length > 8192) return response(413, {error: 'Request too large.'});
-        try { body = JSON.parse(raw); } catch { return response(400, {error: 'Invalid JSON.'}); }
+        try { body = await readBoundedJSON(req); }
+        catch (error) { if (error instanceof RequestBodyError) return response(error.status,{error:error.message}); throw error; }
         if (!body || typeof body !== 'object' || Array.isArray(body)) return response(400, {error: 'Invalid request.'});
       }
       let result;
