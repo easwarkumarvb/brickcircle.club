@@ -64,6 +64,7 @@
   ],
   "git": {
     "deploymentEnabled": {
+      "qa/hosted-photo-expiry-compat": false,
       "dev/hosted-photo-set-validation": false,
       "qa/hosted-photo-verification": false,
       "qa/pr138-hosted-runner": false,
