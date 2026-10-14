@@ -4,6 +4,20 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source=fs.readFileSync('tests/isolated/fixtures/three-user-supabase-browser-mock.js','utf8');
 function fixture(){const storage=new Map(),context=vm.createContext({URLSearchParams,location:{search:'',href:'http://127.0.0.1/'},localStorage:{getItem:key=>storage.get(key)||null,setItem:(key,value)=>storage.set(key,value)},window:{},queueMicrotask});vm.runInContext(source,context);return {db:context.window.supabase.createClient(),state:context.window.__bcThreeUser}}
+for(const [table,key] of [['collection_items','collection'],['wishlists','wishlist']]){
+ test(`${table} duplicate stored key rejects an entire batch without partial writes`,async()=>{
+  const {db,state}=fixture(),id=state.actors.easwar.id;
+  await db.from(table).insert({user_id:id,set_number:'42172-1'});
+  const before=JSON.stringify(state.data[key]);
+  const result=await db.from(table).insert([{user_id:id,set_number:'42143-1'},{user_id:id,set_number:'42172-1'}]).select();
+  assert.equal(result.data,null);assert.equal(result.error.code,'23505');assert.equal(JSON.stringify(state.data[key]),before);
+ });
+ test(`${table} duplicate keys inside one batch reject atomically`,async()=>{
+  const {db,state}=fixture(),id=state.actors.easwar.id,before=JSON.stringify(state.data[key]);
+  const result=await db.from(table).insert([{user_id:id,set_number:'42172-1'},{user_id:id,set_number:'42172-1'}]);
+  assert.equal(result.data,null);assert.equal(result.error.code,'23505');assert.equal(JSON.stringify(state.data[key]),before);
+ });
+}
 test('three-user collection insert is lazy and returns the actual owner and photo representation',async()=>{
  const {db,state}=fixture(),id=state.actors.easwar.id,path=`${id}/owner-photo.jpg`;
  const query=db.from('collection_items').insert({user_id:id,set_number:'42172-1',owner_photo_path:path});assert.equal(state.data.collection.length,0);

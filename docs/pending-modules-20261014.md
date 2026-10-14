@@ -11,7 +11,7 @@ that cannot be replaced by mocks. It is not production rollout approval.
 | Person-first conversations | PR138 merged; collector inbox/feed, ordinary chat, explicit case context, immutable uncertain-send retries; `tests/isolated/person-conversation-read-model.spec.ts` and guided messaging suites | Physical keyboard/resume checks |
 | Complete exchange lifecycle | Canonical proposal, acceptance, meetup, inspection, custody, return, early return, cancellation, release, and reviews | Preserve server-owned transitions and participant checks in every follow-up |
 | Hosted conversation/exchange journey | Protected run [38338276854](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/38338276854): 5 browser groups and 19 server checks, 390px synthetic collectors; no production requests or provider attempts | This historical run certifies its pinned candidate, not later changes |
-| Camera, file picker, retake and owner replacement | PR132 merged; explicit camera permission, resource disposal, account-generation guards; camera and replacement isolated suites | Repair implemented on this branch, including avatars and concurrent replacement/account-switch guards; isolated CI still required |
+| Camera, file picker, retake and owner replacement | PR132 merged; explicit camera permission, resource disposal, account-generation guards; camera and replacement isolated suites | Repair implemented on this branch, including avatars and concurrent replacement/account-switch guards; isolated three-browser CI passed; physical-device review remains |
 | Private photo permissions and signed URL caching | PR143/145 merged; owner namespace binding, participant access, expiring cache and account isolation | PR148 expiry-format compatibility is draft, not hosted certification |
 | Real hosted photo journey | Run [38495468640](https://github.com/easwarkumarvb/brickcircle.club/actions/runs/38495468640) passed seven HTTP groups: owner bytes, reciprocal/participant reads, outsider and foreign-write denial, cancelled archives | Expired GET returned HTTP400; expiry assertion failed. Fresh signing after expiry and final dummy-object deletion were not reached. Do not claim complete success |
 | PR148 compatibility fix | Draft [PR148](https://github.com/easwarkumarvb/brickcircle.club/pull/148), head `04c2952913dedbcd95cf40db3f106f1008f5a6ee`; narrow explicit expiry discriminator, bounded safe diagnostics; CI green | Separate merge approval, protected staging rerun, confirm fresh signing and exact fixture cleanup |
@@ -19,8 +19,8 @@ that cannot be replaced by mocks. It is not production rollout approval.
 | Durable in-app notifications | Server-owned notification records, realtime account isolation, lifecycle regression suites | No provider activation required for in-app operation |
 | Durable transactional email | Server-owned asynchronous outbox, Auth-derived recipients, bounded retries and idempotency; notification-email SQL and isolated tests | Brevo sender/domain setup, protected secrets, worker/webhook/scheduler activation and delivery verification require separate approval; no emails sent by this work |
 | Landing model pairings and positioning | PR133 merged: Ferrari/McLaren, Space Shuttle/Saturn V, Tower Bridge/Colosseum; Buy Less. Build More. | Preserve these approved pairs |
-| Founder story and supplied brand artwork | Selectively ported approved wording and supplied assets from PR134 onto this branch | Responsive/accessibility CI and human visual review; stale PR134 is not merged wholesale |
-| Three-photo gallery | Implemented front/side/rear-detail UX with owner-bound supplementary metadata, inherited reciprocal/canonical participant reads and safe uncertain-write cleanup | Disposable real-role/browser CI; staging compatibility and schema rollout remain separately reviewed |
+| Founder story and supplied brand artwork | Selectively ported approved wording and supplied assets from PR134 onto this branch | Responsive/accessibility CI passed; human visual review remains; stale PR134 is not merged wholesale |
+| Three-photo gallery | Implemented front/side/rear-detail UX with owner-bound supplementary metadata, inherited reciprocal/canonical participant reads and safe uncertain-write cleanup | Disposable real-role/browser CI passed; owner orphan-cleanup follow-up is under validation; staging schema rollout remains separately reviewed |
 | Permanent mobile-first UX QA | PR144 merged; isolated browser/geometry/accessibility/checkpoint suite with synthetic data and blocked external transport | Real iOS/Android keyboard, safe areas, rotation, background/resume, touch and camera evidence; human visual approval |
 | Beta PWA/web push disabled | Current canonical beta gates and install/push regression suites | Keep disabled; historical push PR70 is not authorization to enable it |
 | Capacity evidence | Draft PR141 contains isolated projection/capacity measurements against its frozen candidate | Measurements are not a production SLO or launch-capacity certification |
@@ -70,9 +70,17 @@ provider activation and physical-device results explicitly separate.
 Branch `dev/pending-modules-completion`, release `20261014-pending-modules-r1`,
 contains the photo commit/identity repair, approved three-angle gallery, founder
 letter/portrait, supplied brand rollout and scoped dark-panel contrast correction.
-The combined 39 actual-function safety tests and 6 signed URL/cache tests pass
+The combined 47 actual-function and fixture safety tests and 6 signed URL/cache tests pass
 locally, along with security, conversation, hosted harness, syntax, TypeScript,
 release and diff checks. Browser and PostgreSQL results are recorded in the PR
 checks rather than inferred from prepared tests. The original Supabase CLI
 telemetry rejection was respected: gallery SQL source was prepared offline and
 no database migration was applied by this work.
+
+## Verified PR149 candidate before cleanup follow-up
+
+Head `63c9ccd84106daf6d5004f04540434f1c6cb921f` passed all applicable CI checks: 443 Chromium isolated tests, 886 Firefox/WebKit isolated tests, 9 visual/accessibility tests, 195 permanent UX tests, 20 synthetic checkpoints and zero UX triage findings. Conversation checks passed in all three browsers, and disposable PostgreSQL verified gallery ownership, reciprocal reads, both cancelled canonical participants and foreign/anonymous denial. OpenCode independently reran the 23 focused photo/gallery/three-collector Chromium journeys with retries disabled, plus runtime and type checks.
+
+The owner orphan-cleanup follow-up adds a bucket-and-owner-UUID SELECT branch so existing owner DELETE permission can see unlinked objects. It does not grant foreign reads or change Storage writes or canonical controls. Before/after disposable SQL proves authorization only; hosted Storage bytes are not certified by SQL metadata deletion.
+
+A read-only staging compatibility check found the existing supplemental table layout compatible and zero angle rows or invalid owner/namespace bindings. No gallery migration was applied.

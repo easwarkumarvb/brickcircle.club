@@ -100,6 +100,21 @@ function chain(table){
       const matches=row=>query.filters.every(([key,value,operator])=>operator==='is'&&value===null?row[key]==null:row[key]===value)&&query.ins.every(([key,values])=>values.includes(row[key]));
       let result=visibleRows(table,query);
       if(query.mode==='insert'){
+        // unique(user_id,set_number) fails the whole INSERT statement, so the batch is
+        // checked against stored rows and against earlier rows of the same batch before
+        // anything is written: a conflict returns 23505 with no partial commit.
+        const uniqueKey=table==='collection_items'||table==='wishlists'?`${table}_user_id_set_number_key`:null;
+        if(uniqueKey){
+          const stored=data[table==='collection_items'?'collection':'wishlist'];
+          const taken=new Set(stored.map(item=>`${item.user_id}\u0000${item.set_number}`));
+          for(const row of query.rows){
+            // Postgres unique constraints keep distinct rows when a key part is null.
+            if(row.user_id===undefined||row.user_id===null||row.set_number===undefined||row.set_number===null)continue;
+            const key=`${row.user_id}\u0000${row.set_number}`;
+            if(taken.has(key))return Promise.resolve({data:null,error:{code:'23505',message:`duplicate key value violates unique constraint "${uniqueKey}"`,details:`Key (user_id,set_number)=(${row.user_id},${row.set_number}) already exists.`,hint:null,status:409}}).then(resolve);
+            taken.add(key);
+          }
+        }
         const added=[];
         // INSERT is executed when awaited, and select() requests its persisted representation.
         for(const row of query.rows){

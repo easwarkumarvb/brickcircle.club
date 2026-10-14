@@ -79,10 +79,18 @@ jobs:
         run: |
           set -o pipefail
           psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/forged-reference.sql | tee photo-reference-after.txt
+      - name: Owner orphan cleanup denied before the gallery owner-self read branch
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -v expect_denied=true -f qa/photo-storage/orphan-cleanup.sql | tee photo-orphan-before.txt
       - name: Apply supplemental gallery policy twice without widening collection access
         run: |
           psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014090000_collection_gallery_owner_binding.sql
           psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014090000_collection_gallery_owner_binding.sql
+      - name: Owner orphan cleanup allowed for the owner's own folder only after the gallery read branch
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/orphan-cleanup.sql | tee photo-orphan-after.txt
       - name: Gallery owner, reciprocal match, canonical archive and privacy evidence
         run: |
           set -o pipefail
@@ -100,6 +108,8 @@ jobs:
             photo-permission-after.txt
             photo-reference-before.txt
             photo-reference-after.txt
+            photo-orphan-before.txt
+            photo-orphan-after.txt
             photo-gallery.txt
           if-no-files-found: ignore
           retention-days: 14
