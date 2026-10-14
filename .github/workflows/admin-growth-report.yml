@@ -1,0 +1,39 @@
+name: Isolated administrator growth PostgreSQL
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['supabase/migrations/*admin_growth_report*', 'supabase/tests/admin_growth_report.sql', 'qa/growth_report*', '.github/workflows/admin-growth-report.yml']
+permissions:
+  contents: read
+jobs:
+  growth-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: brickcircle
+          POSTGRES_PASSWORD: disposable-ci-only
+          POSTGRES_DB: growth_report
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U brickcircle -d growth_report"
+          --health-interval=5s --health-timeout=5s --health-retries=12
+    env:
+      DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/growth_report
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Apply canonical and administrator production migrations to disposable database
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_base.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/growth_report_setup.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260916052934_canonical_exchange_state_machine.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260930111000_admin_dashboard_exchange_admin_authorization.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261001210000_peer_trust_exchange_hardening.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261005143140_marketplace_admin_console.sql
+          psql "$DSN" -1 -v ON_ERROR_STOP=1 -f supabase/migrations/20261014120000_admin_growth_report.sql
+      - name: Real database roles, session revocation and aggregate correctness
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/admin_growth_report.sql
