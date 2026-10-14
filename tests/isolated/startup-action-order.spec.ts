@@ -196,3 +196,60 @@ test('confirmed missing authentication on genuine resume clears the protected sh
   await expect(page.locator('#bc-owner-photo-form')).toHaveCount(0);
   await expect(page.locator('[data-change-photo="photo-item-1"]')).toHaveCount(0);
 });
+
+const gatedSigning=mock+"(()=>{\n const factory=window.supabase.createClient;\n window.supabase.createClient=(...args)=>{\n  const db=factory(...args),gate=window.__signingGate={calls:0,releases:[],released:false,outcome:'success'};\n  if(new URLSearchParams(location.search).get('isolated')==='matched'){\n   window.__bcIsolated.collection.push({id:'other-item-1',user_id:'00000000-0000-4000-8000-000000000099',set_number:'42143-1',available_for_exchange:true,owner_photo_path:'00000000-0000-4000-8000-000000000099/match-owner.jpg'});\n  }\n  const storage=db.storage.from.bind(db.storage);\n  db.storage.from=bucket=>{\n   const api=storage(bucket);\n   if(bucket==='collection-photos')api.createSignedUrl=async()=>{\n    gate.calls++;\n    if(!gate.released)await new Promise(resolve=>gate.releases.push(resolve));\n    return gate.outcome==='denied'?{data:null,error:{message:'Photo unavailable'}}:{data:{signedUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='},error:null};\n   };\n   return api;\n  };\n  return db;\n };\n})();";
+async function signingGate(page:any,view:'collection'|'match',outcome='success'){
+  await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',(route:any)=>route.fulfill({contentType:'application/javascript',body:gatedSigning}));
+  await page.goto(view==='collection'?'/v2.html?isolated=photo-replace#sets':'/v2.html?isolated=matched#matches');
+  await expect.poll(()=>page.evaluate(()=>(window as any).__signingGate.calls)).toBeGreaterThan(0);
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  if(view==='match'&&await page.locator('[data-dismiss-match]').count())await page.locator('[data-dismiss-match]').click();
+  await page.evaluate((value:string)=>(window as any).__signingGate.outcome=value,outcome);
+}
+async function releaseSigning(page:any){
+  await page.evaluate(()=>{const gate=(window as any).__signingGate;gate.released=true;for(const release of gate.releases)release();});
+}
+for(const width of [320,390,1280])for(const view of ['collection','match'] as const)
+test(`signed gallery hydration preserves ${view} controls at ${width}px`,async({page})=>{
+  await page.setViewportSize({width,height:1000});
+  await signingGate(page,view);
+  const action=page.locator(view==='collection'?'[data-change-photo="photo-item-1"]':'[data-propose]').first();
+  await expect(action).toBeVisible();
+  await action.scrollIntoViewIfNeeded();
+  const before=await action.boundingBox();expect(before).not.toBeNull();
+  await releaseSigning(page);
+  const image=page.locator(view==='collection'?'[data-owner-gallery="photo-item-1"] [data-photo-angle="front"] img':'[data-owner-proof-preview] img').first();
+  await expect(image).toBeVisible();
+  await expect.poll(()=>image.evaluate((img:HTMLImageElement)=>img.complete&&img.naturalWidth>0)).toBe(true);
+  const after=await action.boundingBox();expect(after).not.toBeNull();
+  expect(after!.x).toBeCloseTo(before!.x,1);
+  expect(after!.y).toBeCloseTo(before!.y,1);
+  await action.click();
+  await expect(page.locator(view==='collection'?'#bc-owner-photo-form':'#bc-inline-proposal')).toBeVisible();
+});
+for(const view of ['collection','match'] as const)test(`photo signing denial preserves ${view} action geometry`,async({page})=>{
+  await page.setViewportSize({width:390,height:1000});
+  await signingGate(page,view,'denied');
+  const action=page.locator(view==='collection'?'[data-change-photo="photo-item-1"]':'[data-propose]').first();
+  await action.scrollIntoViewIfNeeded();
+  const before=await action.boundingBox();expect(before).not.toBeNull();
+  await releaseSigning(page);
+  await page.evaluate(async()=>{await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));});
+  const after=await action.boundingBox();expect(after).not.toBeNull();
+  expect(after!.y).toBeCloseTo(before!.y,1);
+  if(view==='match')await expect(page.locator('[data-owner-proof-preview]')).toHaveText('Owner photo unavailable');
+  await action.click();
+  await expect(page.locator(view==='collection'?'#bc-owner-photo-form':'#bc-inline-proposal')).toBeVisible();
+});
+for(const view of ['collection','match'] as const)test(`one ${view} action works while photo signing remains pending`,async({page})=>{
+  await page.setViewportSize({width:390,height:1000});
+  await signingGate(page,view);
+  await page.locator(view==='collection'?'[data-change-photo="photo-item-1"]':'[data-propose]').first().click();
+  const form=page.locator(view==='collection'?'#bc-owner-photo-form':'#bc-inline-proposal');
+  await expect(form).toBeVisible();
+  await page.evaluate(()=>(window as any).__pendingPhotoForm=document.querySelector('#bc-owner-photo-form,#bc-inline-proposal'));
+  await releaseSigning(page);
+  await expect.poll(()=>page.evaluate(()=>(window as any).__signingGate.released)).toBe(true);
+  await expect(form).toBeVisible();
+  expect(await page.evaluate(()=>document.querySelector('#bc-owner-photo-form,#bc-inline-proposal')===(window as any).__pendingPhotoForm)).toBe(true);
+});

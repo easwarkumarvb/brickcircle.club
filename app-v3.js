@@ -1188,17 +1188,24 @@ async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.o
 async function hydrateMatchPhotos(root){
   const epoch=authEpoch,uid=S.user?.id,generation=ownerPhotoIdentityGeneration;
   const current=()=>epoch===authEpoch&&uid===S.user?.id&&generation===ownerPhotoIdentityGeneration&&!logoutLocked&&root.isConnected;
-  const cards=root.querySelectorAll('.bc-match');
-  for(const [index,match] of S.matches.entries()){
-    const card=cards[index],side=card?.querySelectorAll('.bc-match-side')?.[1]||card?.querySelectorAll('.bc-match-set')?.[1];if(!side||side.querySelector('.bc-owner-proof'))continue;
+  for(const card of root.querySelectorAll('.bc-match[data-requested-item]')){
+    const match=S.matches.find(row=>row.requested_item===card.dataset.requestedItem);
+    const side=card.querySelectorAll('.bc-match-set')[1],preview=side?.querySelector('[data-owner-proof-preview]');
+    if(!match||!preview)continue;
+    const unavailable=()=>{if(current()&&card.isConnected)preview.textContent='Owner photo unavailable';};
     try{
       const {data,error}=await db.from('collection_items').select('id,set_number,owner_photo_path').eq('id',match.requested_item).eq('user_id',match.match_user).eq('available_for_exchange',true).limit(1),path=data?.[0]?.owner_photo_path;
-      if(!current())return;if(error||!path)continue;const url=await signedOwnerPhoto(path);if(!current())return;
-      if(url)side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof"><img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy"><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div>${ownerGalleryMarkup(match.requested_item)}</div>`);
+      if(!current()||!card.isConnected)return;
+      if(error||!path){unavailable();continue}
+      const url=await signedOwnerPhoto(path);if(!current()||!card.isConnected)return;
+      if(!url){unavailable();continue}
+      preview.innerHTML=`<img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy">`;
+      const image=preview.querySelector('img');image?.addEventListener('error',unavailable,{once:true});
       const gallery=side.querySelector('[data-owner-gallery]');if(gallery)await hydrateOwnerGallery(gallery,data[0]);
-    }catch(_){}
+    }catch(_){unavailable()}
   }
 }
+
 function bindSetActions(root=document){$$('[data-own]',root).forEach(b=>b.onclick=()=>toggleOwned(b.closest('[data-set]').dataset.set,b));$$('[data-want]',root).forEach(b=>b.onclick=()=>toggleWanted(b.closest('[data-set]').dataset.set,b))}
 async function toggleOwned(set,button){
   if(!S.user){showAuth();return}const existing=S.collection.find(x=>x.set_number===set);if(!existing){addOwnedSetWithPhoto(set);return}await removeCollectionItem(existing.id,existing.lego_sets?.name||set,button)
@@ -1323,7 +1330,7 @@ async function renderMatches(token){
   if(!current())return;
   page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>openMatchInMessages(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
 }
-function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
+function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium" data-requested-item="${attr(m.requested_item)}"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small><div class="bc-owner-proof"><div class="bc-owner-proof-preview" data-owner-proof-preview>Loading owner photo</div><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div>${ownerGalleryMarkup(m.requested_item)}</div></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
 async function showProposal(i){
   const epoch=logoutEpoch,uid=S.user?.id,m=S.matches[i],current=()=>epoch===logoutEpoch&&!logoutLocked&&S.user?.id===uid;
   if(!m||!current())return;await loadPeerReputation(m.match_user);if(!current())return;

@@ -1,7 +1,7 @@
 name: Startup and action reliability
 on:
   pull_request:
-    paths: ['app-v3.js', 'tests/isolated/startup-action-order.spec.ts', 'tests/isolated/beta-reliability-three-user.spec.ts', '.github/workflows/startup-action-reliability.yml']
+    paths: ['app-v3.js', 'app-v3.css', 'tests/isolated/owner-photo-camera.spec.ts', 'tests/isolated/startup-action-order.spec.ts', 'tests/isolated/beta-reliability-three-user.spec.ts', '.github/workflows/startup-action-reliability.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -44,6 +44,27 @@ jobs:
           assert.ok(detail.includes('toHaveCount'));
           assert.ok(detail.includes('Expected: 0'));
           assert.ok(/Received:\s*1/.test(detail));
+          JS
+      - name: Reproduce signed-photo action movement before reserved frames
+        env:
+          ENGINE: ${{ matrix.browser }}
+        run: |
+          cp app-v3.js "$RUNNER_TEMP/photo-frame-app.js"
+          cp app-v3.css "$RUNNER_TEMP/photo-frame.css"
+          trap 'cp "$RUNNER_TEMP/photo-frame-app.js" app-v3.js; cp "$RUNNER_TEMP/photo-frame.css" app-v3.css' EXIT
+          git show fee987ce6ae6fb678c0a5960febf06963e02d39a:app-v3.js > app-v3.js
+          git show fee987ce6ae6fb678c0a5960febf06963e02d39a:app-v3.css > app-v3.css
+          if npx playwright test --config=playwright.isolated.config.ts tests/isolated/startup-action-order.spec.ts --project="$ENGINE" --grep "signed gallery hydration preserves collection controls at 390px" --retries=0 --reporter=json > "$RUNNER_TEMP/photo-frame-before.json"; then
+            echo "Original gallery unexpectedly preserved the strict action rectangle"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/photo-frame-app.js" app-v3.js
+          cp "$RUNNER_TEMP/photo-frame.css" app-v3.css
+          node - "$RUNNER_TEMP/photo-frame-before.json" <<'JS'
+          const fs=require('node:fs'),assert=require('node:assert/strict');
+          const report=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          assert.equal(report.stats.unexpected,1);
+          assert.ok(JSON.stringify(report.suites).includes('toBeCloseTo'));
           JS
       - name: Controlled delayed-startup and stale-action proofs; three no-retry runs
         run: npx playwright test --config=playwright.isolated.config.ts tests/isolated/startup-action-order.spec.ts tests/isolated/beta-reliability-three-user.spec.ts tests/isolated/owner-photo-camera.spec.ts --project=${{ matrix.browser }} --retries=0 --repeat-each=3
