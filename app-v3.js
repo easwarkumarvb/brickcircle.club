@@ -297,7 +297,10 @@ async function validateResume(){
       if(!session||session.user?.id!==uid||!current())return;
       const remembered=lastRoute||(()=>{try{return sessionStorage.getItem('bc_last_route')||''}catch(_){return ''}})();
       if((location.hash||'#home')==='#home'&&remembered&&remembered!=='#home')location.hash=remembered;
-      await refreshRoute();
+      await refreshCore();
+      if(epoch!==authEpoch||generation!==hiddenTransitionGeneration||document.hidden||logoutLocked||explicitLogout||(S.user&&S.user.id!==uid))return;
+      if(!S.user){closeOverlay();document.getElementById('bc-drawer-overlay')?.remove();clearNotificationPresentation();stopNotificationRealtime();ownerPhotoIdentityGeneration++;ownerPhotoUrls.clear();resetPeerTrustCaches()}
+      shell();await renderRoute();
       if(current())consumedResumeGeneration=generation;
     }catch(_){ /* Failed recovery remains eligible for a later focus retry. */ }
     finally{if(resumeValidationFlight===flight)resumeValidationFlight=null}

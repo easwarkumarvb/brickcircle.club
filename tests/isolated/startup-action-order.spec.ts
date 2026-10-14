@@ -152,10 +152,46 @@ test('a newer hidden transition retires the old resume response even at the same
   expect(await page.evaluate(()=>(window as any).__resumeGate.calls)).toBe(2);
   await page.evaluate(async()=>{
     (window as any).__resumeGate.releases[0]();
-    await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
   });
   expect(await page.evaluate(()=>document.getElementById('bc-main')===(window as any).__resumeMain)).toBe(true);
   await page.evaluate(()=>(window as any).__resumeGate.releases[1]());
   await expect.poll(()=>page.evaluate(()=>document.getElementById('bc-main')!==(window as any).__resumeMain)).toBe(true);
   await expect(page.locator('[data-change-photo="photo-item-1"]')).toBeVisible();
+});
+
+test('a hidden transition during authenticated hydration cannot replace the active shell',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  await page.evaluate(()=>{
+    const auth=(window as any).BC_SUPABASE.auth,original=auth.getUser.bind(auth);
+    const gate:any={calls:0};(window as any).__hydrationGate=gate;
+    auth.getUser=()=>{gate.calls++;if(gate.calls!==1)return original();const captured=original();return new Promise(resolve=>gate.release=()=>resolve(captured))};
+    (window as any).__resumeMain=document.getElementById('bc-main');
+    window.dispatchEvent(new Event('pagehide'));window.dispatchEvent(new Event('focus'));
+  });
+  await expect.poll(()=>page.evaluate(()=>(window as any).__hydrationGate.calls)).toBe(1);
+  await page.evaluate(async()=>{
+    window.dispatchEvent(new Event('pagehide'));
+    (window as any).__hydrationGate.release();
+    await new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve())));
+  });
+  expect(await page.evaluate(()=>document.getElementById('bc-main')===(window as any).__resumeMain)).toBe(true);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  await expect.poll(()=>page.evaluate(()=>document.getElementById('bc-main')!==(window as any).__resumeMain)).toBe(true);
+});
+
+test('confirmed missing authentication on genuine resume clears the protected shell',async({page})=>{
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  await page.locator('[data-change-photo="photo-item-1"]').click();
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  await page.evaluate(()=>{
+    (window as any).BC_SUPABASE.auth.getUser=async()=>({data:{user:null},error:{name:'AuthSessionMissingError',message:'Auth session missing'}});
+    window.dispatchEvent(new Event('pagehide'));window.dispatchEvent(new Event('focus'));
+  });
+  await expect(page.locator('.bc-signin')).toBeVisible();
+  await expect(page.locator('#bc-overlay')).toHaveCount(0);
+  await expect(page.locator('#bc-owner-photo-form')).toHaveCount(0);
+  await expect(page.locator('[data-change-photo="photo-item-1"]')).toHaveCount(0);
 });
