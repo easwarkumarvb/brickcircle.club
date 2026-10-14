@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Validate pull request and immutable head
         id: validate
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
         env:
           REQUESTED_PR: ${{ inputs.pull_request_number }}
           EXPECTED_HEAD_SHA: ${{ inputs.expected_head_sha }}
@@ -107,7 +107,7 @@ jobs:
       BC_HOSTED_SMOKE_REPORT: artifacts/hosted-exchange-smoke.json
     steps:
       - name: Check out the validated pull request head
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ needs.validate-pr.outputs.head_sha }}
           persist-credentials: false
@@ -116,7 +116,7 @@ jobs:
         env:
           EXPECTED_HEAD_SHA: ${{ needs.validate-pr.outputs.head_sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
           cache: npm
@@ -129,7 +129,7 @@ jobs:
         run: npm run smoke:hosted:exchange
       - name: Upload redacted staging evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: hosted-exchange-smoke-${{ needs.validate-pr.outputs.head_sha }}
           path: artifacts/hosted-exchange-smoke.json

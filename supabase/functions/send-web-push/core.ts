@@ -1,3 +1,4 @@
+import {trustedPushEndpoint} from '../_shared/trusted-push-endpoint.mjs';
 export type PushNotification={id:string;user_id:string;kind:string;title:string|null;body:string|null;entity_type:string|null;entity_id:string|null;metadata:Record<string,unknown>|null};
 export type PushSubscription={id:string;endpoint:string;p256dh:string;auth:string};
 export type PushPayload={type:'reciprocal_match'|'exchange_proposal';title:string;body:string;url:string;entity_id:string};
@@ -32,6 +33,7 @@ export async function dispatchPush(notification:PushNotification,subscriptions:P
   const payload=payloadFor(notification);if(!payload)return {eligible:false,sent:0,failed:0,disabled:0,skipped:0};
   let sent=0,failed=0,disabled=0,skipped=0;
   for(const subscription of subscriptions.slice(0,20)){
+    if(!trustedPushEndpoint(subscription.endpoint)){skipped++;continue}
     if(!await deps.claim(notification.id,subscription.id)){skipped++;continue}
     try{
       const status=await deps.send(subscription,payload);

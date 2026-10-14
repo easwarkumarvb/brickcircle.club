@@ -26,7 +26,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:disposable-ci-only@127.0.0.1:5432/conversation_read_model
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
       - name: Disposable production-compatible schema and source RLS

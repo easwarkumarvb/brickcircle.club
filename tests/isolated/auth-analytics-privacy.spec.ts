@@ -5,7 +5,7 @@ async function fixture(page:Page,url:string){
   await page.route('**/analytics-fixture*',route=>route.fulfill({contentType:'text/html',body:'<!doctype html><title>dummy@example.invalid</title><script src="/analytics.js"></script><script src="/product-analytics.js" defer></script><button>Sign in</button>'}));
   await page.goto(url);
 }
-for(const auth of ['?token_hash=dummy-hash&type=email&email=dummy@example.invalid','?code=dummy-code','#access_token=dummy-access&refresh_token=dummy-refresh&type=recovery'])test(`credential callback does not initialize analytics ${auth.split('=')[0]}`,async({page})=>{
+for(const auth of ['?token_hash=dummy-hash&type=email&email=dummy@example.invalid','?code=dummy-code','?%63ode=dummy-code','?TOKEN_HASH=dummy-hash','#access%5Ftoken=dummy-access','#access_token=dummy-access&refresh_token=dummy-refresh&type=recovery'])test(`credential callback does not initialize analytics ${auth.split('=')[0]}`,async({page})=>{
   await fixture(page,'/analytics-fixture'+auth);
   expect(await page.evaluate(()=>({layer:(window as any).dataLayer||[],tags:document.querySelectorAll('script[src*="googletagmanager"]').length}))).toEqual({layer:[],tags:0});
   await page.evaluate(()=>{location.hash='profile';window.dispatchEvent(new HashChangeEvent('hashchange'))});await page.getByRole('button',{name:'Sign in'}).click();expect(await page.evaluate(()=>(window as any).dataLayer||[])).toEqual([]);

@@ -20,7 +20,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_exchange_state_machine
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated production-compatible prerequisites
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_base.sql
       - name: Seed realistic legacy exchange histories
@@ -51,7 +51,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_collector_avatar
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load pre-fix Auth/profile avatar schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/collector_avatar_base.sql
       - name: Apply canonical collector-avatar migration
@@ -76,7 +76,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_peer_trust
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated production-compatible prerequisites
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_state_machine_base.sql
       - name: Seed realistic legacy exchange histories
@@ -107,7 +107,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_exchange_workflow
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated canonical exchange schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/canonical_exchange_workflow_base.sql
       - name: Apply server-owned workflow migrations
@@ -122,8 +122,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '22' }
       - name: Syntax-check owner photo client
         run: node --check collection-owner-photo.js
@@ -147,8 +147,8 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_push
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with: { deno-version: v2.5.2 }
       - name: Type-check Web Push Edge Function
         run: deno check --config supabase/functions/send-web-push/deno.json supabase/functions/send-web-push/index.ts
@@ -176,8 +176,8 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_email
     steps:
-      - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2
         with: { deno-version: v2.5.2 }
       - name: Type-check Brevo notification Edge Function
         run: deno check --config supabase/functions/send-notification-email/deno.json supabase/functions/send-notification-email/index.ts
@@ -205,7 +205,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_notifications
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated exchange notification schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/exchange_notification_base.sql
       - name: Apply exchange proposal notification migration
@@ -230,7 +230,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_matching
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated matching schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/matching_alias_base.sql
       - name: Apply reciprocal alias migration
@@ -255,7 +255,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_collection
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated collection lifecycle schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/collection_removal_base.sql
       - name: Apply collection-removal migrations
@@ -283,7 +283,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_exchange_integrity
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated exchange availability schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/exchange_availability_base.sql
       - name: Apply exchange availability integrity migration
@@ -308,7 +308,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_security
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated browser privilege schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/browser_rpc_privilege_base.sql
       - name: Apply browser RPC privilege migration
@@ -333,7 +333,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_adult_confirmation
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load isolated adult-confirmation schema
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/adult_confirmation_base.sql
       - name: Apply adult-confirmation migration
@@ -346,8 +346,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '22' }
       - run: npm install
       - name: Runtime dependency security gate
@@ -373,7 +373,7 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_qa
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Load minimal production prerequisites
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/membership_base.sql
       - name: Apply historical membership migration
@@ -403,8 +403,8 @@ jobs:
     env:
       DSN: postgresql://brickcircle:brickcircle@127.0.0.1:5432/brickcircle_loadtest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: '3.12' }
       - run: python -m pip install -r loadtest/requirements.txt
       - name: Initialize isolated marketplace schema

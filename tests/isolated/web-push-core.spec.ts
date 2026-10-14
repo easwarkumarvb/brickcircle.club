@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {dispatchPush,payloadFor,type PushNotification} from '../../supabase/functions/send-web-push/core';
 
 const proposal:PushNotification={id:'note-1',user_id:'user-b',kind:'request_received',title:'New exchange proposal',body:'Ramya proposed an exchange with you.',entity_type:'exchange_request',entity_id:'request-1',metadata:{}};
-const subscription={id:'sub-1',endpoint:'https://push.example/1',p256dh:'key',auth:'auth'};
+const subscription={id:'sub-1',endpoint:'https://fcm.googleapis.com/fcm/send/test-only',p256dh:'key',auth:'auth'};
 
 test('proposal and reciprocal match payloads use safe canonical deep links',()=>{
   expect(payloadFor(proposal)).toMatchObject({type:'exchange_proposal',url:'/v2.html#exchanges/request-1'});
@@ -25,4 +25,14 @@ test('expired endpoints are disabled and temporary push failure remains non-fata
   const temporary=await dispatchPush({...proposal,id:'note-2'},[subscription],{...base,send:async()=>{throw new Error('network unavailable')}});
   expect(expired.disabled).toBe(1);expect(gone).toBe(1);
   expect(temporary.failed).toBe(1);expect(failed).toBe(1);
+});
+
+test('untrusted endpoints never reach delivery claims or the network sender',async()=>{
+  let claims=0,sends=0;
+  const deps={claim:async()=>{claims++;return true},send:async()=>{sends++;return 201},success:async()=>{},gone:async()=>{},failure:async()=>{}};
+  for(const endpoint of ['https://127.0.0.1/private','https://fcm.googleapis.com.evil.test/send','https://user@fcm.googleapis.com/send','https://fcm.googleapis.com:8443/send','https://%66cm.googleapis.com/send']){
+    const result=await dispatchPush(proposal,[{...subscription,endpoint}],deps);
+    expect(result).toMatchObject({sent:0,skipped:1});
+  }
+  expect(claims).toBe(0);expect(sends).toBe(0);
 });
