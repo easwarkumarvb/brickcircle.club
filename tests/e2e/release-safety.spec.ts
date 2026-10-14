@@ -35,7 +35,12 @@ test('@static canonical entrypoint excludes known legacy application layers',()=
 test('@static current destructive actions remain scoped to the signed-in owner',()=>{
   const app=read('app-v3.js');
   const exchangeGuard=read('supabase/migrations/20260822_v23_single_active_exchange_lock.sql');
-  expect(app).toContain("from('wishlists').delete().eq('id',existing.id).eq('user_id',S.user.id)");
+  const wishStart=app.indexOf('async function toggleWanted(');
+  expect(wishStart).toBeGreaterThanOrEqual(0);
+  const wishlistAction=app.slice(wishStart,app.indexOf('\n}',wishStart)+2);
+  expect(wishlistAction).toContain('const uid=S.user.id,epoch=authEpoch,token=S.renderToken');
+  expect(wishlistAction).toContain("from('wishlists').delete().eq('id',existing.id).eq('user_id',uid)");
+  expect(wishlistAction).toContain("from('wishlists').insert({user_id:uid");
   expect(app).toContain("removeCollectionItem(existing.id");
   expect(app).toContain("from('collection_items').delete().eq('id',id).eq('user_id',user.id).select('id')");
   expect(exchangeGuard).toContain("raise exception 'One of these LEGO sets is already reserved in another active exchange'");
