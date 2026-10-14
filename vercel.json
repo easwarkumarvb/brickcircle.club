@@ -64,6 +64,7 @@
   ],
   "git": {
     "deploymentEnabled": {
+      "dev/hosted-photo-set-validation": false,
       "qa/hosted-photo-verification": false,
       "qa/pr138-hosted-runner": false,
       "qa/pr138-staging-revalidation": false,

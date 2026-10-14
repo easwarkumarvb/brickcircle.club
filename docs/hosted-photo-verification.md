@@ -25,6 +25,11 @@ migration operation:
 - `20261013080000_bind_collection_photo_reads_to_owner.sql` (separate PR145 repair;
   the forged-reference regression exposed an existing Storage read gap).
 
+Configured `BC_STAGING_SET_A` and `BC_STAGING_SET_B` must name distinct catalog
+sets. The public harness accepts a numeric set ID with an optional numeric variant
+suffix, preserving the configured staging values `75192-1` and `10307-1` without
+stripping their catalog keys. Invalid or duplicate values fail before public HTTP.
+
 The runner neither applies these files nor uses an administrative query to
 silently substitute for real Storage permission checks. The canonical participant
 functional preflight runs **after** fresh account, photo and item provisioning and
@@ -82,7 +87,10 @@ Only `artifacts/hosted-photo-http.json` and `artifacts/hosted-photo-outbox.json`
 uploaded. Reports contain fixed check descriptions, candidate SHA and aggregate
 counts; they exclude identifiers, email addresses, credentials, photo paths,
 signed capabilities, raw API errors and request traces. No browser storage or
-screenshots are uploaded.
+screenshots are uploaded. On failure, the HTTP report includes only the fixed
+checkpoint label and checks completed before that checkpoint. Raw exceptions and
+API response details are discarded; an unknown exception cannot supply report
+fields. A failed run does not claim any later permission or journey checks.
 
 The offline guard CI tests immutable provenance, production/origin/redirect
 rejection, public-only credential isolation, a mocked complete journey using real
