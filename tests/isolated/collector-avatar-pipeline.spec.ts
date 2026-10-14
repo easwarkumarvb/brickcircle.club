@@ -29,7 +29,7 @@ test('broken provider avatar falls back cleanly to initials',async({page})=>{
 
 test('failed profile persistence cleans up the newly uploaded avatar object',async({page})=>{
   await page.goto('/v2.html?isolated=avatar-upload-existing#profile');
-  await page.evaluate(()=>window.__bcIsolated.failTables.push('profiles'));
+  await page.evaluate(()=>window.__bcIsolated.definiteRejectTables.push('profiles'));
   await page.locator('#bc-avatar-input').setInputFiles({name:'replacement.jpg',mimeType:'image/jpeg',buffer:Buffer.from('avatar-replacement')});
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.storage.uploads.length)).toBe(1);
   await expect.poll(()=>page.evaluate(()=>{
@@ -74,3 +74,14 @@ test('match identity is hydrated from the sanitized public projection only',asyn
 });
 
 declare global {interface Window {__bcIsolated:any}}
+
+for(const outcome of ['zero','lost'])test(`avatar metadata ${outcome} preserves referenced objects`,async({page})=>{
+  await page.goto('/v2.html?isolated=avatar-upload-existing#profile');
+  await page.evaluate(outcome=>{if(outcome==='zero')window.__bcIsolated.silentNoUpdate=true;else window.__bcIsolated.lostCommitTables.push('profiles')},outcome);
+  await page.locator('#bc-avatar-input').setInputFiles({name:'new.webp',mimeType:'image/webp',buffer:Buffer.from('synthetic-avatar')});
+  await expect(page.locator('.bc-toast')).toContainText(outcome==='lost'?'could not be confirmed':'not saved');
+  const result=await page.evaluate(()=>({profile:window.__bcIsolated.profile,uploads:window.__bcIsolated.storage.uploads,removals:window.__bcIsolated.storage.removals}));
+  const old='00000000-0000-4000-8000-000000000007/old-profile.jpg';expect(result.removals).not.toContain(old);
+  if(outcome==='lost'){expect(result.profile.avatar_url).toBe(result.uploads[0]);expect(result.removals).not.toContain(result.uploads[0])}
+  else{expect(result.profile.avatar_url).toBe(old);expect(result.removals).toContain(result.uploads[0])}
+});

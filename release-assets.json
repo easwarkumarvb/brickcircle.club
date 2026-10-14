@@ -1,5 +1,5 @@
 {
-  "release": "20261012-person-first-conversations-r1",
+  "release": "20261014-pending-modules-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -18,6 +18,9 @@
     "/app-v3.js",
     "/local-account-logout.js",
     "/zen-ux-v1.js",
-    "/assets/brickcircle-logo.png"
+    "/assets/brickcircle-brand-2026-256.png",
+    "/assets/brickcircle-brand-2026-64.png",
+    "/assets/brickcircle-brand-2026-512.png",
+    "/assets/founder-easwar-kumar.jpg.jpeg"
   ]
 }

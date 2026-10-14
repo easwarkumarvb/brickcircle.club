@@ -8,7 +8,24 @@ const liveImages=process.env.BC_LANDING_LIVE_IMAGES==='1';
 const evidence=process.env.BC_LANDING_QA_DIR;
 const ids=['42143-1','42141-1','10283-1','21309-1','10214-1','10276-1'];
 
-for(const width of [320,360,390,768,1440]){
+test('founder photo failure preserves the letter and join journey',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.route('**/*',route=>{
+    const url=new URL(route.request().url());
+    if(url.pathname.endsWith('/assets/founder-easwar-kumar.jpg.jpeg'))return route.abort();
+    if(url.hostname==='cdn.jsdelivr.net'&&url.pathname.includes('@supabase/supabase-js'))return route.fulfill({contentType:'application/javascript',body:mock});
+    return url.hostname==='127.0.0.1'?route.continue():route.abort('blockedbyclient');
+  });
+  await page.goto('/?isolated=signed-out');
+  const founder=page.locator('#why-i-built-brickcircle');
+  await founder.scrollIntoViewIfNeeded();
+  await expect(founder.getByText('Founder photo is unavailable.',{exact:true})).toBeVisible();
+  await expect(founder).toContainText('By Easwar Kumar | Founder, BrickCircle.club');
+  await page.locator('.bc-landing-final').getByRole('button',{name:'Join BrickCircle beta',exact:true}).click();
+  await expect(page.locator('#bc-overlay [role="dialog"]')).toBeVisible();
+});
+
+for(const width of [320,360,390,430,768,1440]){
   for(const enlarged of [false,true]){
     test(`landing pairings at ${width}px${enlarged?' with 200% text':''}`,async({page})=>{
       test.setTimeout(60000);
@@ -28,6 +45,15 @@ for(const width of [320,360,390,768,1440]){
       expect(await page.locator('.bc-landing-showcase').evaluate(el=>Array.from(el.children).slice(0,3).map(child=>child.className))).toEqual(['bc-showcase-card own','bc-showcase-link','bc-showcase-card want']);
       await expect(page.locator('.bc-story')).toContainText('Another collector owns Saturn V and wants your Discovery');
       await expect(page.locator('.bc-example-match')).toContainText('The other collector owns Colosseum and wants your Tower Bridge');
+      const founder=page.locator('#why-i-built-brickcircle');
+      await expect(founder).toHaveCount(1);
+      await expect(founder.getByRole('heading',{name:'Why I Built BrickCircle',exact:true})).toBeVisible();
+      await expect(founder).toContainText('By Easwar Kumar | Founder, BrickCircle.club');
+      await expect(founder).toContainText('Why should the joy of building be limited to the sets we can afford to own?');
+      const portrait=founder.getByRole('img',{name:'Easwar Kumar with assembled LEGO Ferrari, McLaren and Saturn V models'});
+      await portrait.scrollIntoViewIfNeeded();
+      await expect.poll(()=>portrait.evaluate(el=>(el as HTMLImageElement).naturalWidth)).toBe(1086);
+      expect(await portrait.evaluate(el=>getComputedStyle(el).objectFit)).toBe('contain');
       if(liveImages){
         for(const image of await page.locator('img[data-set-image]').all()){
           await image.scrollIntoViewIfNeeded();
@@ -47,7 +73,7 @@ for(const width of [320,360,390,768,1440]){
       const layout=await page.evaluate(()=>{
         const own=document.querySelector('.bc-showcase-card.own')!,bar=document.querySelector('.bc-showcase-link')!,want=document.querySelector('.bc-showcase-card.want')!;
         const a=own.getBoundingClientRect(),b=bar.getBoundingClientRect(),c=want.getBoundingClientRect();
-        const selectors='.bc-landing-hero,.bc-showcase-card,.bc-showcase-link,.bc-story-flow article,.bc-example-sets article';
+        const selectors='.bc-landing-hero,.bc-showcase-card,.bc-showcase-link,.bc-story-flow article,.bc-example-sets article,.bc-founder-story,.bc-founder-layout,.bc-founder-prose';
         return {
           gapBefore:b.top-a.bottom,gapAfter:c.top-b.bottom,
           centered:Math.abs((b.left+b.right)/2-(a.left+a.right)/2)<1,

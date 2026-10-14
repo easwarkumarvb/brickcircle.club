@@ -14,7 +14,9 @@ assert.match(client,/data-choose-file>Choose file/);
 assert.match(client,/getUserMedia\(\{audio:false,video:\{facingMode:\{ideal:'environment'\}\}\}\)/);
 assert.match(client,/button class="bc-btn primary" type="submit" disabled/);
 assert.match(client,/owner_photo_path:path/);
-assert.match(client,/catch\(error\)\{await cleanupOwnerPhoto\(path\);throw error\}/);
+// Actual-function runtime tests certify lost-response and rollback behavior.
+assert.match(client,/persistPhotoMetadata\(owner,/);
+assert.doesNotMatch(client,/catch\(error\)\{await cleanupOwnerPhoto\(path\);throw error\}/);
 assert.match(client,/contentType:file.type,upsert:false/);
 assert.match(client,/user_id:owner.id/);
 assert.match(client,/sessionGeneration!==ownerPhotoIdentityGeneration/);
@@ -37,7 +39,7 @@ assert.doesNotMatch(migration,/bc_can_read_collection_photo/);
 assert.match(client,/hydrateMatchPhotos/);
 assert.match(client,/\.from\('collection_items'\)/);
 assert.match(client,/createSignedUrl\(path,900\)/);
-assert.match(client,/Owner photo · inspect the physical set in person before exchange/);
+assert.match(client,/Owner photos? · inspect the physical set in person before exchange/);
 
 assert.match(html,/\/app-v3\.js/);
 assert.doesNotMatch(html,/\/collection-owner-photo\.js/);

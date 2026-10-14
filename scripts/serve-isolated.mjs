@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const root=process.cwd();
 const port=Number(process.argv[2]||4173);
-const types={'.css':'text/css; charset=utf-8','.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.jpg':'image/jpeg','.webmanifest':'application/manifest+json'};
+const types={'.css':'text/css; charset=utf-8','.html':'text/html; charset=utf-8','.js':'application/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webmanifest':'application/manifest+json'};
 
 const server=http.createServer((request,response)=>{
   const pathname=decodeURIComponent(new URL(request.url||'/',`http://${request.headers.host||'127.0.0.1'}`).pathname);
