@@ -410,7 +410,7 @@ function navigate(page,id=''){
       renderMessagesListPane();return;
     }
   }
-  if(location.hash===next){renderRoute();return}
+  if(location.hash===next){if(S.booted)renderRoute();return}
   location.hash=next;
 }
 
@@ -1185,7 +1185,24 @@ async function toggleOwned(set,button){
   if(!S.user){showAuth();return}const existing=S.collection.find(x=>x.set_number===set);if(!existing){addOwnedSetWithPhoto(set);return}await removeCollectionItem(existing.id,existing.lego_sets?.name||set,button)
 }
 async function toggleWanted(set,button){
-  if(!S.user){showAuth();return}button.disabled=true;const existing=S.wishlist.find(x=>x.set_number===set);if(existing){const {error}=await db.from('wishlists').delete().eq('id',existing.id).eq('user_id',S.user.id);if(error){fail(error);button.disabled=false;return}}else{const {error}=await db.from('wishlists').insert({user_id:S.user.id,set_number:set,priority:3});if(error){fail(error);button.disabled=false;return}track('wishlist_item_added',{set_number:set})}await refreshCore();await renderRoute();toast(existing?'Removed from wishlist.':'Added to your wishlist.')
+  if(!S.user){showAuth();return}
+  const uid=S.user.id,epoch=authEpoch,token=S.renderToken;
+  const sameAccount=()=>epoch===authEpoch&&S.user?.id===uid&&!logoutLocked&&!explicitLogout;
+  const sameView=()=>sameAccount()&&token===S.renderToken;
+  button.disabled=true;
+  const existing=S.wishlist.find(x=>x.set_number===set);
+  const {error}=existing
+    ?await db.from('wishlists').delete().eq('id',existing.id).eq('user_id',uid)
+    :await db.from('wishlists').insert({user_id:uid,set_number:set,priority:3});
+  if(!sameAccount())return;
+  if(error){if(sameView()){fail(error);button.disabled=false}return}
+  if(!existing)track('wishlist_item_added',{set_number:set});
+  await refreshCore();
+  // Update this account's data without replacing a newer view.
+  if(!sameView())return;
+  await renderRoute();
+  if(sameAccount()&&S.renderToken===token+1)
+    toast(existing?'Removed from wishlist.':'Added to your wishlist.');
 }
 
 async function renderSets(token,legacy='sets'){
@@ -2751,14 +2768,21 @@ async function boot(){
     if(S.user||sessionResult.error)await signOut(true);else{shell();await renderRoute();showAuth()}
     if(!logoutLocked)renderVerificationEntry(document.getElementById('bc-overlay'));return;
   }
-  if(S.user)await syncProviderAvatar();if(!current())return;
+  // Complete bounded startup bookkeeping before exposing usable controls.
+  // A second shell replacement after the first render can discard a click.
+  if(S.user)await settledTimeout(Promise.all([
+    syncProviderAvatar(),
+    !signinIntent&&pendingAuthChange?.[0]!=='PASSWORD_RECOVERY'
+      ?claimReferralAndProvider()
+      :Promise.resolve()
+  ]),8000);
+  if(!current())return;
   if(S.user)await refreshCore();if(!current())return;
   S.booted=true;shell();await renderRoute();if(!current())return;
   if(verifyIntent&&!S.user){showAuth();if(!pendingVerification())renderVerificationEntry(document.getElementById('bc-overlay'))}
   if(pendingAuthChange?.[0]==='PASSWORD_RECOVERY'){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession);return}
   if(S.user&&!signinIntent){
-    await claimReferralAndProvider();if(!current())return;await refreshCore();if(!current())return;
-    shell();await renderRoute();if(!current())return;await startNotificationRealtime().catch(()=>{});if(!current())return;
+    await startNotificationRealtime().catch(()=>{});if(!current())return;
     const onboardingShown=await onboardingIfNeeded();if(!current())return;if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();
   }
   if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();

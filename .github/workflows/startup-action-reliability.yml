@@ -1,0 +1,56 @@
+name: Startup and action reliability
+on:
+  pull_request:
+    paths: ['app-v3.js', 'tests/isolated/startup-action-order.spec.ts', 'tests/isolated/beta-reliability-three-user.spec.ts', '.github/workflows/startup-action-reliability.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  interaction-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - run: npm run typecheck && npm run syntax-check && npm run release:check
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - name: Reproduce the original lost-control startup boundary
+        env:
+          ENGINE: ${{ matrix.browser }}
+        run: |
+          cp app-v3.js "$RUNNER_TEMP/startup-candidate-app.js"
+          trap 'cp "$RUNNER_TEMP/startup-candidate-app.js" app-v3.js' EXIT
+          git show c68d5620f12f2f56f2155232672baf689a95b233:app-v3.js > app-v3.js
+          if npx playwright test --config=playwright.isolated.config.ts tests/isolated/startup-action-order.spec.ts --project="$ENGINE" --grep "^startup finishes delayed provider bookkeeping" --retries=0 --reporter=json > "$RUNNER_TEMP/startup-before.json"; then
+            echo "Original startup unexpectedly passed the strict boundary proof"
+            exit 1
+          fi
+          cp "$RUNNER_TEMP/startup-candidate-app.js" app-v3.js
+          node - "$RUNNER_TEMP/startup-before.json" <<'JS'
+          const fs=require('node:fs'),assert=require('node:assert/strict');
+          const report=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+          assert.equal(report.stats.unexpected,1);
+          const detail=JSON.stringify(report.suites).replace(/\\u001b\[[0-9;]*m/g,'');
+          assert.ok(detail.includes('toHaveCount'));
+          assert.ok(detail.includes('Expected: 0'));
+          assert.ok(/Received:\s*1/.test(detail));
+          JS
+      - name: Controlled delayed-startup and stale-action proofs; three no-retry runs
+        run: npx playwright test --config=playwright.isolated.config.ts tests/isolated/startup-action-order.spec.ts tests/isolated/beta-reliability-three-user.spec.ts tests/isolated/owner-photo-camera.spec.ts --project=${{ matrix.browser }} --retries=0 --repeat-each=3
+      - name: Authentication callback and account switching regression
+        run: npx playwright test --config=playwright.isolated.config.ts tests/isolated/account-switching.spec.ts tests/isolated/registration-verification.spec.ts tests/isolated/phase-2b-auth.spec.ts tests/isolated/notification-realtime-auth-order.spec.ts --project=${{ matrix.browser }} --retries=0
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: failure()
+        with:
+          name: startup-reliability-${{ matrix.browser }}
+          path: test-results/

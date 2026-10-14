@@ -35,12 +35,14 @@ async function addWanted(page:any,setNumber:string,query:string){
   await search(page,query);
   await page.locator(`[data-set="${setNumber}"] [data-want]`).click();
   await expect.poll(()=>page.evaluate((set:string)=>window.__bcThreeUser.data.wishlist.some((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id&&row.set_number===set),setNumber)).toBe(true);
+  await expect(page.locator('.bc-toast')).toHaveText('Added to your wishlist.');
 }
 
 async function makeAvailable(page:any){
   await page.locator('[data-nav="sets"]').first().click();
   await page.locator('[data-exchangeable]').check();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id)?.available_for_exchange)).toBe(true);
+  await expect(page.locator('.bc-toast')).toHaveText('This set is saved as Available to Exchange.');
 }
 
 async function switchActor(page:any,actor:'easwar'|'ramya'|'dhyan'){
@@ -95,6 +97,8 @@ test('Easwar, Ramya and Dhyan share deterministic reciprocal and proposal truth'
   await expect.poll(()=>page.evaluate(()=>decodeURIComponent(location.hash))).toBe('#messages/case:case-1');
   await expect(page.getByRole('region',{name:'Exchange next step'})).toContainText('Proposal pending');
   await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Accept proposal'}).click();
+  await expect(page.locator('.bc-toast')).toHaveText('Exchange accepted. Plan a safe meetup next.');
+  await expect(page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Plan public meetup'})).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('ACCEPTED');
   const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],collection:window.__bcThreeUser.data.collection,wishlist:window.__bcThreeUser.data.wishlist,events:window.__bcThreeUser.data.events}));
   expect(result.exchange.state_version).toBe(2);
@@ -178,6 +182,8 @@ test('an owner cancels an accepted pre-handoff case and both preferences remain 
   await page.locator('#bc-overlay').getByRole('button',{name:'View proposal'}).click();
   await page.locator('[data-view-collector-case="case-1"]').first().click();
   await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Accept proposal'}).click();
+  await expect(page.locator('.bc-toast')).toHaveText('Exchange accepted. Plan a safe meetup next.');
+  await expect(page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Plan public meetup'})).toBeVisible();
   await switchActor(page,'easwar');
   await page.locator('[data-nav="sets"]').first().click();
   const release=page.getByRole('button',{name:'Cancel before handoff'});

@@ -100,7 +100,8 @@
       "qa/hosted-photo-review": false,
       "dev/pending-modules-completion": false,
       "dev/admin-growth-reporting": false,
-      "dev/security-audit-hardening": false
+      "dev/security-audit-hardening": false,
+      "dev/startup-interaction-reliability": false
     }
   }
 }
