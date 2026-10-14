@@ -19,11 +19,22 @@ async function mockCamera(page:Page){
   });
 }
 async function open(page:Page,mode='photo-replace',route='sets'){
+  await page.addInitScript(()=>{
+    const events:any[]=[];(window as any).__photoOpenEvents=events;
+    const record=(event:Event)=>{
+      const target=event.target as Element|null;
+      events.push({type:event.type,hash:location.hash,hidden:document.hidden,target:target?.tagName,selector:target?.id||target?.getAttribute?.('data-change-photo')||target?.getAttribute?.('data-own')||target?.getAttribute?.('data-exchangeable'),picker:!!document.getElementById('bc-owner-photo-form'),overlay:document.getElementById('bc-overlay')?.querySelector('h2')?.textContent});
+      if(events.length>80)events.shift();
+    };
+    for(const name of ['pointerdown','pointerup','click','visibilitychange'])document.addEventListener(name,record,true);
+    for(const name of ['focus','hashchange','pageshow','pagehide'])window.addEventListener(name,record,true);
+  });
   await page.goto(`/v2.html?isolated=${mode}#${route}`);
   if(mode==='photo-replace')await page.locator('[data-change-photo="photo-item-1"]').click();
   else if(mode==='partial')await page.locator('[data-exchangeable="c1"]').click();
   else await page.locator('[data-own]').first().click();
-  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+  try{await expect(page.locator('#bc-owner-photo-form')).toBeVisible()}
+  catch(error){console.log('Isolated photo-open event diagnostics',JSON.stringify(await page.evaluate(()=>(window as any).__photoOpenEvents)));throw error}
 }
 const photo={name:'test-only.png',mimeType:'image/png',buffer:Buffer.from('test-only-gallery-photo')};
 const form=(page:Page)=>page.locator('#bc-owner-photo-form');

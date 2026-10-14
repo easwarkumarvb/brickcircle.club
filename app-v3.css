@@ -120,3 +120,13 @@
 .bc-owner-gallery-slot{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px;border:1px solid var(--bc-border,#ddd);border-radius:10px}
 .bc-owner-gallery-slot strong{font-size:14px}.bc-owner-gallery-slot a{display:block}.bc-owner-gallery-slot img{width:100%;height:140px;object-fit:contain;background:#f4f4f4;border-radius:6px}.bc-owner-gallery-slot .bc-btn{min-height:44px;white-space:normal;padding:7px;font-weight:700}
 @media(max-width:430px){.bc-owner-gallery{gap:6px}.bc-owner-gallery-slot{padding:5px}.bc-owner-gallery-slot img{height:105px}.bc-owner-gallery-slot strong{font-size:13px}}
+
+/* Keep available actions in place while authorized owner photos hydrate. */
+.bc-owner-gallery{--bc-owner-preview-height:140px}
+.bc-owner-gallery .bc-owner-gallery-slot>a,
+.bc-owner-gallery .bc-owner-gallery-slot>span.bc-small{height:var(--bc-owner-preview-height);flex-shrink:0}
+.bc-owner-gallery .bc-owner-gallery-slot>span.bc-small{display:grid;place-items:center;text-align:center;background:#f4f4f4;border-radius:6px}
+.bc-owner-gallery .bc-owner-gallery-slot img{display:block;height:var(--bc-owner-preview-height)}
+.bc-owner-proof-preview{height:140px;display:grid;place-items:center;overflow:hidden;background:#f4f4f4;border-radius:6px;text-align:center}
+.bc-owner-proof-preview img{display:block;width:100%;height:100%;object-fit:contain}
+@media(max-width:430px){.bc-owner-gallery{--bc-owner-preview-height:105px}.bc-owner-proof-preview{height:105px}}

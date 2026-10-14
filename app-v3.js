@@ -5,6 +5,7 @@ const SUPABASE_URL='https://nsxtromjdpdscknadxez.supabase.co';
 const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
 const SUPPORT_EMAIL='support@brickcircle.club';
 let lastHiddenAt=0,lastVisibleAt=Date.now(),lastRoute='';
+let hiddenTransitionGeneration=0,consumedResumeGeneration=0,resumeValidationFlight=null;
 async function resilientAuthLock(name,acquireTimeout,fn){
   const locks=navigator?.locks;if(!locks?.request)return fn();
   const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),acquireTimeout>0?Math.min(acquireTimeout,3500):3500);
@@ -283,10 +284,28 @@ async function recoverSession(){
   return null;
 }
 async function validateResume(){
-  const epoch=authEpoch;if(document.hidden||logoutLocked||explicitLogout)return;const session=await recoverSession();if(!session||epoch!==authEpoch||logoutLocked||explicitLogout)return;
-  const remembered=lastRoute||(()=>{try{return sessionStorage.getItem('bc_last_route')||''}catch(_){return ''}})();
-  if((location.hash||'#home')==='#home'&&remembered&&remembered!=='#home')location.hash=remembered;
-  await refreshRoute();
+  const epoch=authEpoch,generation=hiddenTransitionGeneration,uid=S.user?.id;
+  if(!S.booted||!generation||generation===consumedResumeGeneration||document.hidden||logoutLocked||explicitLogout)return;
+  const existing=resumeValidationFlight;
+  if(existing&&existing.epoch===epoch&&existing.generation===generation&&existing.uid===uid)return existing.promise;
+  const flight={epoch,generation,uid,promise:null};
+  resumeValidationFlight=flight;
+  const current=()=>epoch===authEpoch&&generation===hiddenTransitionGeneration&&S.user?.id===uid&&!document.hidden&&!logoutLocked&&!explicitLogout;
+  flight.promise=(async()=>{
+    try{
+      const session=await withTimeout(recoverSession(),8000);
+      if(!session||session.user?.id!==uid||!current())return;
+      const remembered=lastRoute||(()=>{try{return sessionStorage.getItem('bc_last_route')||''}catch(_){return ''}})();
+      if((location.hash||'#home')==='#home'&&remembered&&remembered!=='#home')location.hash=remembered;
+      await refreshCore();
+      if(epoch!==authEpoch||generation!==hiddenTransitionGeneration||document.hidden||logoutLocked||explicitLogout||(S.user&&S.user.id!==uid))return;
+      if(!S.user){closeOverlay();document.getElementById('bc-drawer-overlay')?.remove();clearNotificationPresentation();stopNotificationRealtime();ownerPhotoIdentityGeneration++;ownerPhotoUrls.clear();resetPeerTrustCaches()}
+      shell();await renderRoute();
+      if(current())consumedResumeGeneration=generation;
+    }catch(_){ /* Failed recovery remains eligible for a later focus retry. */ }
+    finally{if(resumeValidationFlight===flight)resumeValidationFlight=null}
+  })();
+  return flight.promise;
 }
 
 function track(event,properties={}){
@@ -410,7 +429,7 @@ function navigate(page,id=''){
       renderMessagesListPane();return;
     }
   }
-  if(location.hash===next){renderRoute();return}
+  if(location.hash===next){if(S.booted)renderRoute();return}
   location.hash=next;
 }
 
@@ -1169,23 +1188,47 @@ async function hydrateOwnerPhotos(root){for(const row of S.collection){if(!row.o
 async function hydrateMatchPhotos(root){
   const epoch=authEpoch,uid=S.user?.id,generation=ownerPhotoIdentityGeneration;
   const current=()=>epoch===authEpoch&&uid===S.user?.id&&generation===ownerPhotoIdentityGeneration&&!logoutLocked&&root.isConnected;
-  const cards=root.querySelectorAll('.bc-match');
-  for(const [index,match] of S.matches.entries()){
-    const card=cards[index],side=card?.querySelectorAll('.bc-match-side')?.[1]||card?.querySelectorAll('.bc-match-set')?.[1];if(!side||side.querySelector('.bc-owner-proof'))continue;
+  for(const card of root.querySelectorAll('.bc-match[data-requested-item]')){
+    const match=S.matches.find(row=>row.requested_item===card.dataset.requestedItem);
+    const side=card.querySelectorAll('.bc-match-set')[1],preview=side?.querySelector('[data-owner-proof-preview]');
+    if(!match||!preview)continue;
+    const unavailable=()=>{if(current()&&card.isConnected)preview.textContent='Owner photo unavailable';};
     try{
       const {data,error}=await db.from('collection_items').select('id,set_number,owner_photo_path').eq('id',match.requested_item).eq('user_id',match.match_user).eq('available_for_exchange',true).limit(1),path=data?.[0]?.owner_photo_path;
-      if(!current())return;if(error||!path)continue;const url=await signedOwnerPhoto(path);if(!current())return;
-      if(url)side.insertAdjacentHTML('beforeend',`<div class="bc-owner-proof"><img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy"><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div>${ownerGalleryMarkup(match.requested_item)}</div>`);
+      if(!current()||!card.isConnected)return;
+      if(error||!path){unavailable();continue}
+      const url=await signedOwnerPhoto(path);if(!current()||!card.isConnected)return;
+      if(!url){unavailable();continue}
+      preview.innerHTML=`<img src="${attr(url)}" alt="Owner photo of assembled LEGO set ${attr(match.requested_set)}" loading="lazy">`;
+      const image=preview.querySelector('img');image?.addEventListener('error',unavailable,{once:true});
       const gallery=side.querySelector('[data-owner-gallery]');if(gallery)await hydrateOwnerGallery(gallery,data[0]);
-    }catch(_){}
+    }catch(_){unavailable()}
   }
 }
+
 function bindSetActions(root=document){$$('[data-own]',root).forEach(b=>b.onclick=()=>toggleOwned(b.closest('[data-set]').dataset.set,b));$$('[data-want]',root).forEach(b=>b.onclick=()=>toggleWanted(b.closest('[data-set]').dataset.set,b))}
 async function toggleOwned(set,button){
   if(!S.user){showAuth();return}const existing=S.collection.find(x=>x.set_number===set);if(!existing){addOwnedSetWithPhoto(set);return}await removeCollectionItem(existing.id,existing.lego_sets?.name||set,button)
 }
 async function toggleWanted(set,button){
-  if(!S.user){showAuth();return}button.disabled=true;const existing=S.wishlist.find(x=>x.set_number===set);if(existing){const {error}=await db.from('wishlists').delete().eq('id',existing.id).eq('user_id',S.user.id);if(error){fail(error);button.disabled=false;return}}else{const {error}=await db.from('wishlists').insert({user_id:S.user.id,set_number:set,priority:3});if(error){fail(error);button.disabled=false;return}track('wishlist_item_added',{set_number:set})}await refreshCore();await renderRoute();toast(existing?'Removed from wishlist.':'Added to your wishlist.')
+  if(!S.user){showAuth();return}
+  const uid=S.user.id,epoch=authEpoch,token=S.renderToken;
+  const sameAccount=()=>epoch===authEpoch&&S.user?.id===uid&&!logoutLocked&&!explicitLogout;
+  const sameView=()=>sameAccount()&&token===S.renderToken;
+  button.disabled=true;
+  const existing=S.wishlist.find(x=>x.set_number===set);
+  const {error}=existing
+    ?await db.from('wishlists').delete().eq('id',existing.id).eq('user_id',uid)
+    :await db.from('wishlists').insert({user_id:uid,set_number:set,priority:3});
+  if(!sameAccount())return;
+  if(error){if(sameView()){fail(error);button.disabled=false}return}
+  if(!existing)track('wishlist_item_added',{set_number:set});
+  await refreshCore();
+  // Update this account's data without replacing a newer view.
+  if(!sameView())return;
+  await renderRoute();
+  if(sameAccount()&&S.renderToken===token+1)
+    toast(existing?'Removed from wishlist.':'Added to your wishlist.');
 }
 
 async function renderSets(token,legacy='sets'){
@@ -1287,7 +1330,7 @@ async function renderMatches(token){
   if(!current())return;
   page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div><div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>openMatchInMessages(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
 }
-function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
+function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium" data-requested-item="${attr(m.requested_item)}"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small><div class="bc-owner-proof"><div class="bc-owner-proof-preview" data-owner-proof-preview>Loading owner photo</div><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div>${ownerGalleryMarkup(m.requested_item)}</div></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
 async function showProposal(i){
   const epoch=logoutEpoch,uid=S.user?.id,m=S.matches[i],current=()=>epoch===logoutEpoch&&!logoutLocked&&S.user?.id===uid;
   if(!m||!current())return;await loadPeerReputation(m.match_user);if(!current())return;
@@ -2751,14 +2794,21 @@ async function boot(){
     if(S.user||sessionResult.error)await signOut(true);else{shell();await renderRoute();showAuth()}
     if(!logoutLocked)renderVerificationEntry(document.getElementById('bc-overlay'));return;
   }
-  if(S.user)await syncProviderAvatar();if(!current())return;
+  // Complete bounded startup bookkeeping before exposing usable controls.
+  // A second shell replacement after the first render can discard a click.
+  if(S.user)await settledTimeout(Promise.all([
+    syncProviderAvatar(),
+    !signinIntent&&pendingAuthChange?.[0]!=='PASSWORD_RECOVERY'
+      ?claimReferralAndProvider()
+      :Promise.resolve()
+  ]),8000);
+  if(!current())return;
   if(S.user)await refreshCore();if(!current())return;
   S.booted=true;shell();await renderRoute();if(!current())return;
   if(verifyIntent&&!S.user){showAuth();if(!pendingVerification())renderVerificationEntry(document.getElementById('bc-overlay'))}
   if(pendingAuthChange?.[0]==='PASSWORD_RECOVERY'){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession);return}
   if(S.user&&!signinIntent){
-    await claimReferralAndProvider();if(!current())return;await refreshCore();if(!current())return;
-    shell();await renderRoute();if(!current())return;await startNotificationRealtime().catch(()=>{});if(!current())return;
+    await startNotificationRealtime().catch(()=>{});if(!current())return;
     const onboardingShown=await onboardingIfNeeded();if(!current())return;if(!onboardingShown&&!showNextUnreadNotificationNotice())showLoginMatchNotice();
   }
   if(['oauth','code','error','error_code','error_description'].some(name=>new URLSearchParams(location.search).has(name)))cleanOAuthQuery();
@@ -2797,8 +2847,8 @@ function handleAuthChange(event,session,confirmedInteractive=false){
 }
 db.auth.onAuthStateChange(handleAuthChange);
 window.addEventListener('hashchange',()=>{if(document.getElementById('bc-overlay')?.bcDispose)closeOverlay();if(S.booted)renderRoute()});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){lastHiddenAt=Date.now();rememberRoute();return}lastVisibleAt=Date.now();validateResume().catch(()=>{});reconcileNotifications().catch(()=>{})});
-window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();rememberRoute()});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){lastHiddenAt=Date.now();hiddenTransitionGeneration++;rememberRoute();return}lastVisibleAt=Date.now();validateResume().catch(()=>{});reconcileNotifications().catch(()=>{})});
+window.addEventListener('pagehide',()=>{lastHiddenAt=Date.now();hiddenTransitionGeneration++;rememberRoute()});
 window.addEventListener('pageshow',event=>{lastVisibleAt=Date.now();if(event.persisted)validateResume().catch(()=>{})});
 window.addEventListener('focus',()=>{lastVisibleAt=Date.now();validateResume().catch(()=>{})});
 window.addEventListener('online',()=>reconcileNotifications().catch(()=>{}));
