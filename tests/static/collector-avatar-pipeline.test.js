@@ -21,9 +21,9 @@ assert.match(app,/db\.from\('public_profiles'\)\.select\('id,display_name,countr
 assert.doesNotMatch(app,/S\.matches\.forEach\([^\n]+db\.from\('profiles'\)/);
 assert.match(app,/function wireAvatars\(/);
 assert.match(app,/referrerpolicy="no-referrer"/);
-assert.match(app,/if\(pe\)\{await removeOwnedAvatar\(data\.path\);return fail\(pe\)\}/);
-assert.match(app,/previous&&previous!==data\.path&&ownedAvatarStoragePath\(previous\)/);
-assert.match(app,/update\(\{avatar_url:data\.path,avatar_source:'upload',updated_at:new Date\(\)\.toISOString\(\)\}\)/);
+assert.match(app,/persistPhotoMetadata\(owner,/);
+assert.match(app,/ownedAvatarStoragePath\(previous,owner.id\)/);
+assert.match(app,/avatar_url:path,avatar_source:'upload'/);
 assert.match(app,/db\.rpc\('sync_my_provider_avatar'\)/);
 assert.ok(app.includes("if(/^https:\\/\\//i.test(value))return value;"), 'HTTPS external avatars must be allowed');
 assert.ok(app.includes("if(/^[a-z][a-z0-9+.-]*:/i.test(value))return '';"), 'non-HTTPS schemes must fall back safely');

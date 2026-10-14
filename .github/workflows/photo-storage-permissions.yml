@@ -6,8 +6,10 @@ on:
   pull_request:
     paths:
       - 'qa/photo-storage/**'
+      - 'supabase/migrations/*collection_gallery*'
       - 'app-v3.js'
       - 'tests/static/owner-photo-signed-url-runtime.test.mjs'
+      - 'tests/static/owner-photo-gallery-runtime.test.mjs'
       - 'supabase/migrations/*owner_photo*'
       - 'supabase/migrations/*bind_collection_photo_reads*'
       - 'supabase/migrations/*participant_collection_photo_access*'
@@ -42,7 +44,7 @@ jobs:
         with:
           node-version: '22'
       - name: Actual signed photo URL cache and account isolation contracts
-        run: node --test tests/static/owner-photo-signed-url-runtime.test.mjs
+        run: node --test tests/static/owner-photo-signed-url-runtime.test.mjs tests/static/owner-photo-gallery-runtime.test.mjs
       - name: Actual current collection and Storage policy migrations
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/base.sql
       - name: Owner writes, match and legacy participant reads, outsider and anonymous denial
@@ -77,6 +79,17 @@ jobs:
         run: |
           set -o pipefail
           psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/forged-reference.sql | tee photo-reference-after.txt
+      - name: Apply supplemental gallery policy twice without widening collection access
+        run: |
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014090000_collection_gallery_owner_binding.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261014090000_collection_gallery_owner_binding.sql
+      - name: Gallery owner, reciprocal match, canonical archive and privacy evidence
+        run: |
+          set -o pipefail
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/gallery.sql | tee photo-gallery.txt
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/permissions.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/canonical-participant.sql
+          psql "$DSN" -v ON_ERROR_STOP=1 -f qa/photo-storage/forged-reference.sql
       - name: Retain synthetic permission evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -87,5 +100,6 @@ jobs:
             photo-permission-after.txt
             photo-reference-before.txt
             photo-reference-after.txt
+            photo-gallery.txt
           if-no-files-found: ignore
           retention-days: 14

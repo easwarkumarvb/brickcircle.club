@@ -16,7 +16,7 @@
     "test:qa-all": "playwright test",
     "test:security-contracts": "node tests/static/legacy-exchange-rpc-lockdown.test.js && node tests/static/admin-dashboard-authorization.test.js && node --test tests/static/admin-marketplace-api.test.mjs",
     "test:owner-review-recovery": "node tests/static/owner-review-recovery.test.js",
-    "test:collector-avatar": "node tests/static/collector-avatar-pipeline.test.js",
+    "test:collector-avatar": "node tests/static/collector-avatar-pipeline.test.js && node --test tests/static/photo-metadata-commit-runtime.test.mjs",
     "test:conversation-contracts": "node --test tests/static/person-first-draft-runtime.test.mjs tests/static/person-first-timestamp-runtime.test.mjs tests/static/person-first-compose-rerender.test.mjs",
     "test:ux": "playwright test --config playwright.ux.config.ts",
     "test:ux:guards": "node --test tests/hosted/ux-triage.test.mjs tests/hosted/ux-gallery.test.mjs tests/hosted/ux-transport.test.mjs"
