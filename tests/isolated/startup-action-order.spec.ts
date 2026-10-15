@@ -203,6 +203,7 @@ async function signingGate(page:any,view:'collection'|'match',outcome='success')
   await page.goto(view==='collection'?'/v2.html?isolated=photo-replace#sets':'/v2.html?isolated=matched#matches');
   await expect.poll(()=>page.evaluate(()=>(window as any).__signingGate.calls)).toBeGreaterThan(0);
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  if(view==='match')expect(await page.evaluate(()=>(window as any).__bcIsolated.queries.some((query:any)=>query.table==='collection_items'&&query.filters.some((filter:any[])=>filter[0]==='id'&&filter[1]==='other-item-1')&&query.filters.some((filter:any[])=>filter[0]==='user_id'&&filter[1]==='00000000-0000-4000-8000-000000000099')&&query.filters.some((filter:any[])=>filter[0]==='available_for_exchange'&&filter[1]===true)))).toBe(true);
   if(view==='match'&&await page.locator('[data-dismiss-match]').count())await page.locator('[data-dismiss-match]').click();
   await page.evaluate((value:string)=>(window as any).__signingGate.outcome=value,outcome);
 }
