@@ -2564,8 +2564,24 @@ function renderInlineProposal(peerId){
   const host=$('#bc-collector-proposal');if(!host||S.user?.id!==collectorFocus?.uid)return;
   const matches=S.matches.filter(m=>m.match_user===peerId);
   const pending=pendingMatchProposal?.uid===S.user.id&&pendingMatchProposal.peerId===peerId?pendingMatchProposal:null;
-  host.innerHTML=`<div class="bc-collector-match-options">${matches.map(m=>`<button class="bc-btn" type="button" data-match-pair="${attr(m.offered_item)}:${attr(m.requested_item)}">Propose ${esc(m.offered_name)} ⇄ ${esc(m.requested_name)}</button>`).join('')}</div>${pending?`<dialog class="bc-collector-sheet" aria-label="Propose an exchange"><div class="bc-collector-sheet-head"><h2>Propose an exchange</h2><button class="bc-btn" type="button" data-close-proposal aria-label="Close exchange proposal">×</button></div><form class="bc-card bc-pad bc-form" id="bc-inline-proposal"><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p><label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form></dialog>`:''}`;
-  $$('[data-match-pair]',host).forEach(button=>button.onclick=()=>{const m=matches.find(row=>`${row.offered_item}:${row.requested_item}`===button.dataset.matchPair);if(m){pendingMatchProposal={uid:S.user.id,peerId,offered:m.offered_item,requested:m.requested_item};renderInlineProposal(peerId)}});
+  const optionsMarkup=`<div class="bc-collector-match-options">${matches.map(m=>`<button class="bc-btn" type="button" data-match-pair="${attr(m.offered_item)}:${attr(m.requested_item)}">Propose ${esc(m.offered_name)} ⇄ ${esc(m.requested_name)}</button>`).join('')}</div>`;
+  const bindMatchOptions=()=>$$('[data-match-pair]',host).forEach(button=>button.onclick=()=>{
+    const m=matches.find(row=>`${row.offered_item}:${row.requested_item}`===button.dataset.matchPair);
+    if(m){
+      const same=pendingMatchProposal?.uid===S.user.id&&pendingMatchProposal.peerId===peerId&&pendingMatchProposal.offered===m.offered_item&&pendingMatchProposal.requested===m.requested_item;
+      if(!same)pendingMatchProposal={uid:S.user.id,peerId,offered:m.offered_item,requested:m.requested_item};
+      renderInlineProposal(peerId);
+    }
+  });
+  const existingForm=$('#bc-inline-proposal',host),existingDialog=$('dialog',host);
+  const sameOpenProposal=existingDialog?.open&&pending&&existingForm?.dataset.proposalUid===pending.uid&&existingForm.dataset.proposalPeer===pending.peerId&&existingForm.dataset.proposalOffered===pending.offered&&existingForm.dataset.proposalRequested===pending.requested;
+  if(sameOpenProposal){
+    const options=$('.bc-collector-match-options',host);if(options)options.outerHTML=optionsMarkup;
+    bindMatchOptions();
+    return;
+  }
+  host.innerHTML=`${optionsMarkup}${pending?`<dialog class="bc-collector-sheet" aria-label="Propose an exchange"><div class="bc-collector-sheet-head"><h2>Propose an exchange</h2><button class="bc-btn" type="button" data-close-proposal aria-label="Close exchange proposal">×</button></div><form class="bc-card bc-pad bc-form" id="bc-inline-proposal" data-proposal-uid="${attr(pending.uid)}" data-proposal-peer="${attr(pending.peerId)}" data-proposal-offered="${attr(pending.offered)}" data-proposal-requested="${attr(pending.requested)}"><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p><label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form></dialog>`:''}`;
+  bindMatchOptions();
   const dialog=$('dialog',host),form=$('#bc-inline-proposal',host);
   if(dialog){
     const close=$('[data-close-proposal]',dialog);

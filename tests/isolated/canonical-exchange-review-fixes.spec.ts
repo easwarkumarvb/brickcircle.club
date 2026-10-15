@@ -226,6 +226,14 @@ test('proposal and message retries reuse keys while a committed transition disab
   await proposal.evaluate(()=>window.__bcThreeUser.loseNextResponse('create_exchange_case'));
   await proposal.locator('[data-propose]').click();
   const send=proposal.locator('#bc-inline-proposal').getByRole('button',{name:'Send proposal'});
+  const form=proposal.locator('#bc-inline-proposal'),message=form.locator('[name="message"]');
+  await message.fill('Keep this proposal draft while matches refresh.');
+  const formNode=await form.elementHandle();
+  expect(formNode).not.toBeNull();
+  await proposal.locator('[data-match-pair]').evaluate((button:HTMLButtonElement)=>new Promise(resolve=>setTimeout(()=>{button.click();resolve(null)},0)));
+  expect(await formNode!.evaluate((node:HTMLElement)=>node.isConnected)).toBe(true);
+  await expect(message).toHaveValue('Keep this proposal draft while matches refresh.');
+  await expect(send).toBeVisible();
   await send.click();
   await expect.poll(()=>proposal.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='create_exchange_case').length)).toBe(1);
   await expect(send).toBeEnabled();await send.click();
