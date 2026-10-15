@@ -2806,6 +2806,7 @@ async function boot(){
   ]),8000);
   if(!current())return;
   if(S.user)await refreshCore();if(!current())return;
+  consumedResumeGeneration=hiddenTransitionGeneration;
   S.booted=true;shell();await renderRoute();if(!current())return;
   if(verifyIntent&&!S.user){showAuth();if(!pendingVerification())renderVerificationEntry(document.getElementById('bc-overlay'))}
   if(pendingAuthChange?.[0]==='PASSWORD_RECOVERY'){const [event,nextSession]=pendingAuthChange;pendingAuthChange=null;handleAuthChange(event,nextSession);return}

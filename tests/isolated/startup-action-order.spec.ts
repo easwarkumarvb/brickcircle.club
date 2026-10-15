@@ -23,6 +23,25 @@ test('startup finishes delayed provider bookkeeping before exposing usable contr
   expect(await page.evaluate(()=>(window as any).__startupGate.completed)).toBe(true);
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
 });
+test('a hidden transition during startup cannot replace a newly opened photo picker',async({page})=>{
+  await providerGate(page);
+  await page.goto('/v2.html?isolated=photo-replace#sets');
+  await expect.poll(()=>page.evaluate(()=>(window as any).__startupGate.started)).toBe(true);
+  await page.evaluate(()=>{
+    const auth=(window as any).BC_SUPABASE.auth,original=auth.getSession.bind(auth);
+    (window as any).__startupResumeChecks=0;
+    auth.getSession=(...args:any[])=>{(window as any).__startupResumeChecks++;return original(...args)};
+    window.dispatchEvent(new Event('pagehide'));
+  });
+  await page.evaluate(()=>(window as any).__startupGate.release());
+  const action=page.locator('[data-change-photo="photo-item-1"]');
+  await expect(action).toBeVisible();
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
+  await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+  expect(await page.evaluate(()=>(window as any).__startupResumeChecks)).toBe(0);
+  await action.click();
+  await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
+});
 test('optional startup deadline permits entry without a late shell replacement',async({page})=>{
   await page.clock.install();
   await providerGate(page);
