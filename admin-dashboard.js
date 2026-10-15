@@ -11,6 +11,7 @@
   const date = value => value ? new Date(value).toLocaleString(undefined, {dateStyle:'medium', timeStyle:'short'}) : '—';
   const sections = {
     overview: ['Marketplace overview', 'A clear view of your collector community.'],
+    growth: ['Growth reporting', 'Signup activation, exchange momentum and city liquidity.'],
     members: ['Collector community', 'Search members and inspect collection and wishlist activity.'],
     catalogue: ['Set catalogue', 'Manage discovery visibility. Existing collections and exchanges remain available.'],
     exchanges: ['Exchange activity', 'Inspect current stages and the collector action timeline.'],
@@ -25,6 +26,8 @@
   let mfaGeneration = 0;
   let lastUserId = null;
   let filters = {}, detailState = null;
+  let growthDays = 28, growthReport = null;
+  const exportUrls = new Set();
   const stages=['PROPOSED','DECLINED','WITHDRAWN','EXPIRED','ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIRMED','INSPECTION','HANDOFF_PENDING','HANDOFF_ISSUE','ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED','COMPLETED'];
   const metrics={members:['members',{}],new_members:['members',{new:true}],owned_sets:['collection',{}],wanted_sets:['wishlist',{}],available_sets:['collection',{available:true}],exchanges:['exchanges',{}],completed:['exchanges',{stage:'COMPLETED'}],overdue:['exchanges',{overdue:true}],support_open:['support',{status:'actionable'}],catalogue_active:['catalogue',{visible:true}]};
   let accessCertain = false, lastUpdated = null, renderedView = null;
@@ -35,6 +38,7 @@
   }
   function lockWrites() {
     accessCertain = false;
+    $('export-report').disabled = true;
     if(!pending) $('confirm-change').disabled=true;
     document.querySelectorAll('[data-action="catalogue"], [data-action="support"], [data-action="support_note"]').forEach(button => { button.disabled = true; });
   }
@@ -48,6 +52,7 @@
     requests.forEach(request => request.cancel()); requests.clear();
     accessCertain=false; lastUpdated=null; renderedView=null;
     rows = []; total = 0; change = null; pending = null; query=''; page=0; lastUserId=null; filters={}; detailState=null;
+    clearGrowth();
     $('results').replaceChildren(); $('detail-body').replaceChildren();
     $('detail-dialog').close(); $('change-dialog').close();
     $('mfa-dialog').close(); $('mfa-qr').removeAttribute('src'); $('mfa-secret').textContent=''; $('mfa-code').value='';
@@ -210,6 +215,124 @@
     const count=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0?number(value):'Unavailable';
     $('results').innerHTML = `<div class="metrics">${Object.entries(labels).map(([key,label])=>`<button type="button" class="metric" data-metric="${key}" ${count(data.summary?.[key])==='Unavailable'?'disabled':''}><span class="metric-label">${label}</span><strong>${count(data.summary?.[key])}</strong></button>`).join('')}</div><div class="panels"><section class="panel"><h2>Exchange stages</h2>${Array.isArray(data.states)?data.states.map(row=>`<button type="button" class="bar-row" data-stage="${esc(row.state)}"><span>${esc(row.state.replaceAll('_',' '))}</span><strong>${count(row.count)}</strong></button>`).join('') || '<p>No exchanges yet.</p>':'<p>Unavailable</p>'}</section><section class="panel"><h2>Top collector cities</h2>${Array.isArray(data.cities)?data.cities.map(row=>`<div class="bar-row"><span>${esc(row.city)}</span><strong>${count(row.members)}</strong></div>`).join('') || '<p>No members yet.</p>':'<p>Unavailable</p>'}</section></div>`;
   }
+  const isCount = value => Number.isSafeInteger(value) && value >= 0;
+  const GROWTH_KPIS = [['new_registrations','New registrations'],['active_exchange_collectors','Active exchange collectors'],['proposals','Proposals'],['accepted','Accepted'],['handoffs','Handoffs'],['completed_exchanges','Completed exchanges'],['repeat_collectors','Repeat collectors'],['cancellations','Cancellations']];
+  // Client-side mirror of the Edge growth-report contract. A report that fails any
+  // check is never rendered, so unavailable data can never appear as a fabricated zero.
+  function parseReport(value, days) {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 || value.days !== days) return null;
+    const validDate = entry => typeof entry === 'string' && Number.isFinite(Date.parse(entry));
+    if (!['generated_at','start_at','end_at','previous_start_at'].every(key => validDate(value[key]))) return null;
+    const counts = (group, keys) => Boolean(group) && typeof group === 'object' && !Array.isArray(group) && keys.every(key => isCount(group[key]));
+    const metrics = value.metrics;
+    if (!metrics || typeof metrics !== 'object' || Array.isArray(metrics) ||
+      !GROWTH_KPIS.every(([key]) => counts(metrics[key], ['current','previous']))) return null;
+    if (!counts(value.activation, ['registered','email_verified','ready'])) return null;
+    if (!counts(value.exchange_cohort, ['proposed','accepted','handed_off','completed','cancelled'])) return null;
+    if (!counts(value.health, ['active_custody','overdue_returns','unresolved_issues','open_support'])) return null;
+    const daily = value.daily;
+    if (!Array.isArray(daily) || daily.length > days ||
+      daily.some(row => !row || typeof row !== 'object' || Array.isArray(row) || !validDate(row.date) || !isCount(row.registrations) || !isCount(row.completed_exchanges))) return null;
+    const cities = value.cities;
+    if (!Array.isArray(cities) || cities.length > 20 ||
+      cities.some(row => !row || typeof row !== 'object' || Array.isArray(row) || typeof row.country !== 'string' || typeof row.city !== 'string' ||
+        !isCount(row.registered) || !isCount(row.ready) || !isCount(row.available_sets) || !isCount(row.completed_exchanges))) return null;
+    const coverage = Array.isArray(value.coverage) && value.coverage.length <= 40 && value.coverage.every(item => typeof item === 'string') ? value.coverage : null;
+    const definitions = value.definitions && typeof value.definitions === 'object' && !Array.isArray(value.definitions) &&
+      Object.entries(value.definitions).every(([, text]) => typeof text === 'string') ? Object.entries(value.definitions) : null;
+    return {version:1, days, generated_at:value.generated_at, start_at:value.start_at, end_at:value.end_at, previous_start_at:value.previous_start_at,
+      metrics, activation:value.activation, exchange_cohort:value.exchange_cohort, daily, cities, health:value.health, coverage, definitions};
+  }
+  function revokeExports() { exportUrls.forEach(url => URL.revokeObjectURL(url)); exportUrls.clear(); }
+  function clearGrowth() {
+    growthReport = null; revokeExports();
+    $('growth-content').replaceChildren(); $('growth-meta').textContent = '';
+    $('export-report').disabled = true;
+    document.querySelectorAll('[data-range]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.range) === growthDays)));
+  }
+  const growthCount = value => isCount(value) ? number(value) : 'Unavailable';
+  const growthDelta = (current, previous) => {
+    if (!isCount(current) || !isCount(previous)) return 'Unavailable';
+    if (previous === 0) return 'No previous baseline';
+    const diff = current - previous, pct = diff / previous * 100;
+    return `${diff >= 0 ? '+' : ''}${number(diff)} vs previous (${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%)`;
+  };
+  const growthStamp = value => { try { return `${new Date(value).toISOString().slice(0,16).replace('T',' ')} UTC`; } catch { return 'Unavailable'; } };
+  function renderGrowth(report) {
+    const card = (label, value, note, extra) => `<div class="kpi"><span class="kpi-label">${esc(label)}</span><strong class="kpi-value">${esc(growthCount(value))}</strong>${note ? `<span class="kpi-note">${esc(note)}</span>` : ''}${extra ? `<span class="kpi-note kpi-delta">${esc(extra)}</span>` : ''}</div>`;
+    $('growth-meta').textContent = `Current period ${growthStamp(report.start_at)} → ${growthStamp(report.end_at)} · previous period ${growthStamp(report.previous_start_at)} → ${growthStamp(report.start_at)} · generated ${growthStamp(report.generated_at)}`;
+    const daily = report.daily.length ? table(['Date','Registrations','Completed exchanges'], report.daily.map(row => [esc(row.date), number(row.registrations), number(row.completed_exchanges)])) : '<div class="empty">No daily activity recorded in this period.</div>';
+    const cities = report.cities.length ? table(['Country','City','Registered','Ready','Available sets','Completed exchanges'], report.cities.map(row => [esc(row.country), `<strong>${esc(row.city)}</strong>`, number(row.registered), number(row.ready), number(row.available_sets), number(row.completed_exchanges)])) : '<div class="empty">No city liquidity data for this period.</div>';
+    const stages = [['proposed','Proposed'],['accepted','Accepted'],['handed_off','Handed off'],['completed','Completed']];
+    $('growth-content').innerHTML = `
+      <h2 class="report-heading">Period comparison</h2>
+      <p class="muted">Each value compares this period with the immediately preceding period of equal length. Unavailable counts are never shown as zero.</p>
+      <div class="kpis">${GROWTH_KPIS.map(([key, label]) => card(label, report.metrics[key].current, `Previous period: ${growthCount(report.metrics[key].previous)}`, growthDelta(report.metrics[key].current, report.metrics[key].previous))).join('')}</div>
+      <section class="report-section"><h2>Signup activation cohort</h2>
+        <div class="kpis">${card('Registered', report.activation.registered)}${card('Email verified', report.activation.email_verified)}${card('Ready', report.activation.ready, 'Current snapshot')}</div>
+        <p class="muted">Ready is the current signup-cohort snapshot: verified email, adult confirmation, named country and city, an owned set with a primary photo, and a wishlist. Availability and historical conversion are not inferred.</p></section>
+      <section class="report-section"><h2>Exchange-created cohort</h2>
+        <ol class="funnel">${stages.map(([key, label]) => `<li><span>${esc(label)}</span><strong>${esc(growthCount(report.exchange_cohort[key]))}</strong></li>`).join('')}</ol>
+        <p class="muted">Maturing cohort: stage milestones recorded by report end; counts overlap and imported history may be incomplete, including ${esc(growthCount(report.exchange_cohort.cancelled))} cancelled. Not a completion-window rate.</p></section>
+      <section class="report-section"><h2>Daily trend</h2>${daily}</section>
+      <section class="report-section"><h2>City liquidity</h2><p class="muted">Available sets is current supply, not matched reciprocal exchanges.</p>${cities}</section>
+      <section class="report-section"><h2>Health snapshot</h2>
+        <div class="kpis">${card('Active custody', report.health.active_custody)}${card('Overdue returns', report.health.overdue_returns)}${card('Exchanges with unresolved issues', report.health.unresolved_issues)}${card('Open support', report.health.open_support)}</div></section>
+      <details class="report-notes"><summary>Metric definitions and data coverage</summary>
+        <h3>Definitions</h3>${report.definitions ? `<dl class="definition-list">${report.definitions.map(([key, text]) => `<dt>${esc(key.replaceAll('_',' '))}</dt><dd>${esc(text)}</dd>`).join('')}</dl>` : '<p>Definitions unavailable.</p>'}
+        <h3>Data coverage</h3>${report.coverage ? `<ul>${report.coverage.map(item => `<li>${esc(item)}</li>`).join('')}</ul>` : '<p>Coverage unavailable.</p>'}</details>`;
+  }
+  const csvCell = value => {
+    let text = value === null || value === undefined ? '' : String(value);
+    if (/^[\s\uFEFF]*[=+\-@]/.test(text) || /^[\t\r\n]/.test(text)) text = `'${text}`;
+    return `"${text.replaceAll('"','""')}"`;
+  };
+  const csvCount = value => isCount(value) ? String(value) : '';
+  function reportCsv(report) {
+    const lines = [];
+    const push = cells => lines.push(cells.map(csvCell).join(','));
+    push(['BrickCircle growth report', `Last ${report.days} days`]);
+    push(['Generated at', report.generated_at, 'Period start', report.start_at, 'Period end', report.end_at, 'Previous period start', report.previous_start_at]);
+    lines.push('');
+    push(['Metric', 'Current', 'Previous', 'Change vs previous']);
+    GROWTH_KPIS.forEach(([key, label]) => push([label, csvCount(report.metrics[key].current), csvCount(report.metrics[key].previous), growthDelta(report.metrics[key].current, report.metrics[key].previous)]));
+    lines.push('');
+    push(['Signup activation cohort', 'Count']);
+    push(['Registered', csvCount(report.activation.registered)]);
+    push(['Email verified', csvCount(report.activation.email_verified)]);
+    push(['Ready (current snapshot)', csvCount(report.activation.ready)]);
+    lines.push('');
+    push(['Exchange-created cohort (maturing)', 'Count']);
+    [['proposed','Proposed'],['accepted','Accepted'],['handed_off','Handed off'],['completed','Completed'],['cancelled','Cancelled']].forEach(([key, label]) => push([label, csvCount(report.exchange_cohort[key])]));
+    lines.push('');
+    push(['Date', 'Registrations', 'Completed exchanges']);
+    report.daily.forEach(row => push([row.date, csvCount(row.registrations), csvCount(row.completed_exchanges)]));
+    lines.push('');
+    push(['Country', 'City', 'Registered', 'Ready', 'Available sets (current supply)', 'Completed exchanges']);
+    report.cities.forEach(row => push([row.country, row.city, csvCount(row.registered), csvCount(row.ready), csvCount(row.available_sets), csvCount(row.completed_exchanges)]));
+    lines.push('');
+    push(['Health snapshot', 'Count']);
+    [['active_custody','Active custody'],['overdue_returns','Overdue returns'],['unresolved_issues','Exchanges with unresolved issues'],['open_support','Open support']].forEach(([key, label]) => push([label, csvCount(report.health[key])]));
+    return lines.join('\r\n');
+  }
+  $('export-report').addEventListener('click', () => {
+    if (!accessCertain || !growthReport) return;
+    let url;
+    try {
+      url = URL.createObjectURL(new Blob([reportCsv(growthReport)], {type:'text/csv;charset=utf-8'}));
+      const link = document.createElement('a');
+      link.href = url; link.download = `brickcircle-growth-${growthReport.days}-days.csv`;
+      document.body.append(link); link.click(); link.remove();
+      exportUrls.add(url);
+    } catch { status('The report export could not be prepared. Refresh and retry.', true); return; }
+    setTimeout(() => { URL.revokeObjectURL(url); exportUrls.delete(url); }, 0);
+    status('Growth report downloaded as CSV. Nothing is stored in this browser.');
+  });
+  document.querySelectorAll('[data-range]').forEach(button => button.addEventListener('click', () => {
+    const days = Number(button.dataset.range);
+    if (![7, 28, 90].includes(days) || days === growthDays) return;
+    growthDays = days; load();
+  }));
   function renderRows() {
     const action = (name, index, text) => `<button type="button" data-action="${name}" data-index="${index}">${text}</button>`;
     let labels, cells;
@@ -242,15 +365,20 @@
     if($('detail-dialog').open) $('detail-dialog').close();
     $('detail-body').replaceChildren();
     cancelStaleReads();
-    const view = JSON.stringify([section,page,query,filters]);
+    const growth = section === 'growth';
+    // The date range is part of the view fingerprint, so a report from a previous
+    // range can never replace the newly requested range or remain on screen.
+    const view = JSON.stringify(growth ? [section, growthDays] : [section,page,query,filters]);
     lockWrites();
     $('refresh').disabled = true;
-    if (view !== renderedView) { $('dashboard').hidden = true; $('results').replaceChildren(); rows = []; lastUpdated=null; }
+    if (view !== renderedView) { $('dashboard').hidden = true; $('results').replaceChildren(); rows = []; lastUpdated=null; clearGrowth(); }
+    $('growth-panel').hidden = !growth;
     $('page-title').textContent = sections[section][0]; $('page-description').textContent = sections[section][1];
     document.querySelectorAll('[data-section]').forEach(button=>{if(button.dataset.section===section) button.setAttribute('aria-current','page'); else button.removeAttribute('aria-current');});
+    if (growth) document.querySelectorAll('[data-range]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.range) === growthDays)));
     status('Loading current marketplace data…');
     const structured=['support','exchanges'].includes(section);
-    $('record-filters').hidden=!structured&&!Object.keys(filters).length;
+    $('record-filters').hidden=growth||(!structured&&!Object.keys(filters).length);
     $('structured-filters').hidden=!structured;
     const options=section==='support'?['open','in_progress','resolved','actionable']:stages;
     $('record-status').innerHTML=`<option value="">Any status / stage</option>${options.map(value=>`<option value="${value}">${esc(value.replaceAll('_',' '))}</option>`).join('')}`;
@@ -258,15 +386,21 @@
     $('record-age').hidden=section!=='support'; document.querySelector('label[for="record-age"]').hidden=section!=='support'; $('record-age').value=filters.age || '';
     $('filter-summary').textContent=Object.entries(filters).map(([key,value])=>`${key.replaceAll('_',' ')}: ${String(value).replaceAll('_',' ')}`).join(' · ') || 'All records';
     try {
-      const data = await api({operation:'read', version:2, section, query, page, filters}, () => id === loadId);
+      const data = await api(growth ? {operation:'report', version:1, days:growthDays} : {operation:'read', version:2, section, query, page, filters}, () => id === loadId);
       if (id !== loadId) return;
-      $('search-form').hidden = section === 'overview'; $('pagination').hidden = section === 'overview';
-      $('search-hint').textContent = {members:'Name, email, city or country',catalogue:'Set number, name or theme',exchanges:'Exchange ID, collector ID or stage',support:'Request ID, exchange ID, category or status (open, in_progress, resolved)',audit:'Record ID, action or administrator ID'}[section] || '';
-      if (section === 'overview') renderOverview(data);
-      else {
-        rows = data.rows || []; total = data.total || 0; renderRows();
-        $('previous').disabled = page === 0; $('next').disabled = (page+1)*25 >= total;
-        $('page-count').textContent = `${total ? page*25+1 : 0}–${Math.min((page+1)*25,total)} of ${number(total)} records`;
+      $('search-form').hidden = section === 'overview' || growth; $('pagination').hidden = section === 'overview' || growth;
+      if (growth) {
+        const report = parseReport(data, growthDays);
+        if (!report) throw new AdminError('unavailable', 'Growth report could not be verified. Refresh to retry.');
+        growthReport = report; renderGrowth(report); $('export-report').disabled = false;
+      } else {
+        if (section === 'overview') renderOverview(data);
+        else {
+          rows = data.rows || []; total = data.total || 0; renderRows();
+          $('previous').disabled = page === 0; $('next').disabled = (page+1)*25 >= total;
+          $('page-count').textContent = `${total ? page*25+1 : 0}–${Math.min((page+1)*25,total)} of ${number(total)} records`;
+        }
+        $('search-hint').textContent = {members:'Name, email, city or country',catalogue:'Set number, name or theme',exchanges:'Exchange ID, collector ID or stage',support:'Request ID, exchange ID, category or status (open, in_progress, resolved)',audit:'Record ID, action or administrator ID'}[section] || '';
       }
       accessCertain=true; lastUpdated=data.generated_at; renderedView=view;
       if(change&&!submitting) $('confirm-change').disabled=false;

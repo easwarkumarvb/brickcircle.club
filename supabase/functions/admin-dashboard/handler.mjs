@@ -2,6 +2,35 @@ import {readBoundedJSON, RequestBodyError} from '../_shared/bounded-json.mjs';
 // Dependency injection keeps the same authentication boundary testable in Node and Deno.
 export function createHandler(createClient, env) {
   const isUUID=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  const isCount=value=>Number.isSafeInteger(value)&&value>=0;
+  const isDate=value=>typeof value==='string'&&/^\d{4}-\d{2}-\d{2}/.test(value)&&Number.isFinite(Date.parse(value));
+  // Growth report validation is deliberately separate from the read-rows contract:
+  // aggregate-only numeric results, bounded arrays, checked dates and version.
+  const validReport=(value,days)=>{
+    if(!value||typeof value!=='object'||Array.isArray(value))return false;
+    if(value.version!==1||value.days!==days)return false;
+    if(!isDate(value.generated_at)||!isDate(value.start_at)||!isDate(value.end_at)||!isDate(value.previous_start_at))return false;
+    const metrics=value.metrics;
+    const pairs=['new_registrations','active_exchange_collectors','proposals','accepted','handoffs','completed_exchanges','repeat_collectors','cancellations'];
+    if(!metrics||typeof metrics!=='object'||Array.isArray(metrics)||
+      !pairs.every(key=>metrics[key]&&typeof metrics[key]==='object'&&!Array.isArray(metrics[key])&&isCount(metrics[key].current)&&isCount(metrics[key].previous)))return false;
+    const counts=(group,keys)=>Boolean(group)&&typeof group==='object'&&!Array.isArray(group)&&keys.every(key=>isCount(group[key]));
+    if(!counts(value.activation,['registered','email_verified','ready']))return false;
+    if(!counts(value.exchange_cohort,['proposed','accepted','handed_off','completed','cancelled']))return false;
+    if(!counts(value.health,['active_custody','overdue_returns','unresolved_issues','open_support']))return false;
+    if(!Array.isArray(value.daily)||value.daily.length>days||
+      value.daily.some(row=>!row||typeof row!=='object'||Array.isArray(row)||!isDate(row.date)||!isCount(row.registrations)||!isCount(row.completed_exchanges)))return false;
+    if(!Array.isArray(value.cities)||value.cities.length>20||
+      value.cities.some(row=>!row||typeof row!=='object'||Array.isArray(row)||
+        typeof row.country!=='string'||row.country.length>120||typeof row.city!=='string'||row.city.length>120||
+        !isCount(row.registered)||!isCount(row.ready)||!isCount(row.available_sets)||!isCount(row.completed_exchanges)))return false;
+    if(!Array.isArray(value.coverage)||value.coverage.length>40||
+      value.coverage.some(item=>typeof item!=='string'||item.length>300))return false;
+    const definitions=value.definitions;
+    if(!definitions||typeof definitions!=='object'||Array.isArray(definitions))return false;
+    const definitionKeys=Object.keys(definitions);
+    return definitionKeys.length<=60&&definitionKeys.every(key=>key.length<=80&&typeof definitions[key]==='string'&&definitions[key].length<=500);
+  };
   const allowed = new Set(['https://brickcircle.club', 'https://www.brickcircle.club',
     ...(env('ADMIN_ALLOWED_ORIGINS') || '').split(',').map(s => s.trim()).filter(Boolean)]);
   return async function handle(req) {
@@ -43,6 +72,7 @@ export function createHandler(createClient, env) {
         if (!body || typeof body !== 'object' || Array.isArray(body)) return response(400, {error: 'Invalid request.'});
       }
       let result;
+      let reportDays;
       if (body.operation === 'read') {
         const sections = ['overview', 'members', 'catalogue', 'exchanges', 'support', 'audit', 'member_detail', 'exchange_detail', ...(body.version===2?['collection','wishlist','support_detail']:[])];
         const section = body.section ?? 'overview';
@@ -64,6 +94,14 @@ export function createHandler(createClient, env) {
           if(body.filters!==undefined || body.part!==undefined) return response(400,{error:'Structured fields require contract version 2.'});
           result = await userClient.rpc('admin_marketplace_read', {p_section: section, p_query: query, p_page: page, p_id: body.id ?? null});
         }
+      } else if (body.operation === 'report') {
+        // Growth reporting is read-only and separate from the rows contract:
+        // strict version, strictly integer day window, no unknown request keys.
+        if (Object.keys(body).some(key => !['operation', 'version', 'days'].includes(key)) ||
+          body.version !== 1 || !Number.isInteger(body.days) || ![7, 28, 90].includes(body.days))
+          return response(400, {error: 'Invalid growth report range.'});
+        reportDays = body.days;
+        result = await userClient.rpc('admin_growth_report', {p_days: body.days});
       } else if(body.operation==='note') {
         if(!isUUID(body.id) || !isUUID(body.request_id) || typeof body.reason!=='string' || body.reason.trim().length<10 || body.reason.trim().length>1000)
           return response(400,{error:'Invalid note. Include 10–1000 characters.'});
@@ -87,6 +125,8 @@ export function createHandler(createClient, env) {
         if (code === 'P0002') return response(404, {error: 'Record not found.'});
         return response(503, {error: 'Admin service unavailable. Retry shortly.'});
       }
+      if (reportDays !== undefined && !validReport(result.data, reportDays))
+        return response(503, {error: 'Growth report unavailable. Retry shortly.'});
       return response(200, result.data);
     } catch { return response(503, {error: 'Admin service unavailable. Retry shortly.'}); }
   };
