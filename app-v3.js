@@ -353,11 +353,12 @@ function overlayDisposer(overlay,cleanup,resource=overlay){
   overlay.bcDispose=dispose;observer.observe(document.body,{childList:true,subtree:true});window.addEventListener('pagehide',onPageHide);
   return dispose;
 }
-function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcDispose?.();overlay?.bcAuthCleanup?.();overlay?.remove();const inline=$('#bc-collector-form');if(inline)inline.replaceChildren();if(opener?.isConnected)opener.focus()}
+function clearCollectorForm(host){[...host.querySelectorAll('dialog')].reverse().forEach(dialog=>{if(dialog.open)dialog.close()});host.replaceChildren()}
+function closeOverlay(){if(logoutLocked||abandonVerification())return;verificationGeneration++;const overlay=document.getElementById('bc-overlay'),opener=overlay?.bcReturnFocus;overlay?.bcDispose?.();overlay?.bcAuthCleanup?.();overlay?.remove();const inline=$('#bc-collector-form');if(inline)clearCollectorForm(inline);if(opener?.isConnected)opener.focus()}
 function caseFormSurface(html){
   const host=!logoutLocked&&routeName()==='messages'&&collectorFocus?.uid===S.user?.id?$('#bc-collector-form'):null;
   if(!host)return modal(html);
-  const opener=document.activeElement;host.replaceChildren();const sheet=document.createElement('dialog');sheet.className='bc-collector-sheet';sheet.setAttribute('aria-label','Exchange action');sheet.innerHTML=`<section class="bc-card bc-pad bc-form">${html}</section>`;host.appendChild(sheet);sheet.addEventListener('close',()=>{sheet.remove();if(opener?.isConnected)opener.focus()});sheet.showModal();applyA11y(sheet);return sheet;
+  const opener=document.activeElement;clearCollectorForm(host);const sheet=document.createElement('dialog');sheet.className='bc-collector-sheet';sheet.setAttribute('aria-label','Exchange action');sheet.innerHTML=`<section class="bc-card bc-pad bc-form">${html}</section>`;host.appendChild(sheet);sheet.addEventListener('close',()=>{sheet.remove();if(opener?.isConnected)opener.focus()});sheet.showModal();applyA11y(sheet);return sheet;
 }
 function drawer(html){
   if(logoutLocked){const detached=document.createElement('div');detached.innerHTML=`<aside class="bc-drawer">${html}</aside>`;return detached}
@@ -2628,6 +2629,7 @@ function collectorCaseSummaryMarkup(peerId,selected){
 function openCollectorCaseSheet(peerId,caseId){
   selectCollectorCase(peerId,caseId);
   const e=messageIndexByUid.get(S.user?.id)?.cases.get(caseId)?.case,host=$('#bc-collector-form');if(!e||!host)return;
+  clearCollectorForm(host);
   const recovery=uncertainThreadSends.get(`${S.user.id}:case:${caseId}`);
   host.innerHTML=`<dialog class="bc-collector-sheet" data-collector-case-details="${attr(e.id)}" aria-label="Exchange details"><div class="bc-collector-sheet-head"><h2>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h2><button class="bc-btn" type="button" data-close-collector-sheet aria-label="Close exchange details">×</button></div>${caseConversationGuide(e)}${[e.item_a,e.item_b].map(id=>ownerGalleryMarkup(id)).join('')}${!terminalCaseStates.has(e.state)||recovery?`<button class="bc-btn" type="button" data-reply-case="${attr(e.id)}">${terminalCaseStates.has(e.state)?'Recover pending exchange reply':'Reply about this exchange'}</button>`:'<p class="bc-small">This exchange is read-only. Your general conversation stays open.</p>'}</dialog>`;
   const dialog=$('dialog',host);dialog.showModal();
@@ -2641,7 +2643,7 @@ function selectCollectorCase(peerId,caseId){
   const uid=S.user?.id,group=messageIndexByUid.get(uid)?.cases.get(caseId);
   if(caseId&&(!group?.case||otherId(group.case)!==peerId))return renderMessagesUnavailable('Conversation unavailable.');
   const previous=collectorFocus,samePeer=previous?.uid===uid&&previous.peerId===peerId;
-  if(!samePeer||previous.caseId!==(caseId||null))$('#bc-collector-form')?.replaceChildren();
+  if(!samePeer||previous.caseId!==(caseId||null)){const form=$('#bc-collector-form');if(form)clearCollectorForm(form)}
   collectorFocus={uid,peerId,caseId:caseId||null,replyCaseId:samePeer?previous.replyCaseId||null:null};
   const host=$('#bc-collector-action'),e=group?.case;
   if(host){host.innerHTML=collectorCaseSummaryMarkup(peerId,caseId);bindCollectorCaseLinks(host);wireImages(host)}
