@@ -81,6 +81,10 @@ candidate runtime tests independently prove the application's fifteen-minute URL
 cache refresh, failure recovery and account-switch/logout isolation without
 waiting fifteen minutes.
 
+Before upload, the harness temporarily points the owner's existing synthetic
+collection row at the fresh probe path so Storage's row-backed signing policy can
+authorize it. After expiry is verified, it restores the row's original photo path.
+
 The expiration request adds a random non-secret cache-busting query parameter
 and sends `no-cache`/`no-store` directives. If it fails, the redacted report
 retains only the HTTP status, a small allowlist of Storage error codes, and
