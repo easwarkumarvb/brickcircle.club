@@ -23,7 +23,7 @@ export function assertDenied(response){
   // Infrastructure failures must not masquerade as access-control evidence.
   assert.ok([400,401,403,404].includes(response.status),'Expected permission denial');
 }
-export async function assertExpiredResponse(response,onEvidence=()=>{}){
+export async function assertExpiredResponse(response,onEvidence=()=>{},{verifiedBeforeExpiry=false}={}){
   const evidence={httpStatus:response.status,storageErrorCode:'Other'};
   assert.ok([400,401,403].includes(response.status),'Expected expired capability response');
   const detail=await response.json();
@@ -32,7 +32,12 @@ export async function assertExpiredResponse(response,onEvidence=()=>{}){
   else if(/^jwt expired$/i.test(detail.message||''))evidence.storageErrorCode='JwtExpired';
   onEvidence(evidence);
   if(detail.statusCode!==undefined)assert.equal(Number(detail.statusCode),response.status,'Storage error statusCode did not match HTTP status');
-  assert.ok(detail.code==='ExpiredToken'||detail.error==='ExpiredToken'||/^jwt expired$/i.test(detail.message||''),'Expected explicit expired token evidence');
+  const explicitExpiry=detail.code==='ExpiredToken'||detail.error==='ExpiredToken'||/^jwt expired$/i.test(detail.message||'');
+  // Supabase Storage may report an expired signed JWT as InvalidJWT rather than
+  // ExpiredToken. Accept that generic code ONLY for a short-lived capability
+  // whose exact URL fetched the expected owner bytes before waiting for expiry.
+  const provenExpiry=response.status===400&&storageCode==='InvalidJWT'&&verifiedBeforeExpiry===true;
+  assert.ok(explicitExpiry||provenExpiry,'Expected explicit expired token evidence or a previously valid signed capability now denied as InvalidJWT');
   return evidence;
 }
 const failures=new WeakMap();
@@ -160,18 +165,27 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
   // satisfy this request without the expired capability being checked.
   progress.stage='signed capability expiration';
   a.expirationPhoto=`${a.id}/hosted-photo-expiration-${run}.png`;
-  progress.expirationProbe={httpStatus:null,storageErrorCode:null,cacheStatus:null,cacheAgeSeconds:null};
+  progress.expirationProbe={httpStatus:null,storageErrorCode:null,cacheStatus:null,cacheAgeSeconds:null,validBeforeExpiry:false};
   const expirationReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.expirationPhoto},{Prefer:'return=representation'}));
   assert.equal(expirationReference.length,1);assert.equal(expirationReference[0].owner_photo_path,a.expirationPhoto);
   await json(await upload(a,a.expirationPhoto));
-  const expired=await json(await sign(a,a.expirationPhoto,1));await sleep(5000);
-  const expiredResponse=await downloadCapability(signedUrl(expired.signedURL,a.expirationPhoto),{cacheBust:true});
+  // Establish that this *same* capability was valid before it expired. This
+  // distinguishes Storage's generic InvalidJWT result from a malformed token,
+  // bad fixture, missing owner authorization, or unavailable Storage service.
+  const expired=await json(await sign(a,a.expirationPhoto,15));
+  const capability=signedUrl(expired.signedURL,a.expirationPhoto);
+  const beforeExpiry=await downloadCapability(capability,{cacheBust:true});
+  assert.equal(beforeExpiry.status,200,'Short-lived capability must be valid before the expiry wait');
+  assert.deepEqual(Buffer.from(await beforeExpiry.arrayBuffer()),IMAGE,'Short-lived capability returned unexpected bytes before expiration');
+  progress.expirationProbe.validBeforeExpiry=true;
+  await sleep(19000);
+  const expiredResponse=await downloadCapability(capability,{cacheBust:true});
   progress.expirationProbe.httpStatus=Number.isInteger(expiredResponse.status)?expiredResponse.status:null;
   const cacheStatus=(expiredResponse.headers.get('cf-cache-status')||expiredResponse.headers.get('x-cache')||'').trim().toUpperCase();
   if(['HIT','MISS','BYPASS','EXPIRED','REVALIDATED','STALE','DYNAMIC','UPDATING'].includes(cacheStatus))progress.expirationProbe.cacheStatus=cacheStatus;
   const cacheAge=expiredResponse.headers.get('age');
   if(cacheAge&&/^\d{1,10}$/.test(cacheAge))progress.expirationProbe.cacheAgeSeconds=Number(cacheAge);
-  await assertExpiredResponse(expiredResponse,evidence=>{progress.expirationProbe.storageErrorCode=evidence.storageErrorCode;});
+  await assertExpiredResponse(expiredResponse,evidence=>{progress.expirationProbe.storageErrorCode=evidence.storageErrorCode;},{verifiedBeforeExpiry:progress.expirationProbe.validBeforeExpiry});
   const restoredReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.photo},{Prefer:'return=representation'}));
   assert.equal(restoredReference.length,1);assert.equal(restoredReference[0].owner_photo_path,a.photo);
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
