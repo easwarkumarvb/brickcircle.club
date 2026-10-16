@@ -1,6 +1,6 @@
 # Three assembled-set photos
 
-The existing primary image is the front slot. Side/detail and rear slots use the existing camera/upload picker, 8 MB JPEG/PNG/WebP validation and 15-minute signed URLs refreshed one minute early. Photos open full size with accessible labels. My Sets can edit supplementary photos; matches and canonical exchange details show authorized photos, including cancelled archives. A missing optional table keeps the primary image usable. Query failures show a fixed product message rather than provider diagnostics.
+The existing primary image is the front slot. Side/detail and rear slots use the existing camera/upload picker, 8 MB JPEG/PNG/WebP validation and 15-minute signed URLs refreshed one minute early. Photos open full size with accessible labels. My Sets can replace or remove any saved photo; removal is locked during active exchanges, and front-photo removal is disabled while a set is exchangeable and its database update is conditional on availability remaining off. Metadata removal must return exactly the expected owner/item/slot/path before Storage cleanup is attempted. Matches and canonical exchange details show authorized photos, including cancelled archives. A missing optional table keeps the primary image usable. Query failures show a fixed product message rather than provider diagnostics.
 
 ## Authorization and commits
 
