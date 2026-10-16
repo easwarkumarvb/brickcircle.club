@@ -1,0 +1,172 @@
+name: Hosted Supabase PR160 combined beta candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Only open same-repository PR160 (integration/admin-security-reliability base)
+        required: true
+        type: string
+      expected_head_sha:
+        description: Exact reviewed PR160 head (full 40-character SHA)
+        required: true
+        type: string
+      confirmation:
+        description: Type RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: hosted-supabase-exchange-smoke
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      head_sha: ${{ steps.selection.outputs.head_sha }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: node --test tests/hosted/hosted-pr160.test.mjs
+      - uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        id: selection
+        env:
+          REQUESTED_PR: ${{ inputs.pull_request_number }}
+          EXPECTED_SHA: ${{ inputs.expected_head_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr160.mjs`);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 160 });
+            const headSha = validateSelection({
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              ref: context.ref,
+              eventName: context.eventName,
+              workflowRef: process.env.GITHUB_WORKFLOW_REF,
+              number: process.env.REQUESTED_PR,
+              sha: process.env.EXPECTED_SHA,
+              confirmation: process.env.CONFIRMATION,
+              pr
+            });
+            core.setOutput('head_sha', headSha);
+
+  staging:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # Manual dispatch requires a separately reviewed copy on the default branch.
+    # Configure required human reviewers and restrict this environment to the trusted default branch.
+    environment: hosted-supabase-staging
+    env:
+      BC_HOSTED_SMOKE_CONFIRMATION: ${{ inputs.confirmation }}
+      BC_HOSTED_SMOKE_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+      BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA: ${{ needs.validate.outputs.head_sha }}
+      BC_STAGING_SUPABASE_PROJECT_REF: ${{ vars.BC_STAGING_SUPABASE_PROJECT_REF }}
+      BC_PRODUCTION_SUPABASE_PROJECT_REF: ${{ vars.BC_PRODUCTION_SUPABASE_PROJECT_REF }}
+      BC_STAGING_ALLOWED_EMAIL_DOMAIN: ${{ vars.BC_STAGING_ALLOWED_EMAIL_DOMAIN }}
+      BC_STAGING_NOTIFICATION_MODE: ${{ vars.BC_STAGING_NOTIFICATION_MODE }}
+      BC_STAGING_SET_A: ${{ vars.BC_STAGING_SET_A }}
+      BC_STAGING_SET_B: ${{ vars.BC_STAGING_SET_B }}
+    steps:
+      - name: Trusted harness only
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Revalidate exact PR160 head after environment approval
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_PR: ${{ inputs.pull_request_number }}
+          EXPECTED_SHA: ${{ needs.validate.outputs.head_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-hosted-pr160.mjs`);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 160 });
+            validateSelection({
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              ref: context.ref,
+              eventName: context.eventName,
+              workflowRef: process.env.GITHUB_WORKFLOW_REF,
+              number: process.env.REQUESTED_PR,
+              sha: process.env.EXPECTED_SHA,
+              confirmation: process.env.CONFIRMATION,
+              pr
+            });
+      - name: Check out immutable PR160 browser candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.head_sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Confirm immutable candidate checkout
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.validate.outputs.head_sha }}
+        run: test "$(git -C candidate rev-parse HEAD)" = "$EXPECTED_HEAD_SHA"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Offline hosted safety and transport guards
+        run: npm run test:hosted:guard && node --test tests/hosted/hosted-photo.test.mjs tests/hosted/hosted-pr160.test.mjs
+      - name: Candidate gallery runtime contracts
+        working-directory: candidate
+        run: node --test tests/static/owner-photo-signed-url-runtime.test.mjs tests/static/owner-photo-gallery-runtime.test.mjs
+      - run: npx --no-install playwright install --with-deps chromium
+      - name: Candidate owner-photo browser smoke
+        working-directory: candidate
+        run: npm run test:isolated -- tests/isolated/owner-photo-gallery.spec.ts --project=chromium
+      - name: Validate exact staging target before fixture provisioning
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: node --input-type=module -e "import {validateTarget} from './scripts/validate-hosted-photo.mjs'; try {validateTarget(process.env,{publicOnly:true,expectedSha:process.env.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA})} catch {console.error('Exact staging target rejected; values withheld'); process.exitCode=1}"
+      - name: Provision fresh isolated synthetic accounts
+        id: users
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: node scripts/hosted-photo-privileged.mjs bootstrap
+      - name: Public-key photo permissions, gallery, and signed-URL staging smoke
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+        run: node scripts/hosted-photo-http.mjs
+      - name: Existing server RLS, Realtime, and outbox smoke
+        if: ${{ !cancelled() && steps.users.outcome == 'success' }}
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: npm run smoke:hosted:exchange
+      - name: Audit fixture outbox with no provider delivery
+        if: ${{ !cancelled() && steps.users.outcome == 'success' }}
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: node scripts/hosted-photo-privileged.mjs audit
+      - name: Upload only redacted allowlisted evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hosted-pr160-${{ needs.validate.outputs.head_sha }}
+          path: |
+            artifacts/hosted-photo-http.json
+            artifacts/hosted-photo-outbox.json
+            artifacts/hosted-exchange-smoke.json
+          if-no-files-found: warn
+          retention-days: 30

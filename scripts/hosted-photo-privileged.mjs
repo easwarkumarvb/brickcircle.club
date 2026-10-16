@@ -6,9 +6,10 @@ import {assertOutboxOnly} from './audit-hosted-pr138-outbox.mjs';
 import {validateStagingEmails,serializeRedactedReport} from './hosted-exchange-smoke.mjs';
 import {validateTarget,guardedFetch,CANDIDATE_SHA} from './validate-hosted-photo.mjs';
 const mode=process.argv[2];
-const report={ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging'};
+const expectedSha=process.env.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA||CANDIDATE_SHA;
+const report={ok:false,testedHeadSha:expectedSha,target:'approved-staging'};
 try{
-  assert.ok(mode==='bootstrap'||mode==='audit');validateTarget(process.env);
+  assert.ok(mode==='bootstrap'||mode==='audit');validateTarget(process.env,{expectedSha});
   assert.ok(process.env.BC_STAGING_SUPABASE_SECRET_KEY);
   assert.notEqual(process.env.BC_STAGING_SUPABASE_SECRET_KEY,process.env.BC_STAGING_SUPABASE_PUBLISHABLE_KEY);
   // The existing trusted helper creates only fresh example.test fixtures.

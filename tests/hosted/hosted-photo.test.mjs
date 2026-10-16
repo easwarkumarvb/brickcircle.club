@@ -89,6 +89,13 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.ok(fixture.calls.some(call=>call.who==='C'&&call.body?.owner_photo_path));
   assert.deepEqual(fixture.calls.filter(call=>call.path==='/rest/v1/collection_items'&&call.method==='POST'&&call.who!=='C').map(call=>call.body.set_number),['75192-1','10307-1']);
 });
+test('an independently validated combined candidate SHA is preserved in photo smoke evidence',async()=>{
+  const expectedSha='2cde4e3806dfec9a5b5566202db399bfb7accf37';
+  const fixture=fixtureTransport();
+  const report=await runPhotoVerification({...env(),BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA:expectedSha},fixture.send,fixture.sleep,{expectedSha});
+  assert.equal(report.testedHeadSha,expectedSha);
+  assert.equal(report.ok,true);
+});
 test('missing participant policy stops before accept or later positive claims',async()=>{
   const fixture=fixtureTransport({missingPolicy:true});await assert.rejects(()=>runPhotoVerification(env(),fixture.send,fixture.sleep),error=>{
     assert.equal(photoFailureReport(error).failedStage,'PROPOSED participant permissions');
@@ -118,7 +125,7 @@ test('infrastructure errors cannot certify a foreign mutation denial',async()=>{
   await assert.rejects(()=>runPhotoVerification(env(),send,fixture.sleep));
 });
 test('workflow is manual protected pinned and never passes server secret to HTTP harness',async()=>{
-  const source=await readFile('.github/workflows/hosted-photo-verification.yml','utf8');
+  const source=(await readFile('.github/workflows/hosted-photo-verification.yml','utf8')).replace(/\r\n/g,'\n');
   assert.ok(source.includes('workflow_dispatch:'));assert.ok(!/^  (push|pull_request):/m.test(source));
   assert.ok(source.includes('environment: hosted-supabase-staging'));assert.ok(source.includes('group: hosted-supabase-exchange-smoke'));
   assert.equal((source.match(/validateSelection\(/g)||[]).length,2);
