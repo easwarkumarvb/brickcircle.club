@@ -64,9 +64,10 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
   const rpc=async(user,name,body)=>json(await request(`/rest/v1/rpc/${name}`,user,'POST',body));
   const upload=(user,path,bytes=IMAGE,method='POST',extra={})=>send(`${BASE}/storage/v1/object/${BUCKET}/${path}`,{method,headers:{apikey:key,Authorization:`Bearer ${user.session}`,'Content-Type':'image/png','Cache-Control':'max-age=0',...extra},body:bytes});
   const sign=(user,path,expiresIn=60)=>request(`/storage/v1/object/sign/${BUCKET}/${path}`,user,'POST',{expiresIn});
+  const downloadCapability=url=>send(url,{cache:'no-store',headers:{'Cache-Control':'no-cache'}});
   const verify=async(user,path)=>{
     const value=await json(await sign(user,path));
-    const response=await send(signedUrl(value.signedURL,path));assert.ok(response.ok,'Signed download failed');
+    const response=await downloadCapability(signedUrl(value.signedURL,path));assert.ok(response.ok,'Signed download failed');
     assert.deepEqual(Buffer.from(await response.arrayBuffer()),IMAGE,'Signed download bytes changed');
   };
   progress.stage='synthetic account authentication';
@@ -144,11 +145,13 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
     assert.ok(Array.isArray(matches));assert.ok(!matches.some(match=>[match.offered_item,match.requested_item].some(id=>items.includes(id))),'Reciprocal authorization persists');
   }
   await checkPermissions('CANCELLED archive without wishlists');
-  // Do not download before expiration: this proves origin rejection rather than
-  // accidentally accepting a CDN-cached response fetched while still valid.
+  // Use a fresh object path so a cached response from earlier reads cannot
+  // satisfy this request without the expired capability being checked.
   progress.stage='signed capability expiration';
-  const expired=await json(await sign(a,a.photo,1));await sleep(2500);
-  await assertExpiredResponse(await send(signedUrl(expired.signedURL,a.photo)));
+  a.expirationPhoto=`${a.id}/hosted-photo-expiration-${run}.png`;
+  await json(await upload(a,a.expirationPhoto));
+  const expired=await json(await sign(a,a.expirationPhoto,1));await sleep(5000);
+  await assertExpiredResponse(await downloadCapability(signedUrl(expired.signedURL,a.expirationPhoto)));
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
   progress.stage='owner deletes exact dummy objects';
   // Owner deletion is limited to this run's known dummy objects; retain case rows.
@@ -156,6 +159,8 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
     const deleted=await json(await request(`/storage/v1/object/${BUCKET}`,user,'DELETE',{prefixes:[user.photo]}));
     assert.equal(deleted.length,1);await denied(await sign(user,user.photo));
   }
+  const expiredFixture=await json(await request(`/storage/v1/object/${BUCKET}`,a,'DELETE',{prefixes:[a.expirationPhoto]}));
+  assert.equal(expiredFixture.length,1);await denied(await sign(a,a.expirationPhoto));
   checks.push('owner deletes exact dummy objects');
   return {ok:true,testedHeadSha:expectedSha,target:'approved-staging',checks,productionRequests:0,unexpectedRequests:0};
 }

@@ -41,7 +41,7 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
   const send=async(raw,init)=>{
     const url=new URL(raw);const path=url.pathname;const method=init.method||'GET';const headers=init.headers||{};const who=headers.Authorization?.replace('Bearer session-','');
     const body=typeof init.body==='string'?JSON.parse(init.body):init.body;
-    calls.push({path,method,body,who});assert.equal(init.redirect,'error');
+    calls.push({path,method,body,who,cache:init.cache});assert.equal(init.redirect,'error');
     if(path==='/auth/v1/token')return result({user:{id:ids['abc'.indexOf(body.email[0])]},access_token:`session-${body.email[0].toUpperCase()}`});
     if(path==='/auth/v1/user')return result({id:ids['ABC'.indexOf(who)]});
     if(path==='/rest/v1/collection_items'){
@@ -88,6 +88,11 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.ok(fixture.calls.some(call=>call.body?.p_action==='cancel'));
   assert.ok(fixture.calls.some(call=>call.who==='C'&&call.body?.owner_photo_path));
   assert.deepEqual(fixture.calls.filter(call=>call.path==='/rest/v1/collection_items'&&call.method==='POST'&&call.who!=='C').map(call=>call.body.set_number),['75192-1','10307-1']);
+  const expiryProbe=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.body?.expiresIn===1);
+  const expiryDownload=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET');
+  assert.ok(expiryProbe>=0&&expiryDownload>expiryProbe);
+  assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,1);
+  assert.equal(fixture.calls[expiryDownload].cache,'no-store');
 });
 test('an independently validated combined candidate SHA is preserved in photo smoke evidence',async()=>{
   const expectedSha='2cde4e3806dfec9a5b5566202db399bfb7accf37';

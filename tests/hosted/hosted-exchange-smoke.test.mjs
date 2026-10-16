@@ -187,6 +187,46 @@ test('insertOwnedItem fails closed when the insert is rejected or no id is retur
   await assert.rejects(() => insertOwnedItem(idless, '10725-1', 'run-1'), /must return a database-generated id/);
 });
 
+test('insertOwnedItem retries a duplicate owner/set with an unused catalogue set', async () => {
+  const inserted = [];
+  const session = {
+    label: 'A',
+    id: '11111111-1111-4111-8111-111111111111',
+    client: {
+      from(table) {
+        if (table === 'collection_items') {
+          const query = {
+            select: () => query,
+            eq: () => query,
+            range: async () => ({ data: [{ set_number: '10725-1' }], error: null }),
+            insert(payload) {
+              inserted.push(payload);
+              if (payload.set_number === '10725-1') {
+                return { select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate owner/set' } }) }) };
+              }
+              return { select: () => ({ single: async () => ({ data: { ...payload, id: 'generated-item' }, error: null }) }) };
+            }
+          };
+          return query;
+        }
+        assert.equal(table, 'lego_sets');
+        const query = {
+          select: () => query,
+          order: () => query,
+          range: async () => ({ data: [{ set_number: '10725-1' }, { set_number: '10726-1' }, { set_number: '10727-1' }], error: null })
+        };
+        return query;
+      }
+    }
+  };
+
+  const item = await insertOwnedItem(session, '10725-1', 'run-1', ['10726-1']);
+
+  assert.deepEqual(inserted.map(row => row.set_number), ['10725-1', '10727-1']);
+  assert.equal(item.set_number, '10727-1');
+  assert.equal(item.id, 'generated-item');
+});
+
 test('serializes only redacted, credential-free evidence', () => {
   const redacted = redactIdentifier('11111111-1111-4111-8111-111111111111');
   const serialized = serializeRedactedReport({ ok: true, case: redacted, target: 'approved-staging' });

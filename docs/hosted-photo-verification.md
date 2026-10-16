@@ -65,9 +65,12 @@ no signing access. This uses only the run's dummy paths. Missing-object, permiss
 and expired-capability failures are accepted; infrastructure failures and arbitrary
 bad requests are not permission evidence.
 
-A fresh one-second capability is never downloaded while valid, then must fail
-after expiration with explicit `ExpiredToken` (or legacy `jwt expired`) evidence;
-a newly signed capability must succeed. Current Storage returns HTTP 400 for
+A one-second capability is issued for a newly uploaded, never-before-read object
+path and is not downloaded while valid; its first request after expiration must
+fail with explicit `ExpiredToken` (or legacy `jwt expired`) evidence. Using an
+unread path prevents earlier successful downloads from satisfying the probe
+through an intermediary cache. A newly signed capability for the original photo
+must still succeed. Current Storage returns HTTP 400 for
 `ExpiredToken`, as defined in its [official error codes](https://github.com/supabase/storage/blob/master/src/internal/errors/codes.ts).
 An arbitrary HTTP 400 or invalid-signature error is not accepted as expiry proof. This avoids deriving
 expiration evidence from a previously cached successful response. Existing
