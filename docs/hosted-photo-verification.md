@@ -70,13 +70,22 @@ path and is not downloaded while valid; its first request after expiration must
 fail with explicit `ExpiredToken` (or legacy `jwt expired`) evidence. Using an
 unread path prevents earlier successful downloads from satisfying the probe
 through an intermediary cache. A newly signed capability for the original photo
-must still succeed. Current Storage returns HTTP 400 for
-`ExpiredToken`, as defined in its [official error codes](https://github.com/supabase/storage/blob/master/src/internal/errors/codes.ts).
+must still succeed. Current Storage returns HTTP 400 for `ExpiredToken`; its
+current JSON error shape contains `statusCode: "400"` and `code`/`error:
+"ExpiredToken"`, as defined in the [official error
+codes](https://github.com/supabase/storage/blob/master/src/internal/errors/codes.ts)
+and [error renderer](https://github.com/supabase/storage/blob/master/src/internal/errors/storage-error.ts).
 An arbitrary HTTP 400 or invalid-signature error is not accepted as expiry proof. This avoids deriving
 expiration evidence from a previously cached successful response. Existing
 candidate runtime tests independently prove the application's fifteen-minute URL
 cache refresh, failure recovery and account-switch/logout isolation without
 waiting fifteen minutes.
+
+The expiration request adds a random non-secret cache-busting query parameter
+and sends `no-cache`/`no-store` directives. If it fails, the redacted report
+retains only the HTTP status, a small allowlist of Storage error codes, and
+allowlisted cache-status and numeric `Age` headers. It never retains the response
+body, signed URL, cache-busting value or fixture path.
 
 Successful runs delete only their two exact dummy Storage objects, using owner
 sessions, and retain the synthetic accounts, items and canonical case as audit

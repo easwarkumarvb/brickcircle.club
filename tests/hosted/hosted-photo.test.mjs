@@ -41,7 +41,7 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
   const send=async(raw,init)=>{
     const url=new URL(raw);const path=url.pathname;const method=init.method||'GET';const headers=init.headers||{};const who=headers.Authorization?.replace('Bearer session-','');
     const body=typeof init.body==='string'?JSON.parse(init.body):init.body;
-    calls.push({path,method,body,who,cache:init.cache});assert.equal(init.redirect,'error');
+    calls.push({path,method,body,who,cache:init.cache,cacheBust:url.searchParams.has('cacheBust'),cacheControl:headers['Cache-Control'],pragma:headers.Pragma});assert.equal(init.redirect,'error');
     if(path==='/auth/v1/token')return result({user:{id:ids['abc'.indexOf(body.email[0])]},access_token:`session-${body.email[0].toUpperCase()}`});
     if(path==='/auth/v1/user')return result({id:ids['ABC'.indexOf(who)]});
     if(path==='/rest/v1/collection_items'){
@@ -93,6 +93,12 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.ok(expiryProbe>=0&&expiryDownload>expiryProbe);
   assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,1);
   assert.equal(fixture.calls[expiryDownload].cache,'no-store');
+  assert.equal(fixture.calls[expiryDownload].cacheBust,true);
+  assert.equal(fixture.calls[expiryDownload].cacheControl,'no-cache, no-store, max-age=0');
+  assert.equal(fixture.calls[expiryDownload].pragma,'no-cache');
+  const ordinaryDownload=fixture.calls.find(call=>call.path.startsWith('/storage/v1/object/sign/')&&call.method==='GET');
+  assert.equal(ordinaryDownload.cacheControl,'no-cache');
+  assert.equal(ordinaryDownload.cacheBust,false);
 });
 test('an independently validated combined candidate SHA is preserved in photo smoke evidence',async()=>{
   const expectedSha='2cde4e3806dfec9a5b5566202db399bfb7accf37';
@@ -115,9 +121,27 @@ test('forged collection reference access fails verification before archive succe
   assert.ok(!fixture.calls.some(call=>call.body?.p_action==='cancel'));
 });
 test('expiration accepts explicit Storage expired token but rejects arbitrary bad requests',async()=>{
-  await assertExpiredResponse(new Response(JSON.stringify({code:'ExpiredToken',message:'The provided token has expired.'}),{status:400}));
+  assert.deepEqual(await assertExpiredResponse(new Response(JSON.stringify({statusCode:'400',code:'ExpiredToken',error:'ExpiredToken',message:'The provided token has expired.'}),{status:400})),{httpStatus:400,storageErrorCode:'ExpiredToken'});
   await assertExpiredResponse(new Response(JSON.stringify({message:'jwt expired'}),{status:403}));
   for(const detail of [{code:'InvalidRequest'},{message:'invalid signature'},{code:'23514'},{statusCode:403,message:'permission denied'}])await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify(detail),{status:400})));
+  await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({statusCode:'403',code:'ExpiredToken'}),{status:400})),/statusCode did not match/);
+  await assert.rejects(()=>assertExpiredResponse(new Response(IMAGE,{status:200})),/Expected expired capability response/);
+});
+test('expiration failure evidence keeps only safe HTTP and cache diagnostics',async()=>{
+  const fixture=fixtureTransport();
+  await assert.rejects(()=>runPhotoVerification(env(),async(url,init)=>{
+    const response=await fixture.send(url,init);
+    if(new URL(url).pathname.includes('hosted-photo-expiration-')&&init.method===undefined)return new Response(IMAGE,{status:200,headers:{'CF-Cache-Status':'HIT','Age':'7'}});
+    return response;
+  },fixture.sleep),error=>{
+    const failure=photoFailureReport(error);
+    assert.equal(failure.failedStage,'signed capability expiration');
+    assert.deepEqual(failure.expirationProbe,{httpStatus:200,storageErrorCode:null,cacheStatus:'HIT',cacheAgeSeconds:7});
+    const serialized=serializeRedactedReport(failure);
+    assert.ok(!serialized.includes('cacheBust'));
+    assert.ok(!serialized.includes('/storage/v1/'));
+    return true;
+  });
 });
 test('changed signed download bytes fail verification',async()=>{
   const fixture=fixtureTransport();
