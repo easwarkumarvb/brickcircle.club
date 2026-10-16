@@ -24,9 +24,10 @@ export function validateSelection({repository,ref,eventName,sha,confirmation,prs
   }
   return CANDIDATE_SHA;
 }
-export function validateTarget(env,{publicOnly=false}={}) {
+export function validateTarget(env,{publicOnly=false,expectedSha=CANDIDATE_SHA}={}) {
+  assert.match(expectedSha,/^[0-9a-f]{40}$/);
   assert.equal(env.BC_HOSTED_SMOKE_CONFIRMATION,CONFIRMATION);
-  assert.equal(env.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA,CANDIDATE_SHA);
+  assert.equal(env.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA,expectedSha);
   assert.equal(env.BC_STAGING_SUPABASE_PROJECT_REF,STAGING_REF);
   assert.equal(env.BC_PRODUCTION_SUPABASE_PROJECT_REF,PRODUCTION_REF);
   assert.equal(env.BC_STAGING_SUPABASE_URL,`https://${STAGING_REF}.supabase.co`);
