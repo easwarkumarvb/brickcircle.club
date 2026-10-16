@@ -47,6 +47,7 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
     if(path==='/rest/v1/collection_items'){
       if(method==='DELETE'){forged=false;return result([]);}
       if(who==='C'){assert.ok(!Object.hasOwn(body,'available_for_exchange'),'Fixture must respect actual column grants');forged=true;return result([{id:'forged-fixture',owner_photo_path:body.owner_photo_path}]);}
+      if(method==='PATCH')return result([{id:`item-${who}`,owner_photo_path:body.owner_photo_path}]);
       rows.set(who,body);return result([{id:`item-${who}`}]);
     }
     if(path==='/rest/v1/wishlists')return result([]);
@@ -91,6 +92,11 @@ test('configured staging set IDs complete photo journey with canonical versions 
   const expiryProbe=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.body?.expiresIn===1);
   const expiryDownload=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET');
   assert.ok(expiryProbe>=0&&expiryDownload>expiryProbe);
+  const expiryUpload=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.path.startsWith('/storage/v1/object/'));
+  const expiryReference=fixture.calls.findIndex(call=>call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-expiration-'));
+  const restoredReference=fixture.calls.findIndex(call=>call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.who!=='C'&&call.body?.owner_photo_path?.includes('hosted-photo-')&&!call.body.owner_photo_path.includes('hosted-photo-expiration-'));
+  assert.ok(expiryReference>=0&&expiryUpload>expiryReference,'Expiry object must be referenced by a collection row before upload');
+  assert.ok(restoredReference>expiryDownload,'Original photo reference must be restored after expiry is verified');
   assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,1);
   assert.equal(fixture.calls[expiryDownload].cache,'no-store');
   assert.equal(fixture.calls[expiryDownload].cacheBust,true);

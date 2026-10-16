@@ -160,9 +160,11 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
   // satisfy this request without the expired capability being checked.
   progress.stage='signed capability expiration';
   a.expirationPhoto=`${a.id}/hosted-photo-expiration-${run}.png`;
+  progress.expirationProbe={httpStatus:null,storageErrorCode:null,cacheStatus:null,cacheAgeSeconds:null};
+  const expirationReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.expirationPhoto},{Prefer:'return=representation'}));
+  assert.equal(expirationReference.length,1);assert.equal(expirationReference[0].owner_photo_path,a.expirationPhoto);
   await json(await upload(a,a.expirationPhoto));
   const expired=await json(await sign(a,a.expirationPhoto,1));await sleep(5000);
-  progress.expirationProbe={httpStatus:null,storageErrorCode:null,cacheStatus:null,cacheAgeSeconds:null};
   const expiredResponse=await downloadCapability(signedUrl(expired.signedURL,a.expirationPhoto),{cacheBust:true});
   progress.expirationProbe.httpStatus=Number.isInteger(expiredResponse.status)?expiredResponse.status:null;
   const cacheStatus=(expiredResponse.headers.get('cf-cache-status')||expiredResponse.headers.get('x-cache')||'').trim().toUpperCase();
@@ -170,6 +172,8 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
   const cacheAge=expiredResponse.headers.get('age');
   if(cacheAge&&/^\d{1,10}$/.test(cacheAge))progress.expirationProbe.cacheAgeSeconds=Number(cacheAge);
   await assertExpiredResponse(expiredResponse,evidence=>{progress.expirationProbe.storageErrorCode=evidence.storageErrorCode;});
+  const restoredReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.photo},{Prefer:'return=representation'}));
+  assert.equal(restoredReference.length,1);assert.equal(restoredReference[0].owner_photo_path,a.photo);
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
   progress.stage='owner deletes exact dummy objects';
   // Owner deletion is limited to this run's known dummy objects; retain case rows.
