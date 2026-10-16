@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {
   CONFIRMATION,
-  EXPECTED_HEAD_SHA,
   HEAD_BRANCH,
+  BASE_BRANCH,
   PULL_REQUEST_NUMBER,
   REPOSITORY,
   WORKFLOW_REF,
@@ -12,12 +12,13 @@ import {
 } from '../../scripts/validate-hosted-pr160.mjs';
 import {validateTarget} from '../../scripts/validate-hosted-photo.mjs';
 
+const EXPECTED_HEAD_SHA = '2cde4e3806dfec9a5b5566202db399bfb7accf37';
 const pr = () => ({
   number: PULL_REQUEST_NUMBER,
   state: 'open',
   merged: false,
   head: {repo: {full_name: REPOSITORY}, ref: HEAD_BRANCH, sha: EXPECTED_HEAD_SHA},
-  base: {repo: {full_name: REPOSITORY}, ref: 'main'}
+  base: {repo: {full_name: REPOSITORY}, ref: BASE_BRANCH}
 });
 const selection = () => ({
   repository: REPOSITORY,
@@ -39,6 +40,7 @@ test('PR160 selection requires its exact open same-repository head and trusted m
     ['workflowRef', 'other/repo/.github/workflows/hosted-supabase-pr160.yml@refs/heads/main'],
     ['number', '159'],
     ['sha', 'f'.repeat(40)],
+    ['sha', 'not-a-full-commit-sha'],
     ['confirmation', 'yes']
   ]) assert.throws(() => validateSelection({...selection(), [field]: value}));
   for (const mutate of [
@@ -48,7 +50,7 @@ test('PR160 selection requires its exact open same-repository head and trusted m
     value => { value.head.ref = 'other-branch'; },
     value => { value.head.sha = 'f'.repeat(40); },
     value => { value.base.repo.full_name = 'fork/brickcircle.club'; },
-    value => { value.base.ref = 'develop'; }
+    value => { value.base.ref = 'main'; }
   ]) {
     const value = selection();
     mutate(value.pr);
@@ -82,10 +84,12 @@ test('PR160 staging target remains staging-only, outbox-only, and secret-free fo
 test('new manual workflow preserves pinned workflows and keeps candidate tests ahead of scoped staging secrets', async () => {
   const source = await readFile('.github/workflows/hosted-supabase-pr160.yml', 'utf8');
   assert.ok(source.includes('workflow_dispatch:'));
+  assert.ok(source.includes('Manual dispatch requires a separately reviewed copy on the default branch'));
   assert.ok(!/^  (push|pull_request):/m.test(source));
   assert.ok(source.includes('environment: hosted-supabase-staging'));
   assert.ok(source.includes('# Configure required human reviewers and restrict this environment to the trusted default branch.'));
   assert.ok(source.includes('group: hosted-supabase-exchange-smoke'));
+  assert.equal((source.match(/validateSelection\(\{/g) ?? []).length, 2);
   assert.ok(source.includes('ref: ${{ needs.validate.outputs.head_sha }}'));
   assert.ok(source.includes('RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE'));
   assert.ok(source.includes('tests/isolated/owner-photo-gallery.spec.ts'));

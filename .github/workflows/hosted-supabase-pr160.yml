@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       pull_request_number:
-        description: Only open same-repository PR160 (main base)
+        description: Only open same-repository PR160 (integration/admin-security-reliability base)
         required: true
         type: string
       expected_head_sha:
-        description: Exact reviewed PR160 head a1cfb51f1bb37572e1d5e20a01a13c261d9d3c7e
+        description: Exact reviewed PR160 head (full 40-character SHA)
         required: true
         type: string
       confirmation:
@@ -65,6 +65,7 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    # Manual dispatch requires a separately reviewed copy on the default branch.
     # Configure required human reviewers and restrict this environment to the trusted default branch.
     environment: hosted-supabase-staging
     env:

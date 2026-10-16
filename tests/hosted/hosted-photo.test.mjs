@@ -90,7 +90,7 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.deepEqual(fixture.calls.filter(call=>call.path==='/rest/v1/collection_items'&&call.method==='POST'&&call.who!=='C').map(call=>call.body.set_number),['75192-1','10307-1']);
 });
 test('an independently validated combined candidate SHA is preserved in photo smoke evidence',async()=>{
-  const expectedSha='a1cfb51f1bb37572e1d5e20a01a13c261d9d3c7e';
+  const expectedSha='2cde4e3806dfec9a5b5566202db399bfb7accf37';
   const fixture=fixtureTransport();
   const report=await runPhotoVerification({...env(),BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA:expectedSha},fixture.send,fixture.sleep,{expectedSha});
   assert.equal(report.testedHeadSha,expectedSha);
