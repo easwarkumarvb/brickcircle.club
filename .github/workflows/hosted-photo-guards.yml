@@ -1,10 +1,10 @@
 name: Hosted photo runner guards
 on:
   pull_request:
-    paths: ['.github/workflows/hosted-photo-*.yml', 'scripts/*hosted-photo*.mjs', 'tests/hosted/hosted-photo.test.mjs', 'vercel.json']
+    paths: ['.github/workflows/hosted-photo-*.yml', 'scripts/*hosted-photo*.mjs', 'tests/hosted/hosted-photo.test.mjs', 'vercel.json', '.github/workflows/hosted-supabase-beta-release.yml', 'scripts/validate-hosted-beta-release.mjs', 'tests/hosted/hosted-beta-release.test.mjs']
   push:
     branches: [main, qa/hosted-photo-verification]
-    paths: ['.github/workflows/hosted-photo-*.yml', 'scripts/*hosted-photo*.mjs', 'tests/hosted/hosted-photo.test.mjs', 'vercel.json']
+    paths: ['.github/workflows/hosted-photo-*.yml', 'scripts/*hosted-photo*.mjs', 'tests/hosted/hosted-photo.test.mjs', 'vercel.json', '.github/workflows/hosted-supabase-beta-release.yml', 'scripts/validate-hosted-beta-release.mjs', 'tests/hosted/hosted-beta-release.test.mjs']
 permissions:
   contents: read
 jobs:
@@ -19,4 +19,4 @@ jobs:
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts
-      - run: node --test tests/hosted/hosted-photo.test.mjs tests/static/owner-photo-signed-url-runtime.test.mjs
+      - run: node --test tests/hosted/hosted-photo.test.mjs tests/hosted/hosted-beta-release.test.mjs tests/static/owner-photo-signed-url-runtime.test.mjs
