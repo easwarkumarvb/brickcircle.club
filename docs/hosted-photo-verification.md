@@ -65,15 +65,34 @@ no signing access. This uses only the run's dummy paths. Missing-object, permiss
 and expired-capability failures are accepted; infrastructure failures and arbitrary
 bad requests are not permission evidence.
 
-A fresh one-second capability is never downloaded while valid, then must fail
-after expiration with explicit `ExpiredToken` (or legacy `jwt expired`) evidence;
-a newly signed capability must succeed. Current Storage returns HTTP 400 for
-`ExpiredToken`, as defined in its [official error codes](https://github.com/supabase/storage/blob/master/src/internal/errors/codes.ts).
-An arbitrary HTTP 400 or invalid-signature error is not accepted as expiry proof. This avoids deriving
-expiration evidence from a previously cached successful response. Existing
-candidate runtime tests independently prove the application's fifteen-minute URL
-cache refresh, failure recovery and account-switch/logout isolation without
-waiting fifteen minutes.
+A fifteen-second signed capability is issued for a freshly uploaded, owner-row-backed
+dummy object. The harness fetches the **same exact capability successfully before
+expiration**, verifies the expected PNG bytes, waits nineteen seconds, then requests
+it again with a new cache-busting parameter. The expired capability must be rejected.
+This is important because actual protected staging runs returned **HTTP 400**
+with Storage code `InvalidJWT` (CDN `BYPASS`), rather than `ExpiredToken`,
+even when the token expiration was being tested. `InvalidJWT` is accepted
+**only** when the identical capability demonstrably worked before the wait,
+its HTTP denial is 400 afterward, and the original owner's newly signed
+photo capability continues to work. `ExpiredToken` and legacy explicit
+`jwt expired` errors remain supported. A generic `InvalidJWT` error without
+that prior successful read is **not** expiry evidence.
+
+This does not waive access controls or treat arbitrary HTTP failures as
+permission evidence. It tests the actual Storage denial after elapsed token
+lifetime, rather than depending solely on an error name that varies between
+Storage versions. The application's separate runtime tests cover its
+fifteen-minute signed-URL refresh and account-switch/logout behavior.
+
+Before upload, the harness temporarily points the owner's existing synthetic
+collection row at the fresh probe path so Storage's row-backed signing policy can
+authorize it. After expiry is verified, it restores the row's original photo path.
+
+The expiration request adds a random non-secret cache-busting query parameter
+and sends `no-cache`/`no-store` directives. If it fails, the redacted report
+retains only the HTTP status, a small allowlist of Storage error codes, and
+allowlisted cache-status and numeric `Age` headers. It never retains the response
+body, signed URL, cache-busting value or fixture path.
 
 Successful runs delete only their two exact dummy Storage objects, using owner
 sessions, and retain the synthetic accounts, items and canonical case as audit
