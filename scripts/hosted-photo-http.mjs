@@ -23,10 +23,22 @@ export function assertDenied(response){
   // Infrastructure failures must not masquerade as access-control evidence.
   assert.ok([400,401,403,404].includes(response.status),'Expected permission denial');
 }
-export async function assertExpiredResponse(response){
+export async function assertExpiredResponse(response,onEvidence=()=>{},{verifiedBeforeExpiry=false}={}){
+  const evidence={httpStatus:response.status,storageErrorCode:'Other'};
   assert.ok([400,401,403].includes(response.status),'Expected expired capability response');
   const detail=await response.json();
-  assert.ok(detail.code==='ExpiredToken'||detail.error==='ExpiredToken'||/^jwt expired$/i.test(detail.message||''),'Expected explicit expired token evidence');
+  const storageCode=detail.code||detail.error;
+  if(['ExpiredToken','InvalidJWT','InvalidSignature','SignatureDoesNotMatch','AccessDenied','NoSuchKey','InternalError','InvalidRequest'].includes(storageCode))evidence.storageErrorCode=storageCode;
+  else if(/^jwt expired$/i.test(detail.message||''))evidence.storageErrorCode='JwtExpired';
+  onEvidence(evidence);
+  if(detail.statusCode!==undefined)assert.equal(Number(detail.statusCode),response.status,'Storage error statusCode did not match HTTP status');
+  const explicitExpiry=detail.code==='ExpiredToken'||detail.error==='ExpiredToken'||/^jwt expired$/i.test(detail.message||'');
+  // Supabase Storage may report an expired signed JWT as InvalidJWT rather than
+  // ExpiredToken. Accept that generic code ONLY for a short-lived capability
+  // whose exact URL fetched the expected owner bytes before waiting for expiry.
+  const provenExpiry=response.status===400&&storageCode==='InvalidJWT'&&verifiedBeforeExpiry===true;
+  assert.ok(explicitExpiry||provenExpiry,'Expected explicit expired token evidence or a previously valid signed capability now denied as InvalidJWT');
+  return evidence;
 }
 const failures=new WeakMap();
 export function photoFailureReport(error){
@@ -36,10 +48,9 @@ export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Pro
   const progress={stage:'target validation',checks:[]};
   try{return await verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha);}
   catch{
-    // Never carry server bodies, assertion operands, identities or credentials
-    // into an error or evidence file. Only our fixed checkpoint labels survive.
+    // Keep response evidence limited to the expiration probe's allowlisted fields.
     const error=new Error('Hosted photo verification failed; values withheld');
-    failures.set(error,{ok:false,testedHeadSha:expectedSha,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks]});
+    failures.set(error,{ok:false,testedHeadSha:expectedSha,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks],...(progress.expirationProbe?{expirationProbe:{...progress.expirationProbe}}:{})});
     throw error;
   }
 }
@@ -64,9 +75,15 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
   const rpc=async(user,name,body)=>json(await request(`/rest/v1/rpc/${name}`,user,'POST',body));
   const upload=(user,path,bytes=IMAGE,method='POST',extra={})=>send(`${BASE}/storage/v1/object/${BUCKET}/${path}`,{method,headers:{apikey:key,Authorization:`Bearer ${user.session}`,'Content-Type':'image/png','Cache-Control':'max-age=0',...extra},body:bytes});
   const sign=(user,path,expiresIn=60)=>request(`/storage/v1/object/sign/${BUCKET}/${path}`,user,'POST',{expiresIn});
+  const downloadCapability=(url,{cacheBust=false}={})=>{
+    const target=new URL(url);
+    if(cacheBust)target.searchParams.set('cacheBust',randomUUID());
+    const headers=cacheBust?{'Cache-Control':'no-cache, no-store, max-age=0',Pragma:'no-cache'}:{'Cache-Control':'no-cache'};
+    return send(target.href,{cache:'no-store',headers});
+  };
   const verify=async(user,path)=>{
     const value=await json(await sign(user,path));
-    const response=await send(signedUrl(value.signedURL,path));assert.ok(response.ok,'Signed download failed');
+    const response=await downloadCapability(signedUrl(value.signedURL,path));assert.ok(response.ok,'Signed download failed');
     assert.deepEqual(Buffer.from(await response.arrayBuffer()),IMAGE,'Signed download bytes changed');
   };
   progress.stage='synthetic account authentication';
@@ -144,11 +161,33 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
     assert.ok(Array.isArray(matches));assert.ok(!matches.some(match=>[match.offered_item,match.requested_item].some(id=>items.includes(id))),'Reciprocal authorization persists');
   }
   await checkPermissions('CANCELLED archive without wishlists');
-  // Do not download before expiration: this proves origin rejection rather than
-  // accidentally accepting a CDN-cached response fetched while still valid.
+  // Use a fresh object path so a cached response from earlier reads cannot
+  // satisfy this request without the expired capability being checked.
   progress.stage='signed capability expiration';
-  const expired=await json(await sign(a,a.photo,1));await sleep(2500);
-  await assertExpiredResponse(await send(signedUrl(expired.signedURL,a.photo)));
+  a.expirationPhoto=`${a.id}/hosted-photo-expiration-${run}.png`;
+  progress.expirationProbe={httpStatus:null,storageErrorCode:null,cacheStatus:null,cacheAgeSeconds:null,validBeforeExpiry:false};
+  const expirationReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.expirationPhoto},{Prefer:'return=representation'}));
+  assert.equal(expirationReference.length,1);assert.equal(expirationReference[0].owner_photo_path,a.expirationPhoto);
+  await json(await upload(a,a.expirationPhoto));
+  // Establish that this *same* capability was valid before it expired. This
+  // distinguishes Storage's generic InvalidJWT result from a malformed token,
+  // bad fixture, missing owner authorization, or unavailable Storage service.
+  const expired=await json(await sign(a,a.expirationPhoto,15));
+  const capability=signedUrl(expired.signedURL,a.expirationPhoto);
+  const beforeExpiry=await downloadCapability(capability,{cacheBust:true});
+  assert.equal(beforeExpiry.status,200,'Short-lived capability must be valid before the expiry wait');
+  assert.deepEqual(Buffer.from(await beforeExpiry.arrayBuffer()),IMAGE,'Short-lived capability returned unexpected bytes before expiration');
+  progress.expirationProbe.validBeforeExpiry=true;
+  await sleep(19000);
+  const expiredResponse=await downloadCapability(capability,{cacheBust:true});
+  progress.expirationProbe.httpStatus=Number.isInteger(expiredResponse.status)?expiredResponse.status:null;
+  const cacheStatus=(expiredResponse.headers.get('cf-cache-status')||expiredResponse.headers.get('x-cache')||'').trim().toUpperCase();
+  if(['HIT','MISS','BYPASS','EXPIRED','REVALIDATED','STALE','DYNAMIC','UPDATING'].includes(cacheStatus))progress.expirationProbe.cacheStatus=cacheStatus;
+  const cacheAge=expiredResponse.headers.get('age');
+  if(cacheAge&&/^\d{1,10}$/.test(cacheAge))progress.expirationProbe.cacheAgeSeconds=Number(cacheAge);
+  await assertExpiredResponse(expiredResponse,evidence=>{progress.expirationProbe.storageErrorCode=evidence.storageErrorCode;},{verifiedBeforeExpiry:progress.expirationProbe.validBeforeExpiry});
+  const restoredReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.photo},{Prefer:'return=representation'}));
+  assert.equal(restoredReference.length,1);assert.equal(restoredReference[0].owner_photo_path,a.photo);
   await verify(a,a.photo);checks.push('expired capability denied freshly signed capability downloads');
   progress.stage='owner deletes exact dummy objects';
   // Owner deletion is limited to this run's known dummy objects; retain case rows.
@@ -156,6 +195,18 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
     const deleted=await json(await request(`/storage/v1/object/${BUCKET}`,user,'DELETE',{prefixes:[user.photo]}));
     assert.equal(deleted.length,1);await denied(await sign(user,user.photo));
   }
+  // Storage removal also needs SELECT visibility. Temporarily bind this exact
+  // fixture object to its owner's row so row-backed RLS can expose it.
+  try{
+    const cleanupReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.expirationPhoto},{Prefer:'return=representation'}));
+    assert.equal(cleanupReference.length,1);assert.equal(cleanupReference[0].owner_photo_path,a.expirationPhoto);
+    const expiredFixture=await json(await request(`/storage/v1/object/${BUCKET}`,a,'DELETE',{prefixes:[a.expirationPhoto]}));
+    assert.equal(expiredFixture.length,1);
+  }finally{
+    const restoredCleanupReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.photo},{Prefer:'return=representation'}));
+    assert.equal(restoredCleanupReference.length,1);assert.equal(restoredCleanupReference[0].owner_photo_path,a.photo);
+  }
+  await denied(await sign(a,a.expirationPhoto));
   checks.push('owner deletes exact dummy objects');
   return {ok:true,testedHeadSha:expectedSha,target:'approved-staging',checks,productionRequests:0,unexpectedRequests:0};
 }
