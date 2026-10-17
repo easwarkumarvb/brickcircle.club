@@ -33,7 +33,7 @@ test('signed capability normalization rejects external and unrelated endpoint va
   assert.throws(()=>signedUrl('/object/sign/collection-photos/other?token=fixture','expected'));
   for(const status of [200,302,429,500,503])assert.throws(()=>assertDenied({status}));
 });
-function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
+function fixtureTransport({missingPolicy=false,forgeGap=false,expiredStorageCode='ExpiredToken',rejectEarlyCapability=false}={}){
   const ids=['A','B','C'].map((_,i)=>`00000000-0000-4000-8000-00000000000${i+1}`);
   const objects=new Map();const rows=new Map();const capabilities=new Map();const calls=[];
   let current={id:'case-fixture',state:'PROPOSED',state_version:1};let serial=0;let expired=false;let forged=false;let caseCreated=false;
@@ -41,12 +41,16 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
   const send=async(raw,init)=>{
     const url=new URL(raw);const path=url.pathname;const method=init.method||'GET';const headers=init.headers||{};const who=headers.Authorization?.replace('Bearer session-','');
     const body=typeof init.body==='string'?JSON.parse(init.body):init.body;
-    calls.push({path,method,body,who});assert.equal(init.redirect,'error');
+    calls.push({path,method,body,who,cache:init.cache,cacheBust:url.searchParams.has('cacheBust'),cacheControl:headers['Cache-Control'],pragma:headers.Pragma});assert.equal(init.redirect,'error');
     if(path==='/auth/v1/token')return result({user:{id:ids['abc'.indexOf(body.email[0])]},access_token:`session-${body.email[0].toUpperCase()}`});
     if(path==='/auth/v1/user')return result({id:ids['ABC'.indexOf(who)]});
     if(path==='/rest/v1/collection_items'){
       if(method==='DELETE'){forged=false;return result([]);}
       if(who==='C'){assert.ok(!Object.hasOwn(body,'available_for_exchange'),'Fixture must respect actual column grants');forged=true;return result([{id:'forged-fixture',owner_photo_path:body.owner_photo_path}]);}
+      if(method==='PATCH'){
+        const row=rows.get(who);if(row)row.owner_photo_path=body.owner_photo_path;
+        return result([{id:`item-${who}`,owner_photo_path:body.owner_photo_path}]);
+      }
       rows.set(who,body);return result([{id:`item-${who}`}]);
     }
     if(path==='/rest/v1/wishlists')return result([]);
@@ -60,18 +64,21 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
     if(path==='/storage/v1/object/move')return result({error:'denied'},403);
     if(path==='/storage/v1/object/collection-photos'&&method==='DELETE'){
       const name=body.prefixes[0];if(!name.startsWith(`${ids['ABC'.indexOf(who)]}/`))return result([]);
+      if(rows.get(who)?.owner_photo_path!==name)return result([]);
       objects.delete(name);return result([{name}]);
     }
     if(path.startsWith('/storage/v1/object/authenticated/'))return result({error:'denied'},403);
     if(path.startsWith('/storage/v1/object/sign/')){
       if(method==='GET'){
-        const cap=capabilities.get(url.searchParams.get('token'));if(!cap||cap.short&&expired)return result({code:'ExpiredToken',message:'The provided token has expired.'},400);
+        const cap=capabilities.get(url.searchParams.get('token'));
+        if(!cap||cap.short&&expired)return result({code:expiredStorageCode,message:'The provided token has expired.'},400);
+        if(cap.short&&rejectEarlyCapability&&!expired)return result({code:'InvalidJWT',message:'Invalid token'},400);
         return new Response(objects.get(cap.name),{status:200});
       }
       const name=path.split('/collection-photos/')[1];
       const owner=name.startsWith(`${ids['ABC'.indexOf(who)]}/`);
       if(!objects.has(name)||!who||who==='C'&&!(forgeGap&&forged)||!owner&&missingPolicy&&caseCreated)return result({error:'denied'},403);
-      const token=`fixture-${++serial}`;capabilities.set(token,{name,short:body.expiresIn===1});
+      const token=`fixture-${++serial}`;capabilities.set(token,{name,short:body.expiresIn===15});
       return result({signedURL:`/object/sign/collection-photos/${name}?token=${token}`});
     }
     if(path.startsWith('/storage/v1/object/collection-photos/')){
@@ -80,7 +87,7 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
     }
     throw new Error('Unexpected fixture endpoint');
   };
-  return {send,calls,sleep:async()=>{expired=true;}};
+  return {send,calls,sleep:async(ms)=>{calls.push({path:'__expiration_wait__',method:'SLEEP',ms});expired=true;}};
 }
 test('configured staging set IDs complete photo journey with canonical versions denial and expiry',async()=>{
   const fixture=fixtureTransport();const report=await runPhotoVerification(env(),fixture.send,fixture.sleep);
@@ -88,6 +95,33 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.ok(fixture.calls.some(call=>call.body?.p_action==='cancel'));
   assert.ok(fixture.calls.some(call=>call.who==='C'&&call.body?.owner_photo_path));
   assert.deepEqual(fixture.calls.filter(call=>call.path==='/rest/v1/collection_items'&&call.method==='POST'&&call.who!=='C').map(call=>call.body.set_number),['75192-1','10307-1']);
+  const expiryProbe=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.body?.expiresIn===15);
+  const expiryDownloads=fixture.calls.flatMap((call,index)=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET'?[index]:[]);
+  assert.equal(expiryDownloads.length,2,'Same capability must be tested while valid and again after expiration');
+  const expiryDownload=expiryDownloads[1];
+  const expiryWait=fixture.calls.findIndex(call=>call.path==='__expiration_wait__');
+  assert.ok(expiryProbe>=0&&expiryDownloads[0]>expiryProbe);
+  assert.ok(expiryDownloads[0]<expiryWait&&expiryWait<expiryDownloads[1],'The valid GET must precede the expiry wait and the rejected GET must follow it');
+  assert.equal(fixture.calls[expiryWait].ms,19000);
+  const expiryUpload=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.path.startsWith('/storage/v1/object/'));
+  const expiryReference=fixture.calls.findIndex(call=>call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-expiration-'));
+  const restoredReference=fixture.calls.findIndex(call=>call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.who!=='C'&&call.body?.owner_photo_path?.includes('hosted-photo-')&&!call.body.owner_photo_path.includes('hosted-photo-expiration-'));
+  assert.ok(expiryReference>=0&&expiryUpload>expiryReference,'Expiry object must be referenced by a collection row before upload');
+  assert.ok(restoredReference>expiryDownload,'Original photo reference must be restored after expiry is verified');
+  assert.equal(fixture.calls[expiryDownloads[0]].cacheBust,true);
+  const expiryCleanup=fixture.calls.findIndex(call=>call.path==='/storage/v1/object/collection-photos'&&call.method==='DELETE'&&call.body?.prefixes?.[0]?.includes('hosted-photo-expiration-'));
+  const cleanupReference=fixture.calls.findIndex((call,index)=>index>restoredReference&&call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-expiration-'));
+  const cleanupRestore=fixture.calls.findIndex((call,index)=>index>expiryCleanup&&call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-')&&!call.body.owner_photo_path.includes('hosted-photo-expiration-'));
+  assert.ok(cleanupReference>=0&&expiryCleanup>cleanupReference&&cleanupRestore>expiryCleanup,'Unreferenced expiry fixture must be row-bound only while owner cleanup runs');
+  assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,2);
+
+  assert.equal(fixture.calls[expiryDownload].cache,'no-store');
+  assert.equal(fixture.calls[expiryDownload].cacheBust,true);
+  assert.equal(fixture.calls[expiryDownload].cacheControl,'no-cache, no-store, max-age=0');
+  assert.equal(fixture.calls[expiryDownload].pragma,'no-cache');
+  const ordinaryDownload=fixture.calls.find(call=>call.path.startsWith('/storage/v1/object/sign/')&&call.method==='GET');
+  assert.equal(ordinaryDownload.cacheControl,'no-cache');
+  assert.equal(ordinaryDownload.cacheBust,false);
 });
 test('an independently validated combined candidate SHA is preserved in photo smoke evidence',async()=>{
   const expectedSha='2cde4e3806dfec9a5b5566202db399bfb7accf37';
@@ -110,9 +144,46 @@ test('forged collection reference access fails verification before archive succe
   assert.ok(!fixture.calls.some(call=>call.body?.p_action==='cancel'));
 });
 test('expiration accepts explicit Storage expired token but rejects arbitrary bad requests',async()=>{
-  await assertExpiredResponse(new Response(JSON.stringify({code:'ExpiredToken',message:'The provided token has expired.'}),{status:400}));
+  assert.deepEqual(await assertExpiredResponse(new Response(JSON.stringify({statusCode:'400',code:'ExpiredToken',error:'ExpiredToken',message:'The provided token has expired.'}),{status:400})),{httpStatus:400,storageErrorCode:'ExpiredToken'});
   await assertExpiredResponse(new Response(JSON.stringify({message:'jwt expired'}),{status:403}));
+  await assertExpiredResponse(new Response(JSON.stringify({statusCode:'400',code:'InvalidJWT',message:'Invalid JWT'}),{status:400}),()=>{},{verifiedBeforeExpiry:true});
+  await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({code:'InvalidJWT',message:'Invalid JWT'}),{status:400})),/Expected explicit expired token evidence/);
+  await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({code:'InvalidJWT',message:'Invalid JWT'}),{status:403}),()=>{},{verifiedBeforeExpiry:true}));
   for(const detail of [{code:'InvalidRequest'},{message:'invalid signature'},{code:'23514'},{statusCode:403,message:'permission denied'}])await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify(detail),{status:400})));
+  await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({statusCode:'403',code:'ExpiredToken'}),{status:400})),/statusCode did not match/);
+  await assert.rejects(()=>assertExpiredResponse(new Response(IMAGE,{status:200})),/Expected expired capability response/);
+});
+test('expiration failure evidence keeps only safe HTTP and cache diagnostics',async()=>{
+  const fixture=fixtureTransport();
+  await assert.rejects(()=>runPhotoVerification(env(),async(url,init)=>{
+    const response=await fixture.send(url,init);
+    if(new URL(url).pathname.includes('hosted-photo-expiration-')&&init.method===undefined)return new Response(IMAGE,{status:200,headers:{'CF-Cache-Status':'HIT','Age':'7'}});
+    return response;
+  },fixture.sleep),error=>{
+    const failure=photoFailureReport(error);
+    assert.equal(failure.failedStage,'signed capability expiration');
+    assert.deepEqual(failure.expirationProbe,{httpStatus:200,storageErrorCode:null,cacheStatus:'HIT',cacheAgeSeconds:7,validBeforeExpiry:true});
+    const serialized=serializeRedactedReport(failure);
+    assert.ok(!serialized.includes('cacheBust'));
+    assert.ok(!serialized.includes('/storage/v1/'));
+    return true;
+  });
+});
+test('generic InvalidJWT after a proven valid short-lived capability is accepted only once expired',async()=>{
+  const fixture=fixtureTransport({expiredStorageCode:'InvalidJWT'});
+  const result=await runPhotoVerification(env(),fixture.send,fixture.sleep);
+  assert.equal(result.ok,true);
+  assert.ok(result.checks.includes('expired capability denied freshly signed capability downloads'));
+});
+test('pre-expiry InvalidJWT fails instead of being mistaken for an expired token',async()=>{
+  const fixture=fixtureTransport({rejectEarlyCapability:true});
+  await assert.rejects(()=>runPhotoVerification(env(),fixture.send,fixture.sleep),error=>{
+    const failure=photoFailureReport(error);
+    assert.equal(failure.failedStage,'signed capability expiration');
+    assert.equal(failure.expirationProbe?.validBeforeExpiry,false);
+    assert.ok(!fixture.calls.some(call=>call.path==='__expiration_wait__'));
+    return true;
+  });
 });
 test('changed signed download bytes fail verification',async()=>{
   const fixture=fixtureTransport();
@@ -125,7 +196,7 @@ test('infrastructure errors cannot certify a foreign mutation denial',async()=>{
   await assert.rejects(()=>runPhotoVerification(env(),send,fixture.sleep));
 });
 test('workflow is manual protected pinned and never passes server secret to HTTP harness',async()=>{
-  const source=await readFile('.github/workflows/hosted-photo-verification.yml','utf8');
+  const source=(await readFile('.github/workflows/hosted-photo-verification.yml','utf8')).replace(/\r\n/g,'\n');
   assert.ok(source.includes('workflow_dispatch:'));assert.ok(!/^  (push|pull_request):/m.test(source));
   assert.ok(source.includes('environment: hosted-supabase-staging'));assert.ok(source.includes('group: hosted-supabase-exchange-smoke'));
   assert.equal((source.match(/validateSelection\(/g)||[]).length,2);
