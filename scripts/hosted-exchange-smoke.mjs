@@ -259,16 +259,47 @@ async function assertCatalogSets(session, setNumbers) {
   for (const setNumber of setNumbers) assert.ok(found.has(setNumber), `Staging catalogue is missing ${setNumber}`);
 }
 
-export async function insertOwnedItem(session, setNumber, runId) {
-  const { data, error } = await session.client.from('collection_items').insert({
+async function unusedCatalogSetNumber(session, excludedSetNumbers) {
+  const owned = new Set();
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await session.client.from('collection_items')
+      .select('set_number')
+      .eq('user_id', session.id)
+      .range(offset, offset + 999);
+    if (error) throw new Error(`Could not inspect staging collection ${session.label}: ${error.message}`);
+    for (const row of data || []) owned.add(row.set_number);
+    if ((data || []).length < 1000) break;
+  }
+
+  const excluded = new Set([...owned, ...excludedSetNumbers]);
+  for (let offset = 0; ; offset += 1000) {
+    const { data, error } = await session.client.from('lego_sets')
+      .select('set_number')
+      .order('set_number')
+      .range(offset, offset + 999);
+    if (error) throw new Error(`Could not find an unused staging catalogue set: ${error.message}`);
+    const candidate = (data || []).find(row => row.set_number && !excluded.has(row.set_number));
+    if (candidate) return candidate.set_number;
+    if ((data || []).length < 1000) break;
+  }
+  throw new Error(`No unused catalogue set is available for staging user ${session.label}`);
+}
+
+export async function insertOwnedItem(session, setNumber, runId, excludedSetNumbers = []) {
+  const insert = targetSetNumber => session.client.from('collection_items').insert({
     user_id: session.id,
-    set_number: setNumber,
+    set_number: targetSetNumber,
     condition: 'Excellent',
     completeness: 100,
     original_box: false,
     notes: `[${runId}] hosted Supabase release-gate fixture`,
     owner_photo_path: `hosted-smoke/${runId}/${session.label.toLowerCase()}.jpg`
   }).select('*').single();
+  let { data, error } = await insert(setNumber);
+  if (error?.code === '23505') {
+    const alternateSetNumber = await unusedCatalogSetNumber(session, [...excludedSetNumbers, setNumber]);
+    ({ data, error } = await insert(alternateSetNumber));
+  }
   if (error) throw new Error(`Could not create staging item ${session.label}: ${error.message}`);
   assert.ok(data?.id, `Staging item ${session.label} must return a database-generated id`);
   return data;
@@ -453,11 +484,9 @@ async function runHostedSmoke(config) {
     passed('three independent Auth sessions and eligible same-city participant profiles');
 
     stage('reciprocal matching setup');
-    const [itemA, itemB] = await Promise.all([
-      insertOwnedItem(a, config.setA, config.runId),
-      insertOwnedItem(b, config.setB, config.runId)
-    ]);
-    await Promise.all([ensureWishlist(a, config.setB), ensureWishlist(b, config.setA)]);
+    const itemA = await insertOwnedItem(a, config.setA, config.runId, [config.setB]);
+    const itemB = await insertOwnedItem(b, config.setB, config.runId, [itemA.set_number]);
+    await Promise.all([ensureWishlist(a, itemB.set_number), ensureWishlist(b, itemA.set_number)]);
     await Promise.all([setAvailable(a, itemA.id), setAvailable(b, itemB.id)]);
 
     const [matchesA, matchesB] = await Promise.all([
