@@ -47,7 +47,10 @@ function fixtureTransport({missingPolicy=false,forgeGap=false,expiredStorageCode
     if(path==='/rest/v1/collection_items'){
       if(method==='DELETE'){forged=false;return result([]);}
       if(who==='C'){assert.ok(!Object.hasOwn(body,'available_for_exchange'),'Fixture must respect actual column grants');forged=true;return result([{id:'forged-fixture',owner_photo_path:body.owner_photo_path}]);}
-      if(method==='PATCH')return result([{id:`item-${who}`,owner_photo_path:body.owner_photo_path}]);
+      if(method==='PATCH'){
+        const row=rows.get(who);if(row)row.owner_photo_path=body.owner_photo_path;
+        return result([{id:`item-${who}`,owner_photo_path:body.owner_photo_path}]);
+      }
       rows.set(who,body);return result([{id:`item-${who}`}]);
     }
     if(path==='/rest/v1/wishlists')return result([]);
@@ -61,6 +64,7 @@ function fixtureTransport({missingPolicy=false,forgeGap=false,expiredStorageCode
     if(path==='/storage/v1/object/move')return result({error:'denied'},403);
     if(path==='/storage/v1/object/collection-photos'&&method==='DELETE'){
       const name=body.prefixes[0];if(!name.startsWith(`${ids['ABC'.indexOf(who)]}/`))return result([]);
+      if(rows.get(who)?.owner_photo_path!==name)return result([]);
       objects.delete(name);return result([{name}]);
     }
     if(path.startsWith('/storage/v1/object/authenticated/'))return result({error:'denied'},403);
@@ -105,6 +109,12 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.ok(expiryReference>=0&&expiryUpload>expiryReference,'Expiry object must be referenced by a collection row before upload');
   assert.ok(restoredReference>expiryDownload,'Original photo reference must be restored after expiry is verified');
   assert.equal(fixture.calls[expiryDownloads[0]].cacheBust,true);
+  const expiryCleanup=fixture.calls.findIndex(call=>call.path==='/storage/v1/object/collection-photos'&&call.method==='DELETE'&&call.body?.prefixes?.[0]?.includes('hosted-photo-expiration-'));
+  const cleanupReference=fixture.calls.findIndex((call,index)=>index>restoredReference&&call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-expiration-'));
+  const cleanupRestore=fixture.calls.findIndex((call,index)=>index>expiryCleanup&&call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-')&&!call.body.owner_photo_path.includes('hosted-photo-expiration-'));
+  assert.ok(cleanupReference>=0&&expiryCleanup>cleanupReference&&cleanupRestore>expiryCleanup,'Unreferenced expiry fixture must be row-bound only while owner cleanup runs');
+  assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,2);
+
   assert.equal(fixture.calls[expiryDownload].cache,'no-store');
   assert.equal(fixture.calls[expiryDownload].cacheBust,true);
   assert.equal(fixture.calls[expiryDownload].cacheControl,'no-cache, no-store, max-age=0');

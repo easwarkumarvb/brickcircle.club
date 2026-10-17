@@ -195,8 +195,18 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
     const deleted=await json(await request(`/storage/v1/object/${BUCKET}`,user,'DELETE',{prefixes:[user.photo]}));
     assert.equal(deleted.length,1);await denied(await sign(user,user.photo));
   }
-  const expiredFixture=await json(await request(`/storage/v1/object/${BUCKET}`,a,'DELETE',{prefixes:[a.expirationPhoto]}));
-  assert.equal(expiredFixture.length,1);await denied(await sign(a,a.expirationPhoto));
+  // Storage removal also needs SELECT visibility. Temporarily bind this exact
+  // fixture object to its owner's row so row-backed RLS can expose it.
+  try{
+    const cleanupReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.expirationPhoto},{Prefer:'return=representation'}));
+    assert.equal(cleanupReference.length,1);assert.equal(cleanupReference[0].owner_photo_path,a.expirationPhoto);
+    const expiredFixture=await json(await request(`/storage/v1/object/${BUCKET}`,a,'DELETE',{prefixes:[a.expirationPhoto]}));
+    assert.equal(expiredFixture.length,1);
+  }finally{
+    const restoredCleanupReference=await json(await request(`/rest/v1/collection_items?id=eq.${a.item}&select=id,owner_photo_path`,a,'PATCH',{owner_photo_path:a.photo},{Prefer:'return=representation'}));
+    assert.equal(restoredCleanupReference.length,1);assert.equal(restoredCleanupReference[0].owner_photo_path,a.photo);
+  }
+  await denied(await sign(a,a.expirationPhoto));
   checks.push('owner deletes exact dummy objects');
   return {ok:true,testedHeadSha:expectedSha,target:'approved-staging',checks,productionRequests:0,unexpectedRequests:0};
 }
