@@ -32,19 +32,19 @@ const failures=new WeakMap();
 export function photoFailureReport(error){
   return failures.get(error)||{ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:'photo HTTP verification',checks:[]};
 }
-export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))){
+export async function runPhotoVerification(env,fetchImpl=fetch,sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms)),{expectedSha=CANDIDATE_SHA}={}){
   const progress={stage:'target validation',checks:[]};
-  try{return await verifyPhotoJourney(env,fetchImpl,sleep,progress);}
+  try{return await verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha);}
   catch{
     // Never carry server bodies, assertion operands, identities or credentials
     // into an error or evidence file. Only our fixed checkpoint labels survive.
     const error=new Error('Hosted photo verification failed; values withheld');
-    failures.set(error,{ok:false,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks]});
+    failures.set(error,{ok:false,testedHeadSha:expectedSha,target:'approved-staging',failedStage:progress.stage,checks:[...progress.checks]});
     throw error;
   }
 }
-async function verifyPhotoJourney(env,fetchImpl,sleep,progress){
-  validateTarget(env,{publicOnly:true});
+async function verifyPhotoJourney(env,fetchImpl,sleep,progress,expectedSha){
+  validateTarget(env,{publicOnly:true,expectedSha});
   const send=guardedFetch(fetchImpl);
   const key=env.BC_STAGING_SUPABASE_PUBLISHABLE_KEY;
   const run=randomUUID();const checks=progress.checks;
@@ -157,11 +157,11 @@ async function verifyPhotoJourney(env,fetchImpl,sleep,progress){
     assert.equal(deleted.length,1);await denied(await sign(user,user.photo));
   }
   checks.push('owner deletes exact dummy objects');
-  return {ok:true,testedHeadSha:CANDIDATE_SHA,target:'approved-staging',checks,productionRequests:0,unexpectedRequests:0};
+  return {ok:true,testedHeadSha:expectedSha,target:'approved-staging',checks,productionRequests:0,unexpectedRequests:0};
 }
 if(process.argv[1]&&pathToFileURL(resolve(process.argv[1])).href===import.meta.url){
   let report;
-  try{report=await runPhotoVerification(process.env);console.log('Hosted photo HTTP permission and signed download checks passed.');}
+  try{report=await runPhotoVerification(process.env,fetch,undefined,{expectedSha:process.env.BC_HOSTED_SMOKE_EXPECTED_HEAD_SHA||CANDIDATE_SHA});console.log('Hosted photo HTTP permission and signed download checks passed.');}
   catch(error){report=photoFailureReport(error);process.exitCode=1;console.error(`Hosted photo verification failed at ${report.failedStage}; values withheld. No schema changes attempted.`);}
   await mkdir('artifacts',{recursive:true});await writeFile('artifacts/hosted-photo-http.json',serializeRedactedReport(report));
 }
