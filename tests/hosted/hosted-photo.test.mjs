@@ -33,7 +33,7 @@ test('signed capability normalization rejects external and unrelated endpoint va
   assert.throws(()=>signedUrl('/object/sign/collection-photos/other?token=fixture','expected'));
   for(const status of [200,302,429,500,503])assert.throws(()=>assertDenied({status}));
 });
-function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
+function fixtureTransport({missingPolicy=false,forgeGap=false,expiredStorageCode='ExpiredToken',rejectEarlyCapability=false}={}){
   const ids=['A','B','C'].map((_,i)=>`00000000-0000-4000-8000-00000000000${i+1}`);
   const objects=new Map();const rows=new Map();const capabilities=new Map();const calls=[];
   let current={id:'case-fixture',state:'PROPOSED',state_version:1};let serial=0;let expired=false;let forged=false;let caseCreated=false;
@@ -66,13 +66,15 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
     if(path.startsWith('/storage/v1/object/authenticated/'))return result({error:'denied'},403);
     if(path.startsWith('/storage/v1/object/sign/')){
       if(method==='GET'){
-        const cap=capabilities.get(url.searchParams.get('token'));if(!cap||cap.short&&expired)return result({code:'ExpiredToken',message:'The provided token has expired.'},400);
+        const cap=capabilities.get(url.searchParams.get('token'));
+        if(!cap||cap.short&&expired)return result({code:expiredStorageCode,message:'The provided token has expired.'},400);
+        if(cap.short&&rejectEarlyCapability&&!expired)return result({code:'InvalidJWT',message:'Invalid token'},400);
         return new Response(objects.get(cap.name),{status:200});
       }
       const name=path.split('/collection-photos/')[1];
       const owner=name.startsWith(`${ids['ABC'.indexOf(who)]}/`);
       if(!objects.has(name)||!who||who==='C'&&!(forgeGap&&forged)||!owner&&missingPolicy&&caseCreated)return result({error:'denied'},403);
-      const token=`fixture-${++serial}`;capabilities.set(token,{name,short:body.expiresIn===1});
+      const token=`fixture-${++serial}`;capabilities.set(token,{name,short:body.expiresIn===15});
       return result({signedURL:`/object/sign/collection-photos/${name}?token=${token}`});
     }
     if(path.startsWith('/storage/v1/object/collection-photos/')){
@@ -81,7 +83,7 @@ function fixtureTransport({missingPolicy=false,forgeGap=false}={}){
     }
     throw new Error('Unexpected fixture endpoint');
   };
-  return {send,calls,sleep:async()=>{expired=true;}};
+  return {send,calls,sleep:async(ms)=>{calls.push({path:'__expiration_wait__',method:'SLEEP',ms});expired=true;}};
 }
 test('configured staging set IDs complete photo journey with canonical versions denial and expiry',async()=>{
   const fixture=fixtureTransport();const report=await runPhotoVerification(env(),fixture.send,fixture.sleep);
@@ -89,15 +91,20 @@ test('configured staging set IDs complete photo journey with canonical versions 
   assert.ok(fixture.calls.some(call=>call.body?.p_action==='cancel'));
   assert.ok(fixture.calls.some(call=>call.who==='C'&&call.body?.owner_photo_path));
   assert.deepEqual(fixture.calls.filter(call=>call.path==='/rest/v1/collection_items'&&call.method==='POST'&&call.who!=='C').map(call=>call.body.set_number),['75192-1','10307-1']);
-  const expiryProbe=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.body?.expiresIn===1);
-  const expiryDownload=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET');
-  assert.ok(expiryProbe>=0&&expiryDownload>expiryProbe);
+  const expiryProbe=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.body?.expiresIn===15);
+  const expiryDownloads=fixture.calls.flatMap((call,index)=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET'?[index]:[]);
+  assert.equal(expiryDownloads.length,2,'Same capability must be tested while valid and again after expiration');
+  const expiryDownload=expiryDownloads[1];
+  const expiryWait=fixture.calls.findIndex(call=>call.path==='__expiration_wait__');
+  assert.ok(expiryProbe>=0&&expiryDownloads[0]>expiryProbe);
+  assert.ok(expiryDownloads[0]<expiryWait&&expiryWait<expiryDownloads[1],'The valid GET must precede the expiry wait and the rejected GET must follow it');
+  assert.equal(fixture.calls[expiryWait].ms,19000);
   const expiryUpload=fixture.calls.findIndex(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='POST'&&call.path.startsWith('/storage/v1/object/'));
   const expiryReference=fixture.calls.findIndex(call=>call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-expiration-'));
   const restoredReference=fixture.calls.findIndex(call=>call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.who!=='C'&&call.body?.owner_photo_path?.includes('hosted-photo-')&&!call.body.owner_photo_path.includes('hosted-photo-expiration-'));
   assert.ok(expiryReference>=0&&expiryUpload>expiryReference,'Expiry object must be referenced by a collection row before upload');
   assert.ok(restoredReference>expiryDownload,'Original photo reference must be restored after expiry is verified');
-  assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,1);
+  assert.equal(fixture.calls[expiryDownloads[0]].cacheBust,true);
   assert.equal(fixture.calls[expiryDownload].cache,'no-store');
   assert.equal(fixture.calls[expiryDownload].cacheBust,true);
   assert.equal(fixture.calls[expiryDownload].cacheControl,'no-cache, no-store, max-age=0');
@@ -129,6 +136,9 @@ test('forged collection reference access fails verification before archive succe
 test('expiration accepts explicit Storage expired token but rejects arbitrary bad requests',async()=>{
   assert.deepEqual(await assertExpiredResponse(new Response(JSON.stringify({statusCode:'400',code:'ExpiredToken',error:'ExpiredToken',message:'The provided token has expired.'}),{status:400})),{httpStatus:400,storageErrorCode:'ExpiredToken'});
   await assertExpiredResponse(new Response(JSON.stringify({message:'jwt expired'}),{status:403}));
+  await assertExpiredResponse(new Response(JSON.stringify({statusCode:'400',code:'InvalidJWT',message:'Invalid JWT'}),{status:400}),()=>{},{verifiedBeforeExpiry:true});
+  await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({code:'InvalidJWT',message:'Invalid JWT'}),{status:400})),/Expected explicit expired token evidence/);
+  await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({code:'InvalidJWT',message:'Invalid JWT'}),{status:403}),()=>{},{verifiedBeforeExpiry:true}));
   for(const detail of [{code:'InvalidRequest'},{message:'invalid signature'},{code:'23514'},{statusCode:403,message:'permission denied'}])await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify(detail),{status:400})));
   await assert.rejects(()=>assertExpiredResponse(new Response(JSON.stringify({statusCode:'403',code:'ExpiredToken'}),{status:400})),/statusCode did not match/);
   await assert.rejects(()=>assertExpiredResponse(new Response(IMAGE,{status:200})),/Expected expired capability response/);
@@ -142,10 +152,26 @@ test('expiration failure evidence keeps only safe HTTP and cache diagnostics',as
   },fixture.sleep),error=>{
     const failure=photoFailureReport(error);
     assert.equal(failure.failedStage,'signed capability expiration');
-    assert.deepEqual(failure.expirationProbe,{httpStatus:200,storageErrorCode:null,cacheStatus:'HIT',cacheAgeSeconds:7});
+    assert.deepEqual(failure.expirationProbe,{httpStatus:200,storageErrorCode:null,cacheStatus:'HIT',cacheAgeSeconds:7,validBeforeExpiry:true});
     const serialized=serializeRedactedReport(failure);
     assert.ok(!serialized.includes('cacheBust'));
     assert.ok(!serialized.includes('/storage/v1/'));
+    return true;
+  });
+});
+test('generic InvalidJWT after a proven valid short-lived capability is accepted only once expired',async()=>{
+  const fixture=fixtureTransport({expiredStorageCode:'InvalidJWT'});
+  const result=await runPhotoVerification(env(),fixture.send,fixture.sleep);
+  assert.equal(result.ok,true);
+  assert.ok(result.checks.includes('expired capability denied freshly signed capability downloads'));
+});
+test('pre-expiry InvalidJWT fails instead of being mistaken for an expired token',async()=>{
+  const fixture=fixtureTransport({rejectEarlyCapability:true});
+  await assert.rejects(()=>runPhotoVerification(env(),fixture.send,fixture.sleep),error=>{
+    const failure=photoFailureReport(error);
+    assert.equal(failure.failedStage,'signed capability expiration');
+    assert.equal(failure.expirationProbe?.validBeforeExpiry,false);
+    assert.ok(!fixture.calls.some(call=>call.path==='__expiration_wait__'));
     return true;
   });
 });

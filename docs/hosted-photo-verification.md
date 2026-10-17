@@ -65,21 +65,24 @@ no signing access. This uses only the run's dummy paths. Missing-object, permiss
 and expired-capability failures are accepted; infrastructure failures and arbitrary
 bad requests are not permission evidence.
 
-A one-second capability is issued for a newly uploaded, never-before-read object
-path and is not downloaded while valid; its first request after expiration must
-fail with explicit `ExpiredToken` (or legacy `jwt expired`) evidence. Using an
-unread path prevents earlier successful downloads from satisfying the probe
-through an intermediary cache. A newly signed capability for the original photo
-must still succeed. Current Storage returns HTTP 400 for `ExpiredToken`; its
-current JSON error shape contains `statusCode: "400"` and `code`/`error:
-"ExpiredToken"`, as defined in the [official error
-codes](https://github.com/supabase/storage/blob/master/src/internal/errors/codes.ts)
-and [error renderer](https://github.com/supabase/storage/blob/master/src/internal/errors/storage-error.ts).
-An arbitrary HTTP 400 or invalid-signature error is not accepted as expiry proof. This avoids deriving
-expiration evidence from a previously cached successful response. Existing
-candidate runtime tests independently prove the application's fifteen-minute URL
-cache refresh, failure recovery and account-switch/logout isolation without
-waiting fifteen minutes.
+A fifteen-second signed capability is issued for a freshly uploaded, owner-row-backed
+dummy object. The harness fetches the **same exact capability successfully before
+expiration**, verifies the expected PNG bytes, waits nineteen seconds, then requests
+it again with a new cache-busting parameter. The expired capability must be rejected.
+This is important because actual protected staging runs returned **HTTP 400**
+with Storage code `InvalidJWT` (CDN `BYPASS`), rather than `ExpiredToken`,
+even when the token expiration was being tested. `InvalidJWT` is accepted
+**only** when the identical capability demonstrably worked before the wait,
+its HTTP denial is 400 afterward, and the original owner's newly signed
+photo capability continues to work. `ExpiredToken` and legacy explicit
+`jwt expired` errors remain supported. A generic `InvalidJWT` error without
+that prior successful read is **not** expiry evidence.
+
+This does not waive access controls or treat arbitrary HTTP failures as
+permission evidence. It tests the actual Storage denial after elapsed token
+lifetime, rather than depending solely on an error name that varies between
+Storage versions. The application's separate runtime tests cover its
+fifteen-minute signed-URL refresh and account-switch/logout behavior.
 
 Before upload, the harness temporarily points the owner's existing synthetic
 collection row at the fresh probe path so Storage's row-backed signing policy can
