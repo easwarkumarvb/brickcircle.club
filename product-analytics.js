@@ -1,8 +1,16 @@
 /* BrickCircle product-funnel analytics. Delegated instrumentation keeps product logic untouched. */
 (function(){
   'use strict';
-  if(/[?&#](?:code|token|token_hash|access_token|refresh_token|id_token|provider_token|provider_refresh_token|error_description)=/.test(location.href)) return;
-  function track(name,params){ if(typeof window.bcTrack==='function') window.bcTrack(name,params||{}); }
+  function sensitiveCallback(){
+    try {
+      var url=new URL(location.href),names=['code','token','token_hash','access_token','refresh_token','id_token','provider_token','provider_refresh_token','error','error_description','recovery'];
+      if(['/admin.html','/auth-confirm.html'].indexOf(url.pathname)>=0) return true;
+      var fragment=url.hash.slice(1),parts=[url.search.slice(1),fragment,fragment.indexOf('?')>=0?fragment.slice(fragment.indexOf('?')+1):''];
+      return parts.some(function(part){return Array.from(new URLSearchParams(part).keys()).some(function(key){return names.indexOf(key.toLowerCase())>=0;});});
+    }catch(e){return true;}
+  }
+  if(sensitiveCallback()) return;
+  function track(name,params){ if(sensitiveCallback()) return; if(typeof window.bcTrack==='function') window.bcTrack(name,params||{}); }
   function text(el){ return ((el&&el.textContent)||'').replace(/\s+/g,' ').trim().toLowerCase(); }
   function hashPage(){var raw=(location.hash||'#home').slice(1).split('/')[0];return ['home','browse','sets','matches','exchanges','exchange','profile','messages'].indexOf(raw)>=0?raw:'home';}
   function safePage(){var p=hashPage();return {page_title:'BrickCircle - '+p,page_location:location.origin+'/#'+p,page_path:'/#'+p};}

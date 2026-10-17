@@ -1,3 +1,4 @@
+import {readBoundedJSON,RequestBodyError} from '../_shared/bounded-json.mjs';
 import {createClient} from 'npm:@supabase/supabase-js@2.57.4';
 // @deno-types="npm:@types/web-push@3.6.4"
 import webpush from 'npm:web-push@3.6.7';
@@ -24,7 +25,8 @@ Deno.serve(async(req:Request)=>{
   const vapidPublic=Deno.env.get('VAPID_PUBLIC_KEY'),vapidPrivate=Deno.env.get('VAPID_PRIVATE_KEY'),vapidSubject=Deno.env.get('VAPID_SUBJECT');
   if(!supabaseUrl||!serviceRoleKey||!vapidPublic||!vapidPrivate||!vapidSubject)return json({error:'Push worker is not configured'},503);
 
-  const input=await req.json().catch(()=>({}));
+  let input;
+  try { input=await readBoundedJSON(req); } catch(error) { return json({error:error instanceof RequestBodyError?error.message:'Invalid JSON.'},error instanceof RequestBodyError?error.status:400); }
   const notificationId=String(input?.record?.id||input?.notification_id||'');
   if(!uuid.test(notificationId))return json({error:'Invalid notification id'},400);
 
@@ -45,7 +47,7 @@ Deno.serve(async(req:Request)=>{
       return Boolean(data);
     },
     send:async(subscription:PushSubscription,payload:PushPayload)=>{
-      const response=await webpush.sendNotification({endpoint:subscription.endpoint,keys:{p256dh:subscription.p256dh,auth:subscription.auth}},JSON.stringify(payload),{TTL:3600,urgency:'high'});
+      const response=await webpush.sendNotification({endpoint:subscription.endpoint,keys:{p256dh:subscription.p256dh,auth:subscription.auth}},JSON.stringify(payload),{TTL:3600,urgency:'high',timeout:10000});
       return Number(response.statusCode||201);
     },
     success:async(subscriptionId,notificationId,status)=>{

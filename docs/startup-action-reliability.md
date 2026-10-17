@@ -1,0 +1,17 @@
+# Startup and action reliability
+
+The first usable boot render was followed by referral/provider work and a second shell replacement. A collector could click an exposed control while that replacement detached it. Optional bookkeeping now runs as a bounded group before initial hydration, and the usable shell renders once. Navigation to the same hash respects the boot loading state. Late optional responses have no shell-render continuation.
+
+Wishlist actions capture the account, authentication epoch and render token. A completed write refreshes that account's data, while its old handler cannot replace a newer view or announce success after signout/account changes. Canonical exchange writers, role gates and camera cleanup remain authoritative.
+
+Ordinary focus no longer rehydrates a usable shell. Genuine background transitions share one bounded authentication validation per account/epoch/transition. Later transitions retire old recovery and hydration responses before shell replacement; confirmed missing authentication still clears protected UI and overlays. The existing resume grace remains unchanged.
+
+Late signed photo responses previously grew gallery and match cards between pointer-down and pointer-up. Gallery placeholders now reserve the image height, and match proof/gallery frames render upfront and hydrate by requested item identity. Loading, failed signing and image errors keep the frames stable. No placeholder contains storage paths or asserts physical verification. Controlled transport tests hold signing responses and compare action rectangles at 320, 390 and 1280 pixels, exercise denied signing and click once while signing is pending.
+
+Firefox also exposed a first-click race when startup released an off-screen collection action: global smooth scrolling could keep moving the hit target between pointer-down and pointer-up. Browser-driven scroll/focus now defaults to immediate motion; UI actions that intentionally animate scrolling still request it explicitly. The delayed-startup regression uses a 390×320 viewport and clicks the off-screen photo action before releasing late startup bookkeeping.
+
+The three-user journey helpers still assert actual fixture server state and additionally await final UI completion before navigating or changing actors. They contain no added sleeps, retries or timeout widening.
+
+Nineteen controlled-delay tests execute the production application with only transport delays: startup gate, optional eight-second deadline/late completion, wishlist navigation and wishlist signout, ordinary focus, deduplicated genuine resume, newer hidden transitions, hydration invalidation and confirmed missing authentication. A dedicated three-engine workflow strictly reproduces the old exposed-control boundary against frozen c68d562 source, then exercises the repaired startup/journeys/camera scenarios three times with zero retries and runs account/callback regressions.
+
+Prepared through GitHub after the local environment disconnected. JavaScript parsing was checked without executing application code; TypeScript, browser and full regression results must come from CI. This branch is stacked on the validated security draft. No merge, deployment, production change or physical-device certification is implied.

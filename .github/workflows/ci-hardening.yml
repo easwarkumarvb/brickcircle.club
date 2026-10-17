@@ -8,13 +8,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
       - name: Git diff check
         if: github.event_name == 'pull_request'
         run: git diff --check "${{ github.event.pull_request.base.sha }}...HEAD"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
       - run: npm ci
@@ -45,7 +45,7 @@ jobs:
         run: npm run test:isolated:chromium
       - name: Retain conversation regression failure evidence
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: person-first-conversation-failures
           path: |
@@ -54,20 +54,20 @@ jobs:
             test-results/**/trace.zip
           if-no-files-found: ignore
       - name: Upload Chromium admin screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: admin-console-chromium
           path: test-results/**/admin-*.png
           if-no-files-found: ignore
       - name: Upload guided conversation screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: guided-messaging-chromium
           path: test-results/**/guided-messaging-*.png
           if-no-files-found: error
       - name: Upload mocked owner camera Chromium evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: owner-photo-camera-chromium-test-only
           path: test-results/**/owner-photo-camera-*.png
@@ -84,20 +84,20 @@ jobs:
       - name: Firefox + WebKit isolated functional suite
         run: npm run test:isolated -- --project=firefox --project=webkit
       - name: Upload Firefox and WebKit admin screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: admin-console-firefox-webkit
           path: test-results/**/admin-*.png
           if-no-files-found: ignore
       - name: Upload cross-browser guided conversation screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: guided-messaging-firefox-webkit
           path: test-results/**/guided-messaging-*.png
           if-no-files-found: error
       - name: Upload mocked owner camera Firefox and WebKit evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: owner-photo-camera-firefox-webkit-test-only
           path: test-results/**/owner-photo-camera-*.png

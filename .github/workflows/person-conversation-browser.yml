@@ -17,8 +17,8 @@ jobs:
       matrix:
         browser: [chromium, firefox, webkit]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: '22'
       - run: npm ci
@@ -40,7 +40,7 @@ jobs:
           PY
       - name: Retain public browser runtime for local test fallback
         if: always() && matrix.browser == 'chromium' && github.head_ref == 'dev/person-first-conversations'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: conversation-chromium-runtime
           path: ${{ runner.temp }}/conversation-chromium-runtime.tar.gz
@@ -51,7 +51,7 @@ jobs:
         run: npm run test:isolated -- tests/isolated/guided-exchange-messaging.spec.ts tests/isolated/person-conversation-read-model.spec.ts tests/isolated/messaging-polish.spec.ts tests/isolated/mobile-core-journeys.spec.ts tests/isolated/canonical-exchange-review-fixes.spec.ts tests/isolated/beta-reliability-three-user.spec.ts --project=${{ matrix.browser }} --retries=0
       - name: Retain isolated conversation evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: person-conversation-${{ matrix.browser }}
           path: test-results

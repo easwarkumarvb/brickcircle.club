@@ -1,44 +1,22 @@
-name: Install GA4 sitewide
-
+name: Analytics privacy guard
 on:
+  pull_request:
+    paths: ['analytics.js', 'product-analytics.js', 'tests/static/analytics-privacy-runtime.test.mjs', '.github/workflows/install-ga-sitewide.yml']
   push:
-    paths:
-      - '.github/workflows/install-ga-sitewide.yml'
+    branches: ['dev/**', 'codex/**']
+    paths: ['analytics.js', 'product-analytics.js', 'tests/static/analytics-privacy-runtime.test.mjs', '.github/workflows/install-ga-sitewide.yml']
   workflow_dispatch:
-
 permissions:
-  contents: write
-
+  contents: read
 jobs:
-  install-ga:
+  privacy:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - name: Add shared analytics loader to HTML pages
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          marker = '<script src="/analytics.js"></script>'
-          changed = []
-          for p in Path('.').rglob('*.html'):
-              if '.git' in p.parts:
-                  continue
-              text = p.read_text(encoding='utf-8')
-              if marker in text or '<head>' not in text:
-                  continue
-              text = text.replace('<head>', '<head><script src="/analytics.js"></script>', 1)
-              p.write_text(text, encoding='utf-8')
-              changed.append(str(p))
-          print('Updated:', ', '.join(changed) if changed else 'none')
-          PY
-      - name: Commit analytics installation
-        run: |
-          if git diff --quiet; then
-            echo "No HTML changes needed"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add '*.html' 'city/*.html' || true
-          git commit -m "Analytics: install GA4 loader sitewide"
-          git push
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: node --test tests/static/analytics-privacy-runtime.test.mjs

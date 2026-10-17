@@ -36,12 +36,12 @@ select pg_temp.assert_true((select count(*)=2 from public.notifications where ki
 set role authenticated;
 set request.jwt.claim.sub='10000000-0000-0000-0000-000000000001';
 insert into public.push_subscriptions(user_id,endpoint,p256dh,auth) values
- ('10000000-0000-0000-0000-000000000001','https://push.example/subscription-a','public-key-material-aaaaaaaa','auth-secret-aaaa');
+ ('10000000-0000-0000-0000-000000000001','https://fcm.googleapis.com/fcm/send/subscription-a','public-key-material-aaaaaaaa','auth-secret-aaaa');
 select pg_temp.assert_true((select count(*)=1 from public.push_subscriptions),'user can create and read their own subscription');
 do $$ begin
   begin
     insert into public.push_subscriptions(user_id,endpoint,p256dh,auth) values
-      ('20000000-0000-0000-0000-000000000002','https://push.example/forged','public-key-material-bbbbbbbb','auth-secret-bbbb');
+      ('20000000-0000-0000-0000-000000000002','https://fcm.googleapis.com/fcm/send/forged','public-key-material-bbbbbbbb','auth-secret-bbbb');
     raise exception 'cross-user subscription insert unexpectedly succeeded';
   exception when insufficient_privilege then null;
   end;
