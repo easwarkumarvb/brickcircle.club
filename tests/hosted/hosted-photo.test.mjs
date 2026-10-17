@@ -113,7 +113,7 @@ test('configured staging set IDs complete photo journey with canonical versions 
   const cleanupReference=fixture.calls.findIndex((call,index)=>index>restoredReference&&call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-expiration-'));
   const cleanupRestore=fixture.calls.findIndex((call,index)=>index>expiryCleanup&&call.path==='/rest/v1/collection_items'&&call.method==='PATCH'&&call.body?.owner_photo_path?.includes('hosted-photo-')&&!call.body.owner_photo_path.includes('hosted-photo-expiration-'));
   assert.ok(cleanupReference>=0&&expiryCleanup>cleanupReference&&cleanupRestore>expiryCleanup,'Unreferenced expiry fixture must be row-bound only while owner cleanup runs');
-  assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,1);
+  assert.equal(fixture.calls.filter(call=>call.path.includes('hosted-photo-expiration-')&&call.method==='GET').length,2);
 
   assert.equal(fixture.calls[expiryDownload].cache,'no-store');
   assert.equal(fixture.calls[expiryDownload].cacheBust,true);
