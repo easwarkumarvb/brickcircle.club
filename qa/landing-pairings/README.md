@@ -8,15 +8,15 @@
 
 The signed-out landing page now has normal-flow Own → separator → Want DOM order, unrotated cards, auto-height layout and an entirely separate yellow separator. Legacy mobile percentage widths and fixed showcase heights are removed. Images retain `object-fit: contain`, full captions and descriptive alt text. The reciprocal-example heading is explicitly white on its dark panel.
 
-Existing `tests/isolated/fixtures/curated-catalogue.json` verifies these six IDs:
+The landing regression verifies the exact image IDs and labels in the hero and reciprocal example, alongside the unchanged space-shuttle exchange story:
 
 | Placement | Own | Want |
 | --- | --- | --- |
-| Hero | Ferrari Daytona SP3 `42143-1` | McLaren Formula 1 Race Car `42141-1` |
+| Hero | Ferrari Daytona SP3 `42143-1` | Lamborghini Sián FKP 37 `42115-1` |
 | Exchange story | NASA Space Shuttle Discovery `10283-1` | NASA Apollo Saturn V `21309-1` |
-| Reciprocal example | Tower Bridge `10214-1` | Colosseum `10276-1` |
+| Reciprocal example | Ferrari Daytona SP3 `42143-1` | Lamborghini Sián FKP 37 `42115-1` |
 
-The catalogue labels McLaren `McLaren Formula 1 Team 2022 (First Edition)`; the landing uses its familiar product name. Tower Bridge was selected instead of Taj Mahal because it already exists in the curated catalogue. All six actual Brickset images loaded during the focused browser run; no substituted image fixtures or synthetic placeholders were used for this evidence. Examples are explicitly illustrative, with both collectors' ownership and wishlist interests stated. No availability, price or equal-value claim is made. Auth, messaging, admin and camera implementations are unchanged.
+The hero and reciprocal example reuse the Ferrari Daytona SP3 and Lamborghini Sián FKP 37 images already available through the catalogue's Brickset image source and existing renderer; the fetched source images were visually checked against the set names. No downloaded or newly sourced illustration assets were added. Genuine McLaren catalogue entries remain unchanged. All six rendered image elements loaded during the focused browser run; no substituted image fixtures or synthetic placeholders were used for this evidence. Examples are explicitly illustrative, with both collectors' ownership and wishlist interests stated. No availability, price or equal-value claim is made. Auth, messaging, admin and camera implementations are unchanged.
 
 ## Initial failures and resolution
 
@@ -27,9 +27,9 @@ The catalogue labels McLaren `McLaren Formula 1 Team 2022 (First Edition)`; the 
 
 ## Final focused matrix
 
-Chromium, widths **320, 360, 390, 768, 1440 CSS px**, height 900px. Each width tested at normal size and with **every computed font size in `.bc-main` doubled**, including pixel-based theme overrides. This is text enlargement/reflow testing, not browser zoom or mobile-device hardware testing.
+Chromium, widths **320, 360, 390, 430, 768, 1440 CSS px**, height 900px. Each width tested at normal size and with **every computed font size in `.bc-main` doubled**, including pixel-based theme overrides. This is text enlargement/reflow testing, not browser zoom or mobile-device hardware testing.
 
-Assertions cover six loaded images (`naturalWidth > 100`), `contain`, distinct IDs, DOM order, both collectors' mutual interests, a centered static separator with at least 16px clear space above/below (measured 18px), no rotation, no document horizontal overflow, no internal clipping in the hero/cards/separator, and no page JavaScript errors. JSON files record each matrix result.
+Assertions cover six loaded image elements (`naturalWidth > 100`), `contain`, expected set IDs and exact hero/demo pairings, DOM order, both collectors' mutual interests, a centered static separator with at least 16px clear space above/below (measured 18px), no rotation, no document horizontal overflow, no internal clipping in the hero/cards/separator, and no page JavaScript errors. JSON files record each matrix result.
 
 ```sh
 BC_EXTERNAL_TEST_SERVER=1 BC_ISOLATED_PORT=4187 \
@@ -54,12 +54,14 @@ The server is the existing `scripts/serve-isolated.mjs` on a dedicated port. Sup
 
 Follow-up validation: the three affected test files passed **18/18 Chromium tests**, without retries, on port 4187 after the test-only corrections. Typecheck and `git diff --check` also passed. Hosted CI validates the updated head independently.
 
-The existing landing specs now also explicitly assert Saturn V/Discovery mutual interest and that the other collector wants Discovery. A focused **Chromium + Firefox + WebKit** run of `phase-2d-guided-home`, `phase-2e-landing` and `landing-pairings`, with actual images enabled and `--retries=0`, completed: **69/69 passed (23 per browser, 4.8 minutes)**. This includes 30 actual-image/layout/a11y matrix cases (10 per browser). No full local-suite rerun, runtime changes or PNG changes were made for these test corrections.
+The existing landing specs also explicitly assert Saturn V/Discovery mutual interest and that the other collector wants Discovery. An earlier focused **Chromium + Firefox + WebKit** run of `phase-2d-guided-home`, `phase-2e-landing` and `landing-pairings`, with actual images enabled and `--retries=0`, completed: **69/69 passed (23 per browser, 4.8 minutes)**. This includes 30 actual-image/layout/a11y matrix cases (10 per browser).
 
-Tracked PNGs include full landing pages and hero crops at all five widths, normal and enlarged text. Fixed bottom navigation is hidden **only during screenshots** so it does not obscure stitched page/element evidence. Normal navigation remains visible during assertions and axe checks. Browser-preview integration was unavailable (no connected desktop); screenshots were inspected directly as image files.
+Issue 156 follow-up: the Chromium `landing-pairings` run with `BC_LANDING_LIVE_IMAGES=1` completed **13/13 passed**, including all six viewports with real Brickset images. The exact Ferrari/Lamborghini IDs were asserted independently in the hero and reciprocal example; the JSON and screenshots above were refreshed from that run.
+
+Tracked PNGs include full landing pages and hero crops at all six widths, normal and enlarged text. Fixed bottom navigation is hidden **only during screenshots** so it does not obscure stitched page/element evidence. Normal navigation remains visible during assertions and axe checks. Browser-preview integration was unavailable (no connected desktop); screenshots were inspected directly as image files.
 
 - [Desktop hero](landing-1440-hero.png) · [Desktop page](landing-1440.png)
-- [320px hero](landing-320-hero.png) · [320px page](landing-320.png)
+- [320px hero](landing-320-hero.png) · [320px page](landing-320.png) · [430px hero](landing-430-hero.png) · [430px page](landing-430.png)
 - [320px doubled-text hero](landing-320-text-200-hero.png)
 - [360px page](landing-360.png) · [390px page](landing-390.png) · [768px page](landing-768.png)
 

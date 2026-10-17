@@ -1,0 +1,23 @@
+{
+  "width": 430,
+  "enlarged": true,
+  "liveImages": true,
+  "ids": [
+    "42143-1",
+    "42115-1",
+    "10283-1",
+    "21309-1",
+    "42143-1",
+    "42115-1"
+  ],
+  "layout": {
+    "gapBefore": 18,
+    "gapAfter": 18,
+    "centered": true,
+    "position": "static",
+    "rotation": "none",
+    "overflow": false,
+    "clipped": []
+  },
+  "axeViolations": []
+}

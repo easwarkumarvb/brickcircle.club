@@ -6,7 +6,8 @@ import path from 'node:path';
 const mock=fs.readFileSync(path.resolve('tests/isolated/fixtures/supabase-browser-mock.js'),'utf8');
 const liveImages=process.env.BC_LANDING_LIVE_IMAGES==='1';
 const evidence=process.env.BC_LANDING_QA_DIR;
-const ids=['42143-1','42141-1','10283-1','21309-1','10214-1','10276-1'];
+const carPair=['42143-1','42115-1'];
+const ids=[...carPair,'10283-1','21309-1',...carPair];
 
 test('founder photo failure preserves the letter and join journey',async({page})=>{
   await page.setViewportSize({width:390,height:844});
@@ -42,9 +43,12 @@ for(const width of [320,360,390,430,768,1440]){
       await page.goto('/?isolated=signed-out#home');
       await expect(page.locator('.bc-showcase-card')).toHaveCount(2);
       expect(await page.locator('img[data-set-image]').evaluateAll(images=>images.map(image=>(image as HTMLElement).dataset.setImage))).toEqual(ids);
+      expect(await page.locator('.bc-landing-hero img[data-set-image]').evaluateAll(images=>images.map(image=>(image as HTMLElement).dataset.setImage))).toEqual(carPair);
+      expect(await page.locator('.bc-example-match img[data-set-image]').evaluateAll(images=>images.map(image=>(image as HTMLElement).dataset.setImage))).toEqual(carPair);
+      await expect(page.locator('.bc-landing-hero')).toContainText('Lamborghini Sián FKP 37');
       expect(await page.locator('.bc-landing-showcase').evaluate(el=>Array.from(el.children).slice(0,3).map(child=>child.className))).toEqual(['bc-showcase-card own','bc-showcase-link','bc-showcase-card want']);
       await expect(page.locator('.bc-story')).toContainText('Another collector owns Saturn V and wants your Discovery');
-      await expect(page.locator('.bc-example-match')).toContainText('The other collector owns Colosseum and wants your Tower Bridge');
+      await expect(page.locator('.bc-example-match')).toContainText('The other collector owns Lamborghini Sián FKP 37 and wants your Ferrari Daytona SP3');
       const founder=page.locator('#why-i-built-brickcircle');
       await expect(founder).toHaveCount(1);
       await expect(founder.getByRole('heading',{name:'Why I Built BrickCircle',exact:true})).toBeVisible();
