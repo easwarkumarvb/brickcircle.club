@@ -72,6 +72,12 @@
 .bc-guide-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
 .bc-conversation-guide h2{font-size:1.3rem;margin:14px 0 8px}
 .bc-conversation-guide p{margin:8px 0;line-height:1.5}
+.bc-proposal-terms{box-sizing:border-box;max-width:100%;margin:12px 0;padding:14px;border:1px solid #d8b52c;border-left:5px solid #f3c623;border-radius:12px;background:#fff9dc;overflow-wrap:anywhere}
+.bc-proposal-terms h3{font-size:1rem;margin:0 0 8px}
+.bc-proposal-terms p{margin:6px 0}
+.bc-proposal-terms .bc-proposal-duration{font-size:1.1rem;font-weight:750}
+.bc-proposal-message{margin-top:10px;padding:10px;background:#fff;border-radius:8px;overflow-wrap:anywhere}
+.bc-proposal-message p{white-space:pre-wrap}
 .bc-guide-meetup{display:grid;gap:5px;padding:12px;background:#f5f7fa;border-radius:12px;margin:12px 0;overflow-wrap:anywhere}
 .bc-guide-actions{display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-top:14px}
 .bc-guide-actions .bc-btn,.bc-direct-exchange-links .bc-btn{min-height:44px;white-space:normal;text-align:left;overflow-wrap:anywhere;max-width:100%}

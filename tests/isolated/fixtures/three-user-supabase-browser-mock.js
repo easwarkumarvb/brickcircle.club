@@ -214,6 +214,11 @@ const db={
         if(active().id!==exchange.recipient_id)return {data:null,error:{message:'Only the recipient can accept'}};
         if(itemReserved(exchange.item_a,exchange.id)||itemReserved(exchange.item_b,exchange.id))return {data:null,error:{message:'One of these LEGO sets is already reserved in another active exchange'}};
         exchange.state='ACCEPTED';
+      }else if(action==='counter'){
+        if(exchange.state!=='PROPOSED'||active().id!==exchange.recipient_id)return {data:null,error:{message:'Only the current recipient can counter this proposal'}};
+        exchange.proposer_id=active().id;exchange.recipient_id=otherParticipant(exchange);
+        exchange.duration_days=args.p_payload?.duration_days;
+        exchange.opening_message=String(args.p_payload?.message||'').trim()||exchange.opening_message;
       }else if(action==='decline')exchange.state='DECLINED';
       else if(action==='withdraw')exchange.state='WITHDRAWN';
       else if(action==='cancel')exchange.state='CANCELLED';
