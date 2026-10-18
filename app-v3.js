@@ -2199,7 +2199,21 @@ async function mergeThreadLatest(kind,id,uid,stillCurrent){
   mergeThreadHistory(cache,validateThreadRows(cache,data));
 }
 function sameDay(a,b){const x=new Date(a),y=new Date(b);return x.getFullYear()===y.getFullYear()&&x.getMonth()===y.getMonth()&&x.getDate()===y.getDate()}
-function messageBubble(m,senderName){const mine=m.sender_id===S.user?.id;return `<div class="bc-msg ${mine?'mine':''}"><span class="bc-msg-sender">${mine?'You':esc(senderName||'Collector')}</span>${esc(m.body||'')}<small>${fmtDateTime(m.created_at)}</small></div>`}
+function conversationTimeMarkup(value,fallback='Time unavailable',timeOnly=false){
+  const date=typeof value==='string'&&value?new Date(value):null;
+  if(!date||!Number.isFinite(date.getTime()))return `<span class="bc-time-unavailable">${esc(fallback)}</span>`;
+  const full=date.toLocaleString(undefined,{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const label=timeOnly?date.toLocaleTimeString(undefined,{hour:'2-digit',minute:'2-digit'}):full;
+  return `<time datetime="${attr(date.toISOString())}" title="${attr(full)}">${esc(label)}</time>`;
+}
+function collectorStartedMarkup(e){
+  const value=e?.created_at,date=typeof value==='string'&&value?new Date(value):null;
+  return date&&Number.isFinite(date.getTime())?`Started ${conversationTimeMarkup(value)}`:'Start date unavailable';
+}
+function messageBubble(m,senderName,contextMarkup=''){
+  const mine=m.sender_id===S.user?.id;
+  return `<div class="bc-msg ${mine?'mine':''}" data-message-direction="${mine?'outgoing':'incoming'}"><span class="bc-msg-sender">${mine?'You':esc(senderName||'Collector')}</span><span class="bc-msg-body">${esc(m.body||'')}</span><small>${conversationTimeMarkup(m.created_at,'Time unavailable',true)}</small>${contextMarkup}</div>`;
+}
 function earlierThreadButtonMarkup(){return `<button class="bc-msg-earlier" type="button" data-load-earlier>Load earlier messages</button>`}
 function threadChatMarkup(messages,fallback,senderName,hasOlder){
   if(!messages.length)return `<div class="bc-small">${esc(fallback||'No messages yet.')}</div>`;
@@ -2216,9 +2230,29 @@ function collectorEventLabel(event,e){
   const kind=String(event.event_type||'').replace(/^exchange_/,''),labels={created:'Exchange proposed',proposed:'Exchange proposed',proposal_created:'Exchange proposed',accept_meetup:'Meetup agreed',arrive:'Collector arrived',accept_return:'Return meetup agreed',return_arrive:'Collector arrived for return',return_inspect:'Returned set inspected',return_confirm:'Returned set confirmed',counter:'New duration suggested',countered:'New duration suggested',accepted:'Exchange agreed',accept:'Exchange agreed',declined:'Proposal declined',decline:'Proposal declined',withdrawn:'Proposal withdrawn',cancelled:'Exchange cancelled',cancel:'Exchange cancelled',expired:'Proposal expired',propose_meetup:'Meetup suggested',meetup_proposed:'Meetup suggested',confirm_meetup:'Meetup agreed',meetup_confirmed:'Meetup agreed',safety_ack:'Safety checklist confirmed',arrived:'Collector arrived',inspect:'Set inspection confirmed',inspected:'Set inspection confirmed',handoff:'Set handoff confirmed',active:'Build period started',early_return:'Early return requested',propose_return:'Return meetup suggested',return_proposed:'Return meetup suggested',confirm_return:'Return meetup agreed',return_confirmed:'Returned set confirmed',return_arrived:'Collector arrived for return',return_inspected:'Returned set inspected',completed:'Exchange completed',complete:'Exchange completed',issue_reported:'Issue reported',issue_resolved:'Issue resolved'};
   return labels[kind]||'Exchange updated';
 }
+function collectorCaseLinkMarkup(e){
+  return `<button class="bc-case-source" type="button" data-view-collector-case="${attr(e.id)}" aria-haspopup="dialog"><span class="bc-case-source-name">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</span><span class="bc-case-source-cta">Open exchange <span aria-hidden="true">↗</span></span></button>`;
+}
+function collectorMessageMarkup(m,senderName,caseId=null,e=null){
+  const mine=m.sender_id===S.user?.id;
+  return `<div class="bc-collector-entry ${mine?'bc-collector-entry--mine':''}" data-timeline-message="${attr(m.id)}"${caseId?` data-timeline-case="${attr(caseId)}"`:''}>${messageBubble(m,senderName,e?collectorCaseLinkMarkup(e):'')}</div>`;
+}
+function collectorEventMarkup(event,e,caseId,createdAt){
+  return `<article class="bc-collector-event" data-timeline-case="${attr(caseId)}"><span class="bc-collector-event-label">${esc(collectorEventLabel(event,e))}</span><small>${conversationTimeMarkup(createdAt)}</small>${e?collectorCaseLinkMarkup(e):''}</article>`;
+}
 function collectorTimelineMarkup(peerId,uid){
   const serverIndex=messageIndexByUid.get(uid);
-  if(serverIndex?.readModel===true){const feed=serverIndex.feeds?.get(peerId);let day='',markup=(collectorHasMoreCases(peerId,uid)?'<button class="bc-btn" type="button" data-load-collector-cases>Load more exchange details</button>':'')+(feed?.hasOlder?earlierThreadButtonMarkup():'');(feed?.rows||[]).forEach(row=>{const next=new Date(row.occurred_at).toDateString();if(day!==next){day=next;markup+=`<div class="bc-msg-day" role="separator">${esc(fmtDate(row.occurred_at))}</div>`}const e=serverIndex.cases.get(row.case_id)?.case;if(row.source_type==='case_event')markup+=`<article class="bc-collector-event" data-timeline-case="${attr(row.case_id)}"><span>${esc(collectorEventLabel(row.payload,e))}</span><small>${fmtDateTime(row.occurred_at)}</small>${e?`<button class="bc-btn bc-case-source" type="button" data-view-collector-case="${attr(e.id)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</button>`:''}</article>`;else markup+=`<div class="bc-collector-entry" data-timeline-message="${attr(row.source_id)}"${row.case_id?` data-timeline-case="${attr(row.case_id)}"`:''}>${e?`<button type="button" class="bc-case-source" data-view-collector-case="${attr(e.id)}">About ${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</button>`:''}${messageBubble({...row.payload,created_at:row.occurred_at},S.profiles[peerId]?.display_name)}</div>`});return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>'}
+  if(serverIndex?.readModel===true){
+    const feed=serverIndex.feeds?.get(peerId);
+    let day='',markup=(collectorHasMoreCases(peerId,uid)?'<button class="bc-btn" type="button" data-load-collector-cases>Load more exchange details</button>':'')+(feed?.hasOlder?earlierThreadButtonMarkup():'');
+    (feed?.rows||[]).forEach(row=>{
+      const next=new Date(row.occurred_at).toDateString();
+      if(day!==next){day=next;markup+=`<div class="bc-msg-day" role="separator">${esc(fmtDate(row.occurred_at))}</div>`}
+      const e=serverIndex.cases.get(row.case_id)?.case;
+      markup+=row.source_type==='case_event'?collectorEventMarkup(row.payload,e,row.case_id,row.occurred_at):collectorMessageMarkup({...row.payload,created_at:row.occurred_at},S.profiles[peerId]?.display_name,row.case_id,e);
+    });
+    return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>';
+  }
   const index=messageIndexByUid.get(uid),direct=threadCaches.direct.get(`${uid}:${peerId}`);
   const cases=[...(index?.cases.values()||[])].filter(group=>group.case&&otherId(group.case)===peerId);
   const rows=new Map();
@@ -2237,7 +2271,7 @@ function collectorTimelineMarkup(peerId,uid){
     const row=m||event||snapshot,createdAt=snapshot?(snapshot.updated_at||snapshot.created_at):row.created_at,next=new Date(createdAt).toDateString();
     if(day!==next){day=next;markup+=`<div class="bc-msg-day" role="separator">${esc(fmtDate(createdAt))}</div>`}
     const e=cases.find(group=>group.caseId===caseId)?.case;
-    markup+=event||snapshot?`<article class="bc-collector-event" data-timeline-case="${attr(caseId)}"><span>${esc(collectorEventLabel(event,e))}</span><small>${fmtDateTime(createdAt)}</small><button class="bc-btn bc-case-source" type="button" data-view-collector-case="${attr(caseId)}">${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</button></article>`:`<div class="bc-collector-entry" data-timeline-message="${attr(m.id)}" ${caseId?`data-timeline-case="${attr(caseId)}"`:''}>${e?`<button type="button" class="bc-case-source" data-view-collector-case="${attr(caseId)}">About ${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</button>`:''}${messageBubble(m,S.profiles[peerId]?.display_name)}</div>`;
+    markup+=event||snapshot?collectorEventMarkup(event,e,caseId,createdAt):collectorMessageMarkup(m,S.profiles[peerId]?.display_name,caseId,e);
   });
   return markup||'<p class="bc-small">No messages yet. Start a conversation with this collector.</p>';
 }
@@ -2697,14 +2731,14 @@ function collectorCaseSummaryMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
   if(!groups.length)return '';
   const current=groups.find(g=>g.caseId===selected)||groups.find(g=>!terminalCaseStates.has(g.case.state))||groups[0],e=current.case,next=caseNextAction(e);
-  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}">${collectorSetPairImages(g.case)}<span>${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small>${esc(exchangeStageLabel(g.case))}</small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}" aria-haspopup="dialog" aria-label="${attr(next.action?`Review: ${next.label}`:'View exchange')}">${next.action?esc(next.label):'View exchange'}</button></div>`;
+  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}" aria-haspopup="dialog">${collectorSetPairImages(g.case)}<span class="bc-collector-case-title">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small class="bc-collector-case-started">${collectorStartedMarkup(g.case)}</small><small class="bc-collector-case-state">${esc(exchangeStageLabel(g.case))}${terminalCaseStates.has(g.case.state)?' · Read-only':''}${g.caseId===current.caseId?'<span class="bc-collector-selected">Selected</span>':''}<span class="bc-collector-case-open">Open exchange ↗</span></small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}" aria-haspopup="dialog" aria-label="Open exchange details">${next.action?'Review next step':'Open exchange'}</button></div>`;
 }
 function openCollectorCaseSheet(peerId,caseId){
   selectCollectorCase(peerId,caseId);
   const e=messageIndexByUid.get(S.user?.id)?.cases.get(caseId)?.case,host=$('#bc-collector-form');if(!e||!host)return;
   clearCollectorForm(host);
   const recovery=uncertainThreadSends.get(`${S.user.id}:case:${caseId}`);
-  host.innerHTML=`<dialog class="bc-collector-sheet" data-collector-case-details="${attr(e.id)}" aria-label="Exchange details"><div class="bc-collector-sheet-head"><h2>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h2><button class="bc-btn" type="button" data-close-collector-sheet aria-label="Close exchange details">×</button></div>${caseConversationGuide(e)}${[e.item_a,e.item_b].map(id=>ownerGalleryMarkup(id)).join('')}${!terminalCaseStates.has(e.state)||recovery?`<button class="bc-btn" type="button" data-reply-case="${attr(e.id)}">${terminalCaseStates.has(e.state)?'Recover pending exchange reply':'Reply about this exchange'}</button>`:'<p class="bc-small">This exchange is read-only. Your general conversation stays open.</p>'}</dialog>`;
+  host.innerHTML=`<dialog class="bc-collector-sheet" data-collector-case-details="${attr(e.id)}" aria-label="Exchange details"><div class="bc-collector-sheet-head"><div><h2>${esc(itemName(e.item_a))} ⇄ ${esc(itemName(e.item_b))}</h2><p class="bc-collector-sheet-meta">${collectorStartedMarkup(e)} · ${esc(exchangeStageLabel(e))}</p></div><button class="bc-btn" type="button" data-close-collector-sheet aria-label="Close exchange details">×</button></div>${caseConversationGuide(e)}${[e.item_a,e.item_b].map(id=>ownerGalleryMarkup(id)).join('')}${!terminalCaseStates.has(e.state)||recovery?`<button class="bc-btn" type="button" data-reply-case="${attr(e.id)}">${terminalCaseStates.has(e.state)?'Recover pending exchange reply':'Reply about this exchange'}</button>`:'<p class="bc-small">This exchange is read-only. Your general conversation stays open.</p>'}</dialog>`;
   const dialog=$('dialog',host);dialog.showModal();
   $('[data-close-collector-sheet]',host).onclick=()=>dialog.close();
   dialog.addEventListener('close',()=>{if(host.firstElementChild===dialog){host.replaceChildren();const composer=$('#bc-msg-form textarea');if(document.activeElement!==composer)$(`#bc-collector-action [data-view-collector-case="${CSS.escape(caseId)}"]`)?.focus()}},{once:true});
