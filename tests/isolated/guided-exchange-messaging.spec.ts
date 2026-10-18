@@ -477,6 +477,50 @@ test('collector case selector focuses exact case, and reconnect preserves draft'
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({path:'test-results/guided-messaging-mobile.png',fullPage:true});
 });
+test('safety checklist is visible before acknowledgment and records only the canonical participant step',async({page})=>{
+  await page.setViewportSize({width:320,height:720});await open(page,'easwar','MEETUP_CONFIRMED');
+  await focusCase(page,'guide-case');
+  const guide=page.getByRole('region',{name:'Exchange next step'}),checklist=guide.locator('.bc-safety-checklist'),button=guide.locator('[data-thread-case-action="safety_ack"]');
+  await expect(checklist).toBeVisible();
+  await expect(checklist.getByRole('heading',{name:'Before you meet'})).toBeVisible();
+  await expect(checklist.locator('> p').first()).toHaveText('These shared checks help both collectors avoid surprises and agree on the condition of the sets before exchanging them.');
+  await expect(checklist.locator('ol li')).toHaveText([
+    'Meet at the agreed public place and time.',
+    'Inspect both sets together: condition, parts, minifigures and accessories against the listing.',
+    'Discuss any differences before continuing. Pause the exchange if either collector is not comfortable.',
+    'Confirm the handoff in BrickCircle only after the sets have physically changed hands.'
+  ]);
+  await expect(checklist.locator('.bc-safety-acknowledgment')).toHaveText('By selecting Accept safety checklist, you agree to follow these checks. Each collector must accept separately before arrival and inspection can begin.');
+  await expect(checklist.locator('.bc-safety-timing')).toContainText('does not record an inspection or physical handoff');
+  const checklistBox=await checklist.boundingBox(),buttonBox=await button.boundingBox();
+  expect(checklistBox&&buttonBox&&checklistBox.y+checklistBox.height<buttonBox.y).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+
+  await button.click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].safety_ack_a_at)).toBeTruthy();
+  const state=await page.evaluate(()=>{const s=(window as any).__bcThreeUser;return {exchange:s.data.exchanges[0],transitions:s.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition')}});
+  expect(state.exchange.state).toBe('MEETUP_CONFIRMED');
+  expect(state.exchange.safety_ack_b_at).toBeFalsy();
+  expect(state.transitions).toHaveLength(1);
+  expect(state.transitions[0].args).toMatchObject({p_case_id:'guide-case',p_expected_version:5,p_action:'safety_ack',p_payload:{}});
+  await expect(guide).toContainText('You accepted this checklist. The other collector must accept separately before arrival and inspection can begin.');
+  await expect(guide.locator('.bc-safety-checklist')).toBeVisible();
+  await expect(guide.locator('.bc-safety-acknowledgment')).toHaveCount(0);
+  await expect(guide.locator('[data-thread-case-action="safety_ack"]')).toHaveCount(0);
+  await expect(guide.locator('[data-thread-case-action="arrive"]')).toHaveCount(0);
+});
+test('safety checklist is visible before continuing from the mobile exchange card',async({page})=>{
+  await page.setViewportSize({width:320,height:720});await open(page,'easwar','MEETUP_CONFIRMED',{},'exchanges');
+  const card=page.locator('.bc-ex-card').filter({has:page.locator('[data-exchange="guide-case"]')});
+  await expect(card).toBeVisible();
+  const checklist=card.locator('.bc-safety-checklist'),button=card.locator('[data-exchange="guide-case"]');
+  await expect(checklist).toBeVisible();
+  await expect(checklist.getByRole('heading',{name:'Before you meet'})).toBeVisible();
+  await expect(checklist.locator('ol li')).toHaveCount(4);
+  const checklistBox=await checklist.boundingBox(),buttonBox=await button.boundingBox();
+  expect(checklistBox&&buttonBox&&checklistBox.y+checklistBox.height<buttonBox.y).toBe(true);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+});
 test('simultaneous partner confirmation refreshes a stale action before retry',async({page})=>{
   await open(page,'easwar','MEETUP_CONFIRMED');await focusCase(page,'guide-case');
   await expect(page.locator('[data-thread-case-action="safety_ack"]')).toBeVisible();
