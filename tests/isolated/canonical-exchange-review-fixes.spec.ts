@@ -26,9 +26,10 @@ function exchange(state:string,patch:any={}){
   return {id:'case-review-fix',user_a:actors.easwar.id,user_b:actors.ramya.id,proposer_id:actors.easwar.id,recipient_id:actors.ramya.id,item_a:'item-a',item_b:'item-b',duration_days:60,state,state_version:5,created_at:now,updated_at:now,...patch};
 }
 
-async function openActor(context:BrowserContext,actor:keyof typeof actors,database:any,route='exchange/case-review-fix'){
+async function openActor(context:BrowserContext,actor:keyof typeof actors,database:any,route='exchange/case-review-fix',fixedTime?:string){
   await context.addInitScript(({actor,database})=>{localStorage.setItem('bc_three_user_actor',actor);localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1')},{actor,database});
   const page=await context.newPage();
+  if(fixedTime)await page.clock.install({time:new Date(fixedTime)});
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',route=>route.fulfill({contentType:'application/javascript',body:mock}));
   await page.goto(`/v2.html?isolated=three-user#${route}`);
   if(route.startsWith('exchange/')){await page.locator(`[data-view-collector-case="${route.slice('exchange/'.length)}"]`).first().click();await expect(page.getByRole('region',{name:'Exchange next step'})).toBeVisible()}
@@ -211,6 +212,66 @@ test('share meetup proposal submits the canonical transition and persists its de
   expect(result.calls).toHaveLength(1);
   expect(result.calls[0].args).toMatchObject({p_action:'propose_meetup',p_payload:{venue_name:'Udupi Garden',venue_area:'Sanjaynagar',meetup_at:expectedAt}});
   expect(result.exchange).toMatchObject({state:'MEETUP_PLANNING',meetup_proposed_by:actors.easwar.id,meetup_venue_name:'Udupi Garden',meetup_venue_area:'Sanjaynagar',meetup_at:expectedAt});
+  await context.close();
+});
+
+for(const returning of [false,true])test(`${returning?'return':'meetup'} date errors stay inline and correction preserves the proposal`,async({browser})=>{
+  const context=await browser.newContext({timezoneId:'Asia/Kolkata'});
+  const state=returning?'ACTIVE':'ACCEPTED';
+  const page=await openActor(context,'easwar',seed(exchange(state)),'exchange/case-review-fix','2026-10-18T12:00:00.000Z');
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:returning?'Plan normal return':'Plan public meetup'}).click();
+  const form=page.locator('#bc-case-meetup');
+  const venue=form.locator('[name="venue"]'),area=form.locator('[name="area"]'),when=form.locator('[name="when"]');
+  await venue.fill('Udupi Garden');
+  await area.fill('Sanjaynagar');
+  const error=form.getByRole('alert');
+  await when.fill('2026-10-17T23:59');
+  await expect(error).toBeVisible();
+  await expect(error).toHaveText('Choose a future date and time. The selected time has already passed.');
+  await expect(when).toHaveAttribute('aria-invalid','true');
+  await expect(when).toHaveAttribute('aria-describedby','bc-case-meetup-when-error');
+  await venue.focus();
+  await form.evaluate((node:HTMLFormElement)=>node.requestSubmit());
+  await expect(when).toBeFocused();
+  await expect(venue).toHaveValue('Udupi Garden');
+  await expect(area).toHaveValue('Sanjaynagar');
+  await expect(when).toHaveValue('2026-10-17T23:59');
+  await expect(form.getByRole('button',{name:'Share proposal'})).toBeEnabled();
+  expect(await page.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition'))).toHaveLength(0);
+
+  await when.fill('2026-10-18T17:29');
+  await expect(error).toBeVisible();
+  await expect(when).toHaveAttribute('aria-invalid','true');
+  const validLocalTime='2099-10-02T15:34';
+  const expectedAt=await page.evaluate(value=>new Date(value).toISOString(),validLocalTime);
+  await when.fill(validLocalTime);
+  await expect(error).toBeHidden();
+  await expect(when).not.toHaveAttribute('aria-invalid','true');
+  await expect(when).not.toHaveAttribute('aria-describedby','bc-case-meetup-when-error');
+  await form.getByRole('button',{name:'Share proposal'}).click();
+  await expect(form).toHaveCount(0);
+  const result=await page.evaluate(()=>({exchange:window.__bcThreeUser.data.exchanges[0],calls:window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition')}));
+  expect(result.calls).toHaveLength(1);
+  expect(result.calls[0].args).toMatchObject({p_action:returning?'propose_return':'propose_meetup',p_payload:{venue_name:'Udupi Garden',venue_area:'Sanjaynagar',meetup_at:expectedAt}});
+  expect(result.exchange).toMatchObject({[returning?'return_venue_name':'meetup_venue_name']:'Udupi Garden',[returning?'return_venue_area':'meetup_venue_area']:'Sanjaynagar',[returning?'return_meetup_at':'meetup_at']:expectedAt});
+  await context.close();
+});
+
+test('a meetup time that passes while the dialog stays open is rejected on submit',async({browser})=>{
+  const context=await browser.newContext();
+  const page=await openActor(context,'easwar',seed(exchange('ACCEPTED')),'exchange/case-review-fix','2026-10-18T12:00:00.000Z');
+  await page.getByRole('region',{name:'Exchange next step'}).getByRole('button',{name:'Plan public meetup'}).click();
+  const form=page.locator('#bc-case-meetup');
+  await form.locator('[name="venue"]').fill('Udupi Garden');
+  await form.locator('[name="when"]').fill('2026-10-18T12:01');
+  await expect(form.getByRole('alert')).toBeHidden();
+  await page.clock.fastForward(61_000);
+  await form.getByRole('button',{name:'Share proposal'}).click();
+  await expect(form.getByRole('alert')).toContainText('The selected time has already passed.');
+  await expect(form.locator('[name="when"]')).toHaveAttribute('aria-invalid','true');
+  await expect(form.locator('[name="when"]')).toHaveValue('2026-10-18T12:01');
+  await expect(form.getByRole('button',{name:'Share proposal'})).toBeEnabled();
+  expect(await page.evaluate(()=>window.__bcThreeUser.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition'))).toHaveLength(0);
   await context.close();
 });
 
