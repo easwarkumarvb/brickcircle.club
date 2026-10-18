@@ -6,7 +6,7 @@ const stamp='2026-10-05T12:00:00Z';
 async function open(page:any,actor='easwar',state='PROPOSED',patch:any={},route='messages/case:guide-case',seed?:(data:any)=>void){
   const database={profiles:[{id:A,display_name:'Easwar'},{id:B,display_name:'Ramya'},{id:C,display_name:'Dhyan'}].map(p=>({...p,email:p.id+'@example.invalid',country:'India',city:'Bengaluru',adult_confirmed_at:stamp,created_at:stamp})),collection:[{id:'item-a',user_id:A,set_number:'42172-1',available_for_exchange:false},{id:'item-b',user_id:B,set_number:'42143-1',available_for_exchange:false}],wishlist:[],exchanges:[{id:'guide-case',user_a:A,user_b:B,proposer_id:A,recipient_id:B,item_a:'item-a',item_b:'item-b',duration_days:60,state,state_version:5,created_at:stamp,updated_at:stamp,...patch}],events:[],notifications:[],messages:[],directMessages:[],reviews:[],issues:[],issueResponses:[],supportRequests:[],peerReviews:[]};
   seed?.(database);
-  await page.addInitScript(({actor,database}:any)=>{localStorage.setItem('bc_three_user_actor',actor);localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_initialized','1')},{actor,database});
+  await page.addInitScript(({actor,database}:any)=>{if(sessionStorage.getItem('bc_three_user_fixture_seeded')!=='1'){localStorage.setItem('bc_three_user_actor',actor);localStorage.setItem('bc_three_user_db',JSON.stringify(database));sessionStorage.setItem('bc_three_user_fixture_seeded','1')}sessionStorage.setItem('bc_three_user_initialized','1')},{actor,database});
   await page.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.4',(r:any)=>r.fulfill({contentType:'application/javascript',body:mock}));
   await page.goto('/v2.html?isolated=three-user#'+route);
 }
@@ -60,6 +60,111 @@ test('accepting inside chat preserves draft and opens the next step in the same 
   await form.locator('button[type="submit"]').click();
   await focusCase(page,'guide-case');await expect(page.locator('.bc-conversation-guide')).toContainText('Waiting for meetup agreement');
   await expect(draft).toHaveValue('Can we meet at the library?');
+});
+test('latest counterproposal terms stay visible through switched-recipient mobile sheet and legacy-route approval',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await open(page,'ramya','PROPOSED',{opening_message:'Initial 60-day offer',state_version:5});
+  expect(await page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].duration_days)).toBe(60);
+  await focusCase(page,'guide-case');
+  await page.locator('[data-thread-case-action="counter"]').click();
+  const counter=page.locator('#bc-counter');
+  await counter.locator('[name="days"]').selectOption('90');
+  await counter.locator('[name="message"]').fill('Please make it 90 days.');
+  await counter.locator('button[type="submit"]').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].state_version)).toBe(6);
+  expect(await page.evaluate(()=>{const c=(window as any).__bcThreeUser.data.exchanges[0];return [c.duration_days,c.proposer_id,c.recipient_id,c.opening_message]})).toEqual([90,B,A,'Please make it 90 days.']);
+  await page.evaluate((actor:string)=>{const s=(window as any).__bcThreeUser;s.data.events.push({id:'older-counter-event',case_id:'guide-case',event_type:'counter',previous_state:'PROPOSED',resulting_state:'PROPOSED',actor_user_id:actor,state_version:4,idempotency_key:'older-counter-event',metadata:{duration_days:60,message:'Initial 60-day offer'},created_at:'2026-10-05T11:00:00Z'});s.persist()},A);
+
+  await page.evaluate(()=>localStorage.setItem('bc_three_user_actor','easwar'));
+  await page.reload();
+  await expect(page.locator('[data-view-collector-case="guide-case"]').first()).toBeVisible();
+  await focusCase(page,'guide-case');
+  const sheet=page.locator('dialog.bc-collector-sheet');
+  await expect(sheet).toContainText('90 days');
+  await expect(sheet).toContainText('Proposed by Ramya');
+  await expect(sheet).toContainText('Please make it 90 days.');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+  await page.setViewportSize({width:320,height:720});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
+  await sheet.locator('[data-close-collector-sheet]').click();
+
+  await page.goto('/v2.html?isolated=three-user#exchange/guide-case');
+  await expect(page).toHaveURL(/#messages\/case%3Aguide-case/i);
+  await focusCase(page,'guide-case');
+  const legacyRouteSheet=page.locator('dialog.bc-collector-sheet');
+  await expect(legacyRouteSheet).toContainText('Temporary exchange period: 90 days');
+  await expect(legacyRouteSheet).toContainText('Proposed by Ramya');
+  await expect(legacyRouteSheet).toContainText('Please make it 90 days.');
+  await legacyRouteSheet.locator('[data-thread-case-action="accept"]').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].state)).toBe('ACCEPTED');
+  const acceptance=await page.evaluate(()=>{const s=(window as any).__bcThreeUser;return {rpc:s.rpcArgs.filter((row:any)=>row.name==='exchange_case_transition').at(-1),case:s.data.exchanges[0]}});
+  expect(acceptance.rpc.args).toMatchObject({p_case_id:'guide-case',p_expected_version:6,p_action:'accept'});
+  expect([acceptance.case.duration_days,acceptance.case.proposer_id,acceptance.case.opening_message]).toEqual([90,B,'Please make it 90 days.']);
+});
+test('a repeated counterproposal after reload replaces earlier terms and proposer',async({page})=>{
+  await open(page,'ramya','PROPOSED',{opening_message:'Initial offer'});
+  await focusCase(page,'guide-case');
+  await page.locator('[data-thread-case-action="counter"]').click();
+  await page.locator('#bc-counter [name="days"]').selectOption('90');
+  await page.locator('#bc-counter [name="message"]').fill('First counter');
+  await page.locator('#bc-counter button[type="submit"]').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].state_version)).toBe(6);
+  await page.evaluate(()=>localStorage.setItem('bc_three_user_actor','easwar'));
+  await page.reload();
+  await focusCase(page,'guide-case');
+  await page.locator('[data-thread-case-action="counter"]').click();
+  await page.locator('#bc-counter [name="days"]').selectOption('60');
+  await page.locator('#bc-counter [name="message"]').fill('Latest counter');
+  await page.locator('#bc-counter button[type="submit"]').click();
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].state_version)).toBe(7);
+  await page.evaluate(()=>localStorage.setItem('bc_three_user_actor','ramya'));
+  await page.reload();
+  await focusCase(page,'guide-case');
+  const terms=page.locator('.bc-conversation-guide .bc-proposal-terms');
+  await expect(terms).toContainText('Temporary exchange period: 60 days');
+  await expect(terms).toContainText('Proposed by Easwar');
+  await expect(terms).toContainText('Latest counter');
+  await expect(terms).not.toContainText('90 days');
+});
+test('a late counter response cannot replace another open conversation',async({page})=>{
+  await open(page,'ramya','PROPOSED');
+  await focusCase(page,'guide-case');
+  await page.locator('[data-thread-case-action="counter"]').click();
+  await page.locator('#bc-counter [name="days"]').selectOption('90');
+  await page.evaluate(()=>{const win=window as any,db=win.BC_SUPABASE,original=db.rpc;db.rpc=(name:string,args:any)=>name==='exchange_case_transition'&&args.p_action==='counter'?new Promise(resolve=>{win.__releaseCounter=async()=>resolve(await original(name,args))}):original(name,args)});
+  await page.locator('#bc-counter button[type="submit"]').click();
+  await expect(page.locator('#bc-counter button[type="submit"]')).toBeDisabled();
+  await page.evaluate((peer:string)=>(window as any).bcNav('messages',`direct:${peer}`),C);
+  await expect(page).toHaveURL(/#messages\/direct%3A/i);
+  await expect(page.locator('#bc-counter')).toHaveCount(0);
+  await page.evaluate(()=> (window as any).__releaseCounter());
+  await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.exchanges[0].state_version)).toBe(6);
+  await expect(page).toHaveURL(/#messages\/direct%3A/i);
+  await expect(page.locator('#bc-counter')).toHaveCount(0);
+});
+test('exchange inbox acceptance surface shows the latest proposal terms',async({page})=>{
+  await open(page,'easwar','PROPOSED',{proposer_id:B,recipient_id:A,duration_days:90,state_version:6,opening_message:'Latest counter from Ramya'},'exchanges');
+  await page.locator('[data-extab="requests"]').click();
+  const card=page.locator('[data-request-card="guide-case"]');
+  await expect(card).toContainText('Temporary exchange period: 90 days');
+  await expect(card).toContainText('Proposed by Ramya');
+  await expect(card).toContainText('Latest counter from Ramya');
+  await expect(card.locator('[data-request-action="accept"]')).toBeEnabled();
+});
+test('exchange inbox cannot invite acceptance when current duration is missing',async({page})=>{
+  await open(page,'easwar','PROPOSED',{proposer_id:B,recipient_id:A,duration_days:undefined},'exchanges');
+  await page.locator('[data-extab="requests"]').click();
+  const card=page.locator('[data-request-card="guide-case"]');
+  await expect(card.locator('[data-request-action="accept"]')).toBeDisabled();
+  await expect(card).toContainText('Temporary exchange period unavailable');
+});
+for(const duration of [undefined,45,'90'])test(`proposal approval is disabled with missing or malformed duration ${String(duration)}`,async({page})=>{
+  await open(page,'ramya','PROPOSED',{duration_days:duration});
+  await focusCase(page,'guide-case');
+  const accept=page.locator('[data-thread-case-action="accept"]');
+  await expect(accept).toBeDisabled();
+  await expect(page.locator('.bc-proposal-terms')).toContainText(duration===45?'45 days':'unavailable');
+  await expect(page.locator('.bc-proposal-terms')).toContainText('cannot be accepted');
 });
 test('third collector cannot see or send into the exchange conversation',async({page})=>{
   await open(page,'dhyan');await expect(page.getByRole('heading',{name:'Conversation unavailable'})).toBeVisible();
