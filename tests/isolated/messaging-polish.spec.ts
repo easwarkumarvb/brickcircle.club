@@ -228,3 +228,14 @@ test('one unavailable history source keeps healthy collector messages and drafts
   await expect(page.locator('#bc-msg-chat')).toContainText('Exchange meetup plan');
   await expect(input).toHaveValue('Draft through partial failure');
 });
+
+test('legacy collector timeline keeps outgoing bubbles on the right with long wrapped content',async({page})=>{
+ await page.setViewportSize({width:320,height:740});await seed(page,1);
+ await page.evaluate(({uid,peer})=>(window as any).__bcIsolated.messages.push({id:'legacy-own',sender_id:uid,recipient_id:peer,exchange_id:null,body:'Legacy outgoing '+ 'x'.repeat(1000),created_at:'2026-09-03T14:00:00.000Z'}),{uid:UID,peer:PEER});
+ await openDirect(page);
+ const own=page.locator('[data-timeline-message="legacy-own"] .bc-msg'),incoming=page.locator('[data-timeline-message="d00001"] .bc-msg');
+ await expect(own.locator('.bc-msg-sender')).toHaveText('You');
+ expect(await own.evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(255, 242, 177)');
+ expect(await incoming.evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(224, 239, 255)');
+ await noOverflow(page);
+});

@@ -268,3 +268,78 @@ test('transient read acknowledgment failure preserves draft messages and server 
  await page.locator('#bc-msg-chat').evaluate(e=>e.dispatchEvent(new Event('scroll')));
  await expect(page.locator('.bc-msg-unread')).toHaveCount(0);await expect(input).toHaveValue('Draft during unread acknowledgment outage');
 });
+
+for(const width of [320,390])test(`primary-colour bubbles follow sender at ${width}px, including consecutive outgoing replies`,async({page})=>{
+ await page.setViewportSize({width,height:844});
+ const incoming={...direct(0),payload:{...direct(0).payload,body:'Is the Shuttle available for an exchange?'}},outgoing={...direct(1),payload:{...direct(1).payload,sender_id:A,recipient_id:B,body:'That sounds good. Can we meet on Saturday?'}},again={...direct(2),payload:{...direct(2).payload,sender_id:A,recipient_id:B,body:'I can bring the instructions too.'}};
+ const previewDB=database();previewDB.exchanges[0].created_at='2026-10-18T07:50:00Z';previewDB.exchanges[1].created_at='2026-09-12T09:10:00Z';previewDB.exchanges[1].state='DECLINED';
+ await open(page,{feeds:{[B]:[incoming,outgoing,again]}},'messages',previewDB);await thread(page);
+ const first=page.locator('[data-timeline-message="direct-000"]'),second=page.locator('[data-timeline-message="direct-001"]'),third=page.locator('[data-timeline-message="direct-002"]');
+ const incomingBox=await first.boundingBox(),outgoingBox=await second.boundingBox(),nextBox=await third.boundingBox();
+ expect(outgoingBox!.x).toBeGreaterThan(incomingBox!.x+8);
+ expect(Math.abs(outgoingBox!.x+outgoingBox!.width-nextBox!.x-nextBox!.width)).toBeLessThan(2);
+ await expect(first.locator('.bc-msg-sender')).toHaveText('Ramya');
+ await expect(second.locator('.bc-msg-sender')).toHaveText('You');
+ expect(await first.locator('.bc-msg').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(224, 239, 255)');
+ expect(await second.locator('.bc-msg').evaluate(e=>getComputedStyle(e).backgroundColor)).toBe('rgb(255, 242, 177)');
+ expect(await second.locator('.bc-msg-sender').evaluate(e=>getComputedStyle(e).color)).toBe('rgb(91, 73, 13)');
+ expect(await second.locator('small').evaluate(e=>getComputedStyle(e).color)).toBe('rgb(91, 73, 13)');
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await expect(page.locator('#bc-msg-form textarea')).toBeVisible();
+ if(width===390)await page.screenshot({path:'test-results/conversation-primary-colors-mobile.png',fullPage:true});
+});
+
+test('exchange history distinguishes repeated sets across years and within the same day by original start time',async({page})=>{
+ const db=database();db.exchanges[0].created_at='2025-01-02T12:34:00Z';db.exchanges[0].updated_at='2026-10-18T15:00:00Z';
+ db.exchanges[1].created_at='2026-10-18T07:50:00Z';
+ db.exchanges.push({...db.exchanges[1],id:'case-three',created_at:'2026-10-18T07:51:00Z'});
+ await open(page,{feeds:{[B]:[direct(0)]}},'messages',db);await thread(page);
+ const old=page.locator('.bc-collector-case-chip[data-view-collector-case="case-one"]'),recent=page.locator('.bc-collector-case-chip[data-view-collector-case="case-two"]'),sameDay=page.locator('.bc-collector-case-chip[data-view-collector-case="case-three"]');
+ await expect(old.locator('.bc-collector-case-started')).toContainText('2025');
+ await expect(old.locator('time')).toHaveAttribute('datetime','2025-01-02T12:34:00.000Z');
+ await expect(recent.locator('time')).toHaveAttribute('datetime','2026-10-18T07:50:00.000Z');
+ expect(await recent.locator('time').innerText()).not.toBe(await sameDay.locator('time').innerText());
+ await expect(old).toHaveAttribute('aria-haspopup','dialog');await expect(old).toContainText('Open exchange');
+ await expect(page.locator('.bc-collector-selected')).toHaveCount(1);
+});
+
+test('Enter and Space open the exact closed exchange without losing the general draft',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ const db=database();db.exchanges[0].state='CANCELLED';db.exchanges[0].created_at='2025-01-02T12:34:00Z';
+ await open(page,{feeds:{[B]:[direct(0)]}},'messages',db);await thread(page);
+ const input=page.locator('#bc-msg-form textarea');await input.fill('Keep this general conversation draft');
+ for(const key of ['Enter','Space']){
+  const chip=page.locator('.bc-collector-case-chip[data-view-collector-case="case-one"]');
+  await chip.focus();await chip.press(key);
+  const sheet=page.locator('[data-collector-case-details="case-one"]');
+  await expect(sheet).toBeVisible();await expect(sheet.locator('.bc-collector-sheet-meta')).toContainText('2025');
+  await expect(sheet).toContainText('read-only');await expect(sheet.locator('[data-reply-case]')).toHaveCount(0);
+  await page.keyboard.press('Escape');await expect(sheet).toHaveCount(0);
+  await expect(input).toHaveValue('Keep this general conversation draft');await expect(chip).toBeFocused();
+  await expect(page.locator('[data-clear-reply-context]')).toHaveCount(0);
+ }
+});
+
+test('missing historical initiation dates are labelled unavailable without borrowing last-update dates',async({page})=>{
+ const db=database();db.exchanges[0].created_at=null;db.exchanges[1].created_at='not-a-date';
+ await open(page,{feeds:{[B]:[direct(0)]}},'messages',db);await thread(page);
+ for(const id of ['case-one','case-two']){
+  const chip=page.locator('.bc-collector-case-chip[data-view-collector-case="'+id+'"]');
+  await expect(chip.locator('.bc-collector-case-started')).toHaveText('Start date unavailable');
+  await expect(chip.locator('time')).toHaveCount(0);
+ }
+ await expect(page.locator('main')).not.toContainText('Invalid Date');
+});
+
+test('long case messages wrap and expose a labelled exchange dialog link without making body text clickable',async({page})=>{
+ await page.setViewportSize({width:320,height:740});
+ const row={occurred_at:AT,source_type:'case_message',source_id:'long-case-reply',case_id:'case-two',payload:{id:'long-case-reply',case_id:'case-two',sender_id:B,recipient_id:A,body:'Collection details\n'+ 'x'.repeat(1800),created_at:AT}};
+ await open(page,{feeds:{[B]:[row]}});await thread(page);
+ const entry=page.locator('[data-timeline-message="long-case-reply"]');
+ await expect(entry.locator('.bc-msg-body')).toContainText('Collection details');
+ expect(await entry.locator('.bc-msg-body').evaluate(e=>e.closest('button'))).toBeNull();
+ const link=entry.getByRole('button',{name:/Open exchange/});await expect(link).toHaveAttribute('aria-haspopup','dialog');
+ expect(await link.evaluate(e=>e.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await link.click();await expect(page.locator('[data-collector-case-details="case-two"]')).toBeVisible();
+});
