@@ -226,6 +226,7 @@ Use two ordinary adult accounts in the same city. Each account needs an owned se
 
 - Disconnect during a transition and retry with the same idempotency key; expect the original result.
 - Submit an action with a stale state_version; expect a refresh-required error and no event.
+- A client whose clock reaches response_deadline suppresses accept/counter as an advisory only. It does not change canonical state or release item locks; the server must confirm closure. Decline and withdraw remain available while the case is PROPOSED.
 - Simulate email/push delivery failure; the user transition must commit and the delivery row must remain retryable.
 - Let a proposal deadline pass and run expire_exchange_cases as service_role; expect EXPIRED and restored preferences.
 - Run queue_exchange_case_reminders twice for the same window; expect one notification/outbox record per dedupe key.
