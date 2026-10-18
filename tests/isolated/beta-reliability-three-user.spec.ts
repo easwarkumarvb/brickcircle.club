@@ -17,12 +17,20 @@ test.beforeEach(async({page})=>{
 async function search(page:any,query:string){
   await page.locator('[data-nav="browse"]').first().click();
   await page.locator('#bc-q').fill(query);
+  await expect(page.locator('#bc-cat-status')).toContainText(`matching “${query}” across the full catalogue`);
+}
+
+async function openOwnerPhotoPicker(page:any,setNumber:string){
+  await expect(page.locator(`[data-set="${setNumber}"]`)).toBeVisible();
+  await page.locator(`[data-set="${setNumber}"] [data-own]`).click();
+  const form=page.locator('#bc-owner-photo-form');
+  await expect(form).toBeVisible();
+  return form;
 }
 
 async function addOwned(page:any,setNumber:string,query:string){
   await search(page,query);
-  await page.locator(`[data-set="${setNumber}"] [data-own]`).click();
-  const form=page.locator('#bc-owner-photo-form');
+  const form=await openOwnerPhotoPicker(page,setNumber);
   await form.locator('#bc-owner-photo-input').setInputFiles({name:`${setNumber}.jpg`,mimeType:'image/jpeg',buffer:Buffer.from(`isolated-${setNumber}`)});
   await form.getByRole('button',{name:'Add to My Sets'}).click();
   await expect.poll(()=>page.evaluate((set:string)=>window.__bcThreeUser.data.collection.some((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id&&row.set_number===set),setNumber)).toBe(true);
@@ -51,11 +59,47 @@ async function makeAvailable(page:any){
 async function switchActor(page:any,actor:'easwar'|'ramya'|'dhyan'){
   await page.evaluate((next:string)=>{window.__bcThreeUser.switchActor(next);location.hash='#home'},actor);
   await page.reload();
-  await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.actor)).toBe(actor);
-  if(await page.locator('#bc-overlay').count())return;
+  await expect.poll(()=>page.evaluate(async(expected:string)=>{
+    const state=window.__bcThreeUser,{data}=await window.BC_SUPABASE.auth.getUser();
+    return state.actor===expected&&data.user?.id===state.actors[expected].id;
+  },actor)).toBe(true);
+  if(await page.locator('#bc-overlay').count()){
+    await expect(page.locator('#bc-overlay')).toBeVisible();
+    return;
+  }
   await page.locator('[data-nav="profile"]').first().click();
   await expect(page.locator('.bc-profile-hero h1')).toHaveText(actor[0].toUpperCase()+actor.slice(1));
 }
+
+test('delayed catalogue search settles before opening the owner photo picker',async({page})=>{
+  await page.goto('/v2.html?isolated=three-user#home');
+  await page.evaluate(()=>{
+    const db=window.BC_SUPABASE,rpc=db.rpc.bind(db);
+    window.__bcDelayedCatalogueSearch={started:false,release:null};
+    db.rpc=async(name:string,args:any)=>{
+      if(name==='bc_search_lego_sets'&&args?.p_query==='Ferrari'){
+        const gate=window.__bcDelayedCatalogueSearch;
+        gate.started=true;
+        await new Promise<void>(resolve=>{gate.release=resolve});
+      }
+      return rpc(name,args);
+    };
+  });
+
+  let searchSettled=false;
+  const pendingSearch=search(page,'Ferrari').then(()=>{searchSettled=true});
+  await expect.poll(()=>page.evaluate(()=>window.__bcDelayedCatalogueSearch.started)).toBe(true);
+  await expect(page.locator('#bc-cat-status')).toHaveText('Searching the full catalogue for “Ferrari”…');
+  await expect(page.locator('[data-set="42143-1"] [data-own]')).toBeVisible();
+  expect(searchSettled).toBe(false);
+  await page.evaluate(()=>window.__bcDelayedCatalogueSearch.release());
+  await pendingSearch;
+  expect(searchSettled).toBe(true);
+  const form=await openOwnerPhotoPicker(page,'42143-1');
+  await expect(page.locator('#bc-overlay')).toContainText('Add Ferrari Daytona SP3 to My Sets');
+  await form.getByRole('button',{name:'Cancel',exact:true}).click();
+  await expect(form).toHaveCount(0);
+});
 
 async function proposeFromMatch(page:any){
   await page.locator('[data-propose]').click();
@@ -247,4 +291,4 @@ test('retired release capability is ignored while canonical set controls remain 
   await expect(page.getByText(/schema cache/i)).toHaveCount(0);
 });
 
-declare global {interface Window {__bcThreeUser:any}}
+declare global {interface Window {__bcThreeUser:any;BC_SUPABASE:any;__bcDelayedCatalogueSearch:any}}
