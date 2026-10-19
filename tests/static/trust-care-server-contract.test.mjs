@@ -28,3 +28,15 @@ test('handoff baseline recorded only after both physical handoff confirmations a
   assert.match(sql,/Handoff baseline evidence is immutable/);
   assert.match(app,/Condition record at mutual handoff/);
 });
+
+const storageGuard=readFileSync(new URL('../../supabase/migrations/20261019091952_protect_trust_care_photo_bytes.sql',import.meta.url),'utf8');
+test('photo Storage bytes cannot be removed or overwritten while offered, locked, or within 90 days after handoff completion',()=>{
+  assert.match(storageGuard,/create policy "trust care preserve collection photo deletion"/);
+  assert.match(storageGuard,/create policy "trust care preserve collection photo replacement"/);
+  assert.match(storageGuard,/as restrictive for delete to authenticated/);
+  assert.match(storageGuard,/as restrictive for update to authenticated/);
+  assert.match(storageGuard,/private\.bc_collection_photo_bytes_protected\(name\)/);
+  assert.match(storageGuard,/c\.completed_at is null or c\.completed_at > pg_catalog\.now\(\)-interval '90 days'/);
+  assert.match(storageGuard,/exchange_case_item_locks/);
+  assert.match(storageGuard,/exchange_case_handoff_baselines/);
+});
