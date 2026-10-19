@@ -56,13 +56,19 @@ begin
   if exists(select 1 from public.exchange_case_item_locks l where l.item_id=old.item_id) then
     raise exception 'Set photos are frozen during an exchange.';
   end if;
+  if tg_op='DELETE' then
+    if exists(select 1 from public.collection_items ci
+              where ci.id=old.item_id and ci.available_for_exchange) then
+      raise exception 'Make this set unavailable before removing a required photo.';
+    end if;
+    return old;
+  end if;
   if exists(select 1 from public.collection_items ci
             where ci.id=old.item_id and ci.available_for_exchange)
-     and (tg_op='DELETE' or new.item_id is distinct from old.item_id
+     and (new.item_id is distinct from old.item_id
           or new.angle is distinct from old.angle or new.owner_id is distinct from old.owner_id) then
-    raise exception 'Make this set unavailable before removing a required photo.';
+    raise exception 'Make this set unavailable before changing a required photo angle.';
   end if;
-  if tg_op='DELETE' then return old; end if;
   return new;
 end;
 $$;
