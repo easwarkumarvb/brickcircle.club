@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-const sql=readFileSync(new URL('../../supabase/migrations/20261019082808_trust_care_condition_safeguards.sql',import.meta.url),'utf8');
+const sql=readFileSync(new URL('../../supabase/migrations/20261019083950_trust_care_condition_safeguards.sql',import.meta.url),'utf8');
 const app=readFileSync(new URL('../../app-v3.js',import.meta.url),'utf8');
 test('new availability requires all three actual owner photo paths at database boundary',()=>{
   assert.match(sql,/before update on public\.collection_items/);
