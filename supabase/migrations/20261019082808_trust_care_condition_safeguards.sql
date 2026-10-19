@@ -14,6 +14,10 @@ create or replace function private.bc_guard_collection_trust_care()
 returns trigger language plpgsql security definer set search_path=''
 as $$
 begin
+  if new.inventory_review_status='known_gaps'
+     and pg_catalog.btrim(coalesce(new.notes,''))='' then
+    raise exception 'Describe the known missing pieces in Notes before saving.';
+  end if;
   -- An accepted or active exchange freezes descriptive terms and listing photos.
   -- Changes require a new peer agreement, rather than editing the old evidence.
   if exists(select 1 from public.exchange_case_item_locks l where l.item_id=old.id)
