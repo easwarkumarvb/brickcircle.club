@@ -644,4 +644,9 @@ test('mutual handoff exposes a read-only owner declaration in Messages',async({p
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText('One axle missing');
   await expect(dialog).toContainText('Owner did not verify all parts');
+  const originals=dialog.locator('[data-trust-baseline-photo]');
+  await expect(originals).toHaveCount(6);
+  await expect(originals.first()).toBeVisible();
+  await expect(originals.first()).toHaveAttribute('href',/collection-photos.*42172-front/);
+  await expect(originals.first()).toHaveAttribute('rel','noopener noreferrer');
 });
