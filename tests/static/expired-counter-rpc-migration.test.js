@@ -7,8 +7,10 @@ assert.ok(fs.existsSync(migrationPath), 'missing expired-counter migration');
 const sql = fs.readFileSync(migrationPath, 'utf8');
 
 assert.match(sql, /pg_get_functiondef\(\s*'public\.exchange_case_transition\(uuid,bigint,text,text,jsonb\)'::regprocedure\s*\)/i);
-assert.match(sql, /if clean_action='counter' then[\s\S]*?if c\.response_deadline<=pg_catalog\.now\(\) then raise exception 'This proposal has expired'; end if;[\s\S]*?next_duration:=/);
-assert.match(sql, /strpos\(function_definition,old_fragment\)=0/);
+assert.match(sql, /old_fragment constant text := \$fragment\$\n  if clean_action='counter' then/);
+assert.match(sql, /new_fragment constant text := \$fragment\$\n  if clean_action='counter' then[\s\S]*?if c\.response_deadline<=pg_catalog\.now\(\) then raise exception 'This proposal has expired'; end if;[\s\S]*?next_duration:=/);
+assert.match(sql, /old_count=0 and new_count=1 then\s+return;/);
+assert.match(sql, /old_count<>1 or new_count<>0/);
 assert.match(sql, /replace\(function_definition,old_fragment,new_fragment\)/);
 assert.doesNotMatch(sql, /\b(?:grant|revoke|alter owner)\b/i);
 assert.doesNotMatch(sql, /user_metadata|create\s+table|alter\s+table/i);
