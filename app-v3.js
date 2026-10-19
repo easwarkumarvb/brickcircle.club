@@ -1724,6 +1724,40 @@ function showNotifications(){
   $$('[data-note]',o).forEach(element=>element.onclick=()=>openNotification(S.notifications.find(notification=>notification.id===element.dataset.note)));
 }
 /* --- Messages: conversation list + direct/case threads --- */
+const BETA_FEEDBACK_RELEASE='20261019-private-feedback-r1';
+const BETA_FEEDBACK_SCREENS={messages:'Messages',conversation:'Conversation'};
+const BETA_FEEDBACK_SUPPORT='support@brickcircle.club';
+function betaFeedbackReport(screen,description=''){
+  const allowedScreen=Object.prototype.hasOwnProperty.call(BETA_FEEDBACK_SCREENS,screen)?screen:'messages';
+  const text=String(description).slice(0,1000).trim();
+  return `BrickCircle beta feedback\nRelease: ${BETA_FEEDBACK_RELEASE}\nScreen: ${BETA_FEEDBACK_SCREENS[allowedScreen]}\n\nDescription:\n${text||'(No description provided)'}`;
+}
+function betaFeedbackMailto(screen,description=''){
+  return `mailto:${BETA_FEEDBACK_SUPPORT}?subject=${encodeURIComponent('BrickCircle beta feedback')}&body=${encodeURIComponent(betaFeedbackReport(screen,description))}`;
+}
+function openBetaFeedback(screen){
+  const allowedScreen=Object.prototype.hasOwnProperty.call(BETA_FEEDBACK_SCREENS,screen)?screen:'messages';
+  const label=BETA_FEEDBACK_SCREENS[allowedScreen];
+  const o=modal(`<div class="bc-modal-head"><h2>Report a problem</h2><button class="bc-close" type="button" data-close-feedback aria-label="Close report composer">×</button></div><p class="bc-feedback-intro">This report stays on your device until you choose an action. Open your email app to review and send it yourself, or copy it to share another way.</p><p class="bc-notice warn">Only the release version and screen are added automatically. No messages, names, email addresses, IDs, photos, links, browser data, errors, or screenshots are included. Avoid sensitive information in your description.</p><form class="bc-form bc-feedback-form"><label class="bc-field">Description (optional)<textarea class="bc-textarea" data-feedback-description aria-label="Description (optional)" maxlength="1000" rows="4" placeholder="What happened? Please avoid sensitive information."></textarea></label><label class="bc-field">Copyable report<textarea class="bc-textarea bc-feedback-copy" data-feedback-preview aria-label="Copyable report" readonly rows="6"></textarea></label><p class="bc-small">To: <a href="mailto:${BETA_FEEDBACK_SUPPORT}">${BETA_FEEDBACK_SUPPORT}</a> · Screen: ${label}</p><p class="bc-feedback-status" data-feedback-status role="status" aria-live="polite"></p><div class="bc-form-actions"><button class="bc-btn" type="button" data-copy-feedback>Copy report</button><a class="bc-btn primary" data-feedback-mail href="${betaFeedbackMailto(allowedScreen)}">Open email</a></div></form>`);
+  if(!o)return;
+  const description=$('[data-feedback-description]',o),preview=$('[data-feedback-preview]',o),send=$('[data-feedback-mail]',o),status=$('[data-feedback-status]',o);
+  const update=()=>{const report=betaFeedbackReport(allowedScreen,description.value);preview.value=report;send.href=betaFeedbackMailto(allowedScreen,description.value)};
+  description.addEventListener('input',update);
+  update();
+  $('[data-close-feedback]',o).onclick=closeOverlay;
+  $('[data-copy-feedback]',o).onclick=async()=>{
+    try{
+      if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');
+      await navigator.clipboard.writeText(preview.value);
+      status.textContent='Report copied. It has not been sent.';
+    }catch(_){
+      status.textContent='Could not copy the report. Select the copyable report text and copy it manually.';
+    }
+  };
+}
+function bindBetaFeedback(root=app()){
+  $$('[data-open-beta-feedback]',root).forEach(button=>button.onclick=()=>openBetaFeedback(button.dataset.feedbackScreen));
+}
 let collectorFocus=null;
 function messagesThreadGuard(kind,id){
   if(!S.user||routeName()!=='messages')return false;
@@ -2100,6 +2134,7 @@ function renderMessagesListPane(){
   updateMessageBadge();
 }
 function bindMessagesListPane(root=app()){
+  bindBetaFeedback(root);
   const search=$('[data-messages-search]',root);if(search)search.oninput=()=>{
     const start=search.selectionStart,end=search.selectionEnd;messagesSearch=search.value;renderMessagesListPane();
     const next=$('[data-messages-search]');if(next){next.focus();if(next.setSelectionRange&&start!==null)try{next.setSelectionRange(start,end)}catch{}}
@@ -2141,7 +2176,7 @@ async function renderMessagesList(token){
   }catch(error){failure=error}
   if(token!==S.renderToken||S.user?.id!==uid||routeName()!=='messages'||routeId())return;
   if(failure||!index)return renderMessagesUnavailable('Your conversations could not be loaded. Please retry.',()=>renderMessagesList(S.renderToken));
-  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">YOUR CONVERSATIONS</span><h1>Messages</h1><p>One conversation with each collector, with exchange updates together in your chat.</p></div><div class="bc-head-actions"><button class="bc-btn" data-action="exchanges">Open exchanges</button></div></div><div class="bc-messages-layout" data-view="list"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane">${empty('💬','Pick a conversation','Choose a collector to read your conversation and reply.')}</section></div>`);
+  page(`<div class="bc-page-head"><div><span class="bc-page-kicker">YOUR CONVERSATIONS</span><h1>Messages</h1><p>One conversation with each collector, with exchange updates together in your chat.</p></div><div class="bc-head-actions"><button class="bc-btn" data-action="exchanges">Open exchanges</button><button class="bc-btn" type="button" data-open-beta-feedback data-feedback-screen="messages">Report a problem</button></div></div><div class="bc-messages-layout" data-view="list"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane">${empty('💬','Pick a conversation','Choose a collector to read your conversation and reply.')}</section></div>`);
   bindMessagesListPane();
   if(index.partial){const warning=document.createElement('p');warning.className='bc-notice';warning.setAttribute('role','status');warning.textContent='Some conversation updates are temporarily unavailable. Refresh to retry.';$('.bc-messages-list-pane')?.prepend(warning)}
   updateMessageBadge();
@@ -2823,7 +2858,7 @@ async function renderDirectThread(token,peerId,focusedCase=null,focusedMessage=n
   if(focusedCase&&!messageIndexByUid.get(uid)?.cases.get(focusedCase))return renderMessagesUnavailable('Conversation unavailable.');
   collectorFocus={uid,peerId,caseId:focusedCase,replyCaseId:null};
   const p=peer,firstName=(p.display_name||'collector').split(' ')[0];
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,null)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button><div class="bc-messages-layout" data-view="thread"><section class="bc-messages-list-pane bc-card bc-pad" aria-label="Conversations">${messagesListPaneMarkup()}</section><section class="bc-messages-thread-pane"><section class="bc-msg-hero bc-card"><div class="bc-msg-hero-person"><span class="bc-mini-avatar bc-msg-hero-avatar">${avatar(p)}</span><div><h1>${esc(p.display_name||'Collector')}</h1><p>${esc([p.city,p.country].filter(Boolean).join(' · '))||'BrickCircle collector'}</p></div></div></section><div id="bc-collector-action"></div><div id="bc-collector-form"></div><div id="bc-collector-proposal"></div><section class="bc-card bc-msg-thread-card"><div class="bc-msg-tools"><button class="bc-btn" type="button" data-open-beta-feedback data-feedback-screen="conversation">Report a problem</button><button class="bc-msg-refresh" type="button" data-refresh-thread>↻ Refresh</button></div><div class="bc-msg-chat" id="bc-msg-chat" aria-live="polite" aria-label="Conversation history">${collectorTimelineMarkup(peerId,uid)}</div><div class="bc-collector-inputbar">${collectorDestinationMarkup(peerId,null)}<form class="bc-msg-compose" id="bc-msg-form"><textarea class="bc-textarea" name="message" rows="2" maxlength="4000" placeholder="Message ${attr(firstName)}" autocomplete="off" required aria-label="Message ${attr(firstName)}"></textarea><button class="bc-btn primary" type="submit">Send</button></form></div></section></section></div>`);
   const chat=$('#bc-msg-chat');
   if(chat)chat.bcTimelineFocus=!!focusedCase;
   if(chat)chat.bcThread={kind:'direct',id:peerId,senderName:p.display_name,fallback:DIRECT_THREAD_FALLBACK,caseRow:null};
