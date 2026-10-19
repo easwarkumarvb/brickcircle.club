@@ -44,7 +44,7 @@ test('GitHub masking escapes command separators and is silent outside Actions', 
     assert.deepEqual(logs,['::add-mask::fake%25test%0D%0Asecret']);
   } finally { console.log=oldLog; if(oldEnv===undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS=oldEnv; }
 });
-function mock({failNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=401,failCleanup=false}={}) {
+function mock({failNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=401,failCleanup=false,conflictStatus=409}={}) {
   let clients=0, aal='aal1', revoked=false, notes=0; const masks=[]; const requests=[]; const signouts=[];
   const factory=()=>{
     const i=clients++; const user={id:i===0?'member-id':'admin-id',email:config().credentials[i].email,app_metadata:{staging_admin_smoke_run:wrongOwner?'wrong':id}};
@@ -65,8 +65,8 @@ function mock({failNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=4
     else if(revoked){status=denialStatus;data={error:'Expired',code:'unauthenticated'};}
     else if(body.operation==='note') {
       if(failNote) throw new Error('SECRET-PROVIDER-ERROR');
-      if(body.reason.startsWith('Different')){status=409;data={error:'Conflict'};}
-      else {data={audit_id:'audit',replayed:notes>0};notes=1;}
+      if(body.reason.startsWith('Different')){status=conflictStatus;data={error:'SECRET-CONFLICT-PROVIDER-DETAIL',code:'conflict'};}
+      else {data={audit_id:'audit',revision:0,replayed:notes>0};notes=1;}
     } else if(body.section==='overview') data={summary:{members:2}};
     else if(body.section==='support') data={rows:[{id}]};
     else if(body.section==='support_detail') data={request:{id,case_id:id,requested_by:'member-id',note:`Owned staging admin smoke ${id}`,revision:0,status:'open'},exchange:{state:'ACTIVE'},total:body.part==='events'?1:notes,rows:body.part==='events'?[{id:'event'}]:[]};
@@ -78,10 +78,27 @@ test('mocked legitimate MFA API sequence, exact replay/conflict, revocation and 
   for(const denialStatus of [401,403]) {
     const deps=mock({denialStatus});const report=await runSmoke(config(),deps);
     assert.equal(report.passed,true);assert.equal(report.realMfa,true);assert.equal(report.retainedDisposableAudit,true);
+    assert.ok(report.evidence.includes('note-replay-conflict'));
+    assert.deepEqual(report.diagnostics.map(x=>x.step),['note-first','note-replay','note-conflict','post-note-verification']);
+    assert.equal(report.diagnostics[0].noteResponseShape,true);assert.equal(report.diagnostics[0].replayedExpected,true);
+    assert.equal(report.diagnostics[1].noteResponseShape,true);assert.equal(report.diagnostics[1].replayedExpected,true);
+    assert.equal(report.diagnostics[1].auditIdsEqual,true);
     assert.deepEqual(deps.requests.filter(x=>x.operation==='note').slice(0,2)[0],deps.requests.filter(x=>x.operation==='note')[1]);
     assert.ok(deps.masks.includes('verified-token'));assert.ok(deps.masks.includes(config().totpSecret));
     assert.ok(deps.signouts.includes(0));assert.ok(deps.signouts.includes(1));
     for(const secret of deps.masks) assert.ok(!JSON.stringify(report).includes(secret));
+  }
+});
+test('conflict 403 and 503 failures retain only safe phase/status/shape diagnostics',async()=>{
+  for(const status of [403,503]){
+    const deps=mock({conflictStatus:status});const report=await runSmoke(config(),deps);
+    assert.equal(report.passed,false);assert.equal(report.phase,'note-conflict');
+    assert.deepEqual(report.diagnostics.at(-1),{step:'note-conflict',status,noStore:true,jsonParsed:true,allowedResponseShape:true});
+    assert.deepEqual(report.cleanup,['local-test-session-signed-out','local-test-session-signed-out']);
+    const serialized=JSON.stringify(report);
+    for(const value of ['SECRET-CONFLICT-PROVIDER-DETAIL','member@example.test','admin@example.test',
+      'member-test-password','admin-test-password',config().totpSecret,'verified-token','verified-refresh'])
+      assert.ok(!serialized.includes(value));
   }
 });
 test('failures preserve unknown-delivery cleanup key, suppress provider errors and always sign out',async()=>{
