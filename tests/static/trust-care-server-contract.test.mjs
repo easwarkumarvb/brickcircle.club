@@ -40,3 +40,13 @@ test('photo Storage bytes cannot be removed or overwritten while offered, locked
   assert.match(storageGuard,/exchange_case_item_locks/);
   assert.match(storageGuard,/exchange_case_handoff_baselines/);
 });
+
+const evidenceRead=readFileSync(new URL('../../supabase/migrations/20261019092759_allow_participants_handoff_evidence_photo_read.sql',import.meta.url),'utf8');
+test('only the two participants retain signed read access to original handoff photographs',()=>{
+  assert.match(evidenceRead,/p_peer in \(c\.user_a,c\.user_b\)/);
+  assert.match(evidenceRead,/c\.completed_at is null or c\.completed_at > pg_catalog\.now\(\)-interval '90 days'/);
+  assert.match(evidenceRead,/create policy "handoff participants read original photo evidence"/);
+  assert.match(evidenceRead,/for select to authenticated/);
+  assert.match(evidenceRead,/revoke all on function private\.bc_handoff_photo_readable_by_peer\(text,uuid\) from public,anon,authenticated/);
+  assert.match(app,/async function hydrateTrustBaselinePhotos/);
+});
