@@ -1531,9 +1531,25 @@ function handoffBaselineMarkup(record){
   const explain=entry=>{
     if(!entry||typeof entry!=='object')return '';
     const state=({checked:'Owner says parts checked',known_gaps:'Owner disclosed missing pieces',not_checked:'Owner did not verify all parts'})[entry.inventory_review_status]||'Inventory status not recorded';
-    return `<li><b>Set ${esc(entry.set_number||'')}</b>: ${esc(state)}; ${esc(entry.condition||'condition unspecified')}. ${entry.notes?`Notes: ${esc(String(entry.notes).slice(0,700))}`:'No written notes'}. Owner-estimated completeness is not a certified piece count.</li>`;
+    const photos=['front','side','rear'].filter(angle=>typeof entry.photos?.[angle]==='string'&&entry.photos[angle]).map(angle=>
+      `<a hidden data-trust-baseline-photo="${attr(entry.photos[angle])}" class="bc-btn bc-trust-baseline-photo" href="#" rel="noopener noreferrer" target="_blank" data-photo-label="${attr(angle)}">View ${esc(angle)} photo</a>`).join('');
+    return `<li><b>Set ${esc(entry.set_number||'')}</b>: ${esc(state)}; ${esc(entry.condition||'condition unspecified')}. ${entry.notes?`Notes: ${esc(String(entry.notes).slice(0,700))}`:'No written notes'}. Owner-estimated completeness is not a certified piece count.${photos?`<div class="bc-trust-baseline-photos" aria-label="Photographs recorded at handoff">${photos}</div>`:''}</li>`;
   };
-  return `<details class="bc-case-history bc-trust-handoff-record"><summary>Condition record at mutual handoff</summary><p class="bc-small">This read-only record captures both owner declarations and three photo references when both collectors confirmed the handoff. Compare it with the returned sets; it is not proof every piece was present.</p><ul>${explain(snapshot.item_a)}${explain(snapshot.item_b)}</ul><p class="bc-small">Captured ${esc(fmtDateTime(record.captured_at))}. Original photo files may have separate storage retention limits.</p></details>`;
+  return `<details class="bc-case-history bc-trust-handoff-record"><summary>Condition record at mutual handoff</summary><p class="bc-small">This read-only record captures both owner declarations and three photo references when both collectors confirmed handoff. Photos are available only to participating collectors during the protected review period; a photo cannot prove that every piece was present.</p><ul>${explain(snapshot.item_a)}${explain(snapshot.item_b)}</ul><p class="bc-small">Captured ${esc(fmtDateTime(record.captured_at))}. Original photos are protected during the exchange and for at least 90 days after its completion.</p></details>`;
+}
+async function hydrateTrustBaselinePhotos(root){
+  if(!root)return;
+  const epoch=authEpoch,uid=S.user?.id,valid=()=>epoch===authEpoch&&uid===S.user?.id&&!logoutLocked&&root.isConnected;
+  for(const link of root.querySelectorAll('[data-trust-baseline-photo]')){
+    const path=link.dataset.trustBaselinePhoto;
+    try{
+      const signed=await signedOwnerPhoto(path);
+      if(!valid())return;
+      if(!signed)continue;
+      link.href=signed;link.hidden=false;
+      link.textContent='View '+String(link.dataset.photoLabel||'handoff')+' photo';
+    }catch(_){if(!valid())return}
+  }
 }
 function renderExchangeDetailLoaded(e,messages,events,reviews,issues,issueResponses,baseline=null){
   const p=otherProfile(e),oid=otherId(e),mineA=e.user_a===S.user.id,myItem=mineA?e.item_a:e.item_b,theirItem=mineA?e.item_b:e.item_a,myName=itemName(myItem),theirName=itemName(theirItem),messagingClosed=terminalCaseStates.has(e.state),next=caseNextAction(e),secondary=caseSecondaryAction(e),overdueDays=Number(S.caseOverdue[e.id]||0),trust=reputationTrustContext(oid);
@@ -1541,7 +1557,7 @@ function renderExchangeDetailLoaded(e,messages,events,reviews,issues,issueRespon
   const durationDays=exchangeDurationDays(e),duration=durationDays===null?'Temporary exchange period unavailable':`${durationDays}-day local temporary exchange`;
   const safety=e.state==='MEETUP_CONFIRMED'?safetyChecklistMarkup({mineAcknowledged:Boolean(caseParticipantValue(e,'safety_ack')),partnerAcknowledged:Boolean(caseParticipantValue(e,'safety_ack',false)),showAcknowledgement:next.action==='safety_ack'}):'';
   page(`<button class="bc-back" data-action="exchanges">← Back to Exchanges</button><section class="bc-exchange-hero"><div class="bc-exchange-hero-top"><div><span class="bc-pill gold">${esc(exchangeStageLabel(e))} · with ${esc(p.display_name||'Collector')}${p.city?' · '+esc(p.city):''}</span><h1>${esc(myName)} ⇄ ${esc(theirName)}</h1><p>${esc(duration)}${e.return_due_at?` · return due ${fmtDate(e.return_due_at)}`:''}</p>${caseProposalTermsMarkup(e)}${trust}${overdueNotice}</div></div>${exchangeTimeline(e)}</section>${messagingClosed?'':`<section class="bc-mobile-next"><span>YOUR NEXT ACTION</span><h2>${esc(next.label||exchangeStageLabel(e))}</h2>${safety}${next.action?`<button class="bc-btn primary" data-case-action="${attr(next.action)}"${next.action==='accept'&&(!validProposalDuration(e)||proposalResponseDeadlinePassed(e))?' disabled':''}>${esc(next.label)}</button>`:''}${!messagingClosed&&e.state==='PROPOSED'&&e.recipient_id===S.user.id?`<button class="bc-btn" data-case-action="counter"${proposalResponseDeadlinePassed(e)?' disabled':''}>Suggest another duration</button>`:''}${secondary?`<button class="bc-btn" data-case-action="${attr(secondary.action)}">${esc(secondary.label)}</button>`:''}</section>`}<div class="bc-exchange-layout"><div><section class="bc-card bc-flow-card" id="bc-flow">${flowMarkup(e,events)}${handoffBaselineMarkup(baseline)}</section>${caseIssuesMarkup(e,issues||[],issueResponses||[])}${reviewMarkup(e,p,reviews||[])}</div><aside><section class="bc-card bc-flow-card"><div class="bc-chat-head"><h2>Exchange conversation</h2><button class="bc-btn ghost" type="button" data-open-messages-case="${attr(e.id)}">Open in Messages</button></div><div class="bc-chat" id="bc-chat">${messages.length?messages.map(m=>`<div class="bc-msg ${m.sender_id===S.user.id?'mine':''}">${esc(m.body)}<small>${fmtDateTime(m.created_at)}</small></div>`).join(''):'<div class="bc-small">No messages yet. Keep meetup, handoff, return and issue details here.</div>'}</div><p class="bc-small">Continue your conversation in Messages.</p></section><section class="bc-card bc-flow-card" style="margin-top:14px"><h2>Exchange guidance</h2><p>${esc(next.copy)}</p>${canReportCaseIssue(e)?'<button class="bc-btn danger" style="margin-top:10px" data-case-action="report_issue">Report an issue</button>':''}${legacyIssueCase(e)?`<div class="bc-notice warn" style="margin-top:10px"><b>Legacy case.</b><br>This exchange sits in a legacy custody review state, so the newer issue tools are unavailable here. Keep communicating with the other collector, or contact <a href="mailto:${attr(SUPPORT_EMAIL)}">${esc(SUPPORT_EMAIL)}</a>.</div>`:''}<button class="bc-btn" style="margin-top:10px" data-case-action="request_support">Need BrickCircle support?</button><div class="bc-notice warn" style="margin-top:12px"><b>Inspection first.</b><br>Meet publicly. Inspect condition, parts and completeness together. Confirm handoff only after you are satisfied.</div></section></aside></div>`);
-  bindCommon(app());bindExchangeDetail(e,p)
+  bindCommon(app());bindExchangeDetail(e,p);void hydrateTrustBaselinePhotos(app())
 }
 function caseParticipantValue(e,prefix,mine=true){const suffix=(S.user.id===e.user_a)===mine?'a':'b';return e[`${prefix}_${suffix}_at`]}
 function caseNextAction(e){const mine=S.user.id,recipient=e.recipient_id===mine,meetupOther=e.meetup_proposed_by&&e.meetup_proposed_by!==mine,returnOther=e.return_proposed_by&&e.return_proposed_by!==mine;
@@ -2627,7 +2643,7 @@ document.addEventListener('click',async event=>{
     if(error||!data){toast('The handoff record is unavailable right now. Try again after refreshing the exchange.');return}
     const view=handoffBaselineMarkup(data).replace('<details ','<details open ');
     const o=modal('<div class="bc-modal-head"><div><h2>Handoff condition record</h2><p class="bc-muted">Owner declarations captured when both collectors confirmed physical handoff.</p></div><button type="button" class="bc-close" data-close>×</button></div>'+view);
-    o.querySelector('[data-close]')?.addEventListener('click',closeOverlay);
+    o.querySelector('[data-close]')?.addEventListener('click',closeOverlay);void hydrateTrustBaselinePhotos(o);
   }catch(error){if(uid===S.user?.id&&!logoutLocked)fail(error,'Could not load the handoff record.')}
   finally{if(button.isConnected)button.disabled=false}
 });
