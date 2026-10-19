@@ -1,5 +1,5 @@
 -- Disposable QA regression: does not reference any real collector or mutate real rows.
--- Run against staging after applying 20261019082808. Transaction always rolls back.
+-- Run against staging after applying 20261019083950. Transaction always rolls back.
 begin;
 create temporary table bc_trust_probe(
   id uuid, user_id uuid, owner_photo_path text, condition text,
