@@ -28,7 +28,7 @@ test('a set with missing supplementary photos cannot become available',async({pa
   await page.goto('/v2.html?isolated=ready-zero#sets');
   await page.evaluate(()=>{window.__bcIsolated.photoAngles=[]});
   const toggle=page.locator('[data-exchangeable]').first();
-  await toggle.check();
+  await toggle.evaluate((input:HTMLInputElement)=>{input.checked=true;input.dispatchEvent(new Event('change',{bubbles:true}))});
   await expect(toggle).not.toBeChecked();
   await expect(page.locator('.bc-toast')).toContainText('add front, side and rear photos');
   expect(await page.evaluate(()=>window.__bcIsolated.rpcCalls.filter((x:any)=>x.name==='set_exchange_item_availability').length)).toBe(0);
