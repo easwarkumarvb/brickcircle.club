@@ -1124,7 +1124,7 @@ function trustCareNudge(stage,message){
   try{if(sessionStorage.getItem(key)==='dismissed')return ''}catch(_){}
   return `<aside class="bc-notice bc-trust-care" data-trust-stage="${attr(stage)}" aria-label="BrickCircle care reminder"><div><b>Build with care. Share with honesty.</b><p>${esc(message)}</p><p><a href="https://www.lego.com/en-in/service/building-instructions" target="_blank" rel="noopener noreferrer">Official LEGO instructions</a> · <a href="https://www.lego.com/en-in/service/replacement-parts" target="_blank" rel="noopener noreferrer">Find replacement parts</a></p><small>Replacement availability and charges depend on the circumstances. Owner-lost pieces may need to be purchased.</small></div><button type="button" class="bc-btn" data-trust-dismiss="${attr(stage)}" aria-label="Dismiss care reminder">Got it</button></aside>`;
 }
-document.addEventListener('click',event=>{
+if(typeof document!=='undefined')document.addEventListener('click',event=>{
   const button=event.target.closest?.('[data-trust-dismiss]');
   if(!button)return;
   const stage=button.dataset.trustDismiss;
@@ -1143,7 +1143,7 @@ function addOwnedSetWithPhoto(set){const details=S.browse.rows.find(row=>row.set
 function addLegacyOwnerPhoto(item){const previousPath=item.owner_photo_path;ownerPhotoPicker({title:`Add a photo for set ${item.set_number}`,copy:'This legacy set needs a photo of the assembled model before it can be made available to exchange.',saveLabel:'Upload photo',onSave:async(file,owner)=>{const path=await uploadOwnerPhoto(file,owner);await persistPhotoMetadata(owner,()=>photoPreviousPathFilter(db.from('collection_items').update({owner_photo_path:path,updated_at:new Date().toISOString()}).eq('id',item.id).eq('user_id',owner.id),'owner_photo_path',previousPath).select('id,user_id,owner_photo_path'),row=>row.id===item.id&&row.user_id===owner.id&&row.owner_photo_path===path,()=>cleanupOwnerPhoto(path));owner.assert();await refreshCore();owner.assert();renderSetsBody();toast('Photo added. You can now make this set available to exchange.')}})}
 function replaceOwnerPhoto(item){
   if(!item||!S.user)return;
-  if(workflowForItem(item.id)){toast('Set photos are frozen during an exchange. Discuss changes with the other collector.');return}
+  if(typeof workflowForItem==='function'&&workflowForItem(item.id)){toast('Set photos are frozen during an exchange. Discuss changes with the other collector.');return}
   const previousPath=item.owner_photo_path,oldPath=previousPath||'',details=item.lego_sets||S.sets[item.set_number]||{};
   ownerPhotoPicker({title:`Change photo for ${details.name||`Set ${item.set_number}`}`,copy:'Choose a new clear photo of your assembled LEGO set. The existing photo will be replaced only after the new photo is saved successfully.',saveLabel:'Save new photo',onSave:async(file,owner)=>{
     const newPath=await uploadOwnerPhoto(file,owner);
@@ -1161,7 +1161,7 @@ function ownerGalleryMarkup(itemId,editable=false,setNumber='',available=false,l
 async function supplementalOwnerPhotos(itemId){try{const {data,error}=await db.from('collection_item_photo_angles').select('item_id,owner_id,angle,storage_path').eq('item_id',itemId);if(error)throw error;return (data||[]).filter(row=>['side','rear'].includes(row.angle))}catch(_){throw new Error('Photos are unavailable right now. Refresh your sets and try again.')}}
 function saveSupplementalOwnerPhoto(item,angle){
  if(!item||item.user_id!==S.user?.id||!['side','rear'].includes(angle))return;
- if(workflowForItem(item.id)){toast('Set photos are frozen during an exchange.');return}
+ if(typeof workflowForItem==='function'&&workflowForItem(item.id)){toast('Set photos are frozen during an exchange.');return}
  ownerPhotoPicker({title:`${angle==='side'?'Side / detail':'Rear'} photo for set ${item.set_number}`,copy:'Show the assembled model clearly. Include a different angle or a useful close-up.',saveLabel:'Save photo',onSave:async(file,owner)=>{
   const rows=await supplementalOwnerPhotos(item.id);owner.assert();
   const oldPath=rows.find(row=>row.angle===angle&&row.owner_id===owner.id)?.storage_path||'';
