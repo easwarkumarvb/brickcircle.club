@@ -633,3 +633,15 @@ test('closing an explicitly selected exchange preserves its unsent draft without
   await input.fill('General message remains available');await page.locator('#bc-msg-form').evaluate((f:HTMLFormElement)=>f.requestSubmit());
   await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.directMessages.at(-1)?.body)).toBe('General message remains available');
 });
+
+test('mutual handoff exposes a read-only owner declaration in Messages',async({page})=>{
+  await open(page,'easwar','ACTIVE',{handoff_at:stamp,handoff_a_at:stamp,handoff_b_at:stamp});
+  await focusCase(page,'guide-case');
+  const trigger=page.getByRole('button',{name:'Review handoff condition record'});
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const dialog=page.getByRole('dialog',{name:'Handoff condition record'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('One axle missing');
+  await expect(dialog).toContainText('Owner did not verify all parts');
+});
