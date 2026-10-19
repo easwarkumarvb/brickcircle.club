@@ -1408,7 +1408,7 @@ async function openVerifiedCollectionItemEditor(id,button){
       .or(`item_a.eq.${id},item_b.eq.${id}`).order('created_at',{ascending:false}).limit(80);
     if(!isCurrent())return;
     if(error){fail(error,'Exchange status could not be checked. Refresh My LEGO and try again.');return}
-    S.exchanges=[...S.exchanges.filter(e=>e.item_a!==id&&e.item_b!==id),...(data||[]).filter(e=>e.user_a===uid||e.user_b===uid)];
+    S.exchanges=[...S.exchanges.filter(e=>e.item_a!==id&&e.item_b!==id),...(data||[]).filter(e=>(e.user_a===uid||e.user_b===uid)&&(e.item_a===id||e.item_b===id))];
     editCollectionItem(id);
   }catch(error){if(isCurrent())fail(error,'Exchange status could not be checked. Refresh My LEGO and try again.')}
   finally{if(button?.isConnected)button.disabled=false}
