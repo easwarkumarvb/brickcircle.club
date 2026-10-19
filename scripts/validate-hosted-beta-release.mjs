@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 export const REPOSITORY = 'easwarkumarvb/brickcircle.club';
-export const PULL_REQUEST_NUMBER = 168;
-export const HEAD_BRANCH = 'release/beta-consolidated-20261017';
-export const HEAD_SHA = 'e5de20ca3a52a420c966a28e7556acbad137d0a1';
-export const RELEASE_SHA = '1cc2b24a6c2c348dc95f320fa9970a7bac8ba90a';
+export const PULL_REQUEST_NUMBER = 176;
+export const HEAD_BRANCH = 'dev/exchange-outlier-ux-20261018';
+export const HEAD_SHA = 'ffac9f4d77f05e9fcbf7b4a04bcc16acbb54cacd';
+export const RELEASE_SHA = '5c5a5c4c3eb7fd4bda2e502244edf60829b90595';
 export const CONFIRMATION = 'RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE';
 export const WORKFLOW_REF = REPOSITORY + '/.github/workflows/hosted-supabase-beta-release.yml@refs/heads/main';
 export function validateSelection({repository, ref, eventName, workflowRef, number, sha, confirmation, pr}) {
