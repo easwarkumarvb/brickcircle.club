@@ -1,0 +1,90 @@
+name: Hosted admin MFA fixture provisioning
+
+on:
+  workflow_dispatch:
+    inputs:
+      public_key_der_base64:
+        description: Single-line base64 DER RSA public key (3072 or 4096 bit)
+        required: true
+        type: string
+      run_id:
+        description: New version-4 UUID for this fixture set
+        required: true
+        type: string
+      expected_trusted_dispatch_sha:
+        description: Exact 40-character main commit SHA being dispatched
+        required: true
+        type: string
+      confirmation:
+        description: Type PROVISION_STAGING_ADMIN_MFA_FIXTURES
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hosted-admin-mfa-fixture-provisioning
+  cancel-in-progress: false
+
+jobs:
+  provision:
+    if: >-
+      github.repository == 'easwarkumarvb/brickcircle.club' &&
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.workflow_ref == 'easwarkumarvb/brickcircle.club/.github/workflows/hosted-admin-mfa-fixture-provisioning.yml@refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: hosted-supabase-staging
+    steps:
+      - name: Check out immutable trusted dispatch source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify trusted dispatch checkout before protected inputs
+        shell: bash
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_trusted_dispatch_sha }}
+          DISPATCH_SHA: ${{ github.sha }}
+        run: |
+          test "$EXPECTED_SHA" = "$DISPATCH_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+      - name: Validate dispatch, project, run marker, and RSA key before network clients
+        id: preflight
+        env:
+          INPUT_EXPECTED_TRUSTED_DISPATCH_SHA: ${{ inputs.expected_trusted_dispatch_sha }}
+          INPUT_PUBLIC_KEY_DER_BASE64: ${{ inputs.public_key_der_base64 }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          BC_STAGING_SUPABASE_URL: https://tteyypklldgwwicrgjzt.supabase.co
+        run: node scripts/provision-admin-mfa-fixtures.mjs --preflight
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run offline fixture and legacy MFA safety tests
+        run: npm run test:hosted:admin-mfa
+      - name: Provision two new staging users and verified admin TOTP
+        id: fixture
+        env:
+          INPUT_EXPECTED_TRUSTED_DISPATCH_SHA: ${{ inputs.expected_trusted_dispatch_sha }}
+          INPUT_PUBLIC_KEY_DER_BASE64: ${{ inputs.public_key_der_base64 }}
+          INPUT_RUN_ID: ${{ inputs.run_id }}
+          INPUT_CONFIRMATION: ${{ inputs.confirmation }}
+          BC_STAGING_SUPABASE_URL: https://tteyypklldgwwicrgjzt.supabase.co
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_SUPABASE_SECRET_KEY: ${{ secrets.BC_STAGING_SUPABASE_SECRET_KEY }}
+        run: node scripts/provision-admin-mfa-fixtures.mjs
+      - name: Upload only encrypted credentials and bounded ownership metadata
+        if: always() && steps.fixture.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: admin-mfa-fixtures-${{ inputs.run_id }}
+          path: |
+            artifacts/admin-mfa-fixture-ownership.json
+            artifacts/admin-mfa-fixtures.encrypted.json
+          if-no-files-found: ignore
+          retention-days: 3
