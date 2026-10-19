@@ -86,16 +86,15 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.wishlist.length)).toBe(0);
   await expect(page.getByRole('heading',{name:'Build your wishlist'})).toBeVisible();
   await page.locator('[data-settab="collection"]').click();
-  // Reconcile the canonical case read model before asserting locked listing details.
-  await page.evaluate(async()=>await (window as any).bcV3Refresh());
   const owned=page.locator('.bc-myset');
   await expect(owned).toContainText('McLaren P1');
-  await expect(owned).toContainText('Proposal pending');
   const collectionImage=await owned.locator('img').getAttribute('src');
   expect(collectionImage).toContain('42172-1');
   expect(collectionImage).not.toContain('42172-1-1');
   await page.locator('[data-edit-set]').click();
   await expect(page.locator('#bc-edit-item')).toBeVisible();
+  // The editor must refresh authoritative case status, even when the local
+  // collection cache has not yet updated after the proposal.
   // Agreed condition details are frozen until the canonical case is released.
   await expect(page.locator('#bc-edit-item [name="condition"]')).toBeDisabled();
   await expect(page.locator('#bc-edit-item [data-remove-collection-item]')).toBeDisabled();
