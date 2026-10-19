@@ -13,10 +13,8 @@ export function assertCheckout(expected, actual) {
   if (!/^[0-9a-f]{40}$/.test(expected) || actual !== expected)
     throw new Error('Reviewed checkout required');
 }
-export function validateConfig(c) {
+export function validateFixtureConfig(c) {
   assert.equal(c.url, `https://${PROJECT}.supabase.co`);
-  assert.equal(c.confirmation, CONFIRMATION);
-  assert.equal(c.pr, '124'); assert.match(c.sha, /^[0-9a-f]{40}$/);
   for (const id of [c.run, c.caseId, c.supportId]) assert.match(id, uuid);
   assert.ok(c.key); assert.match(c.totpSecret, /^[A-Z2-7]{16,}=*$/i);
   assert.equal(c.credentials.length, 2);
@@ -25,6 +23,12 @@ export function validateConfig(c) {
     assert.ok(credential.password);
   }
   assert.notEqual(c.credentials[0].email.toLowerCase(), c.credentials[1].email.toLowerCase());
+  return c;
+}
+export function validateConfig(c) {
+  validateFixtureConfig(c);
+  assert.equal(c.confirmation, CONFIRMATION);
+  assert.equal(c.pr, '124'); assert.match(c.sha, /^[0-9a-f]{40}$/);
   return c;
 }
 export function configFromEnv(env) {
@@ -66,8 +70,9 @@ export function assertDenied(data) {
   // Denials must be error envelopes only, not a private payload plus an error.
   assert.ok(Object.keys(data).every(key => ['error', 'code'].includes(key)));
 }
-export async function runSmoke(config, { factory = createClient, transport = fetch, conceal = mask } = {}) {
-  validateConfig(config); // MUST precede client construction, network and mutations
+export async function runSmoke(config, { factory = createClient, transport = fetch, conceal = mask,
+  validate = validateConfig } = {}) {
+  validate(config); // MUST precede client construction, network and mutations
   const c = structuredClone(config); const evidence = []; const cleanup = [];
   let phase = 'password-login'; let failed = false; let attemptedNote = false;
   let memberId; let adminId; const requestId = randomUUID();
