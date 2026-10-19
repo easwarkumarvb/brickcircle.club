@@ -486,7 +486,8 @@ test('safety checklist is visible before acknowledgment and records only the can
   await expect(checklist.locator('> p').first()).toHaveText('These shared checks help both collectors avoid surprises and agree on the condition of the sets before exchanging them.');
   await expect(checklist.locator('ol li')).toHaveText([
     'Meet at the agreed public place and time.',
-    'Inspect both sets together: condition, parts, minifigures and accessories against the listing.',
+    'Inspect both assembled sets together using the front, side and rear owner photographs. Check visible condition, known missing or substituted parts, loose pieces, minifigures and accessories.',
+    'Use the official instructions to check parts when practical. Photos and a short meetup inspection cannot guarantee that every piece is present.',
     'Discuss any differences before continuing. Pause the exchange if either collector is not comfortable.',
     'Confirm the handoff in BrickCircle only after the sets have physically changed hands.'
   ]);
