@@ -61,7 +61,7 @@ async function makeAvailable(page:any){
   }
   const toggle=page.locator('[data-exchangeable]');
   await expect(toggle).not.toBeChecked();
-  page.once('dialog',dialog=>dialog.accept());
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await toggle.click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id)?.available_for_exchange)).toBe(true);
   await expect(page.locator('.bc-toast')).toHaveText('This set is saved as Available to Exchange.');
@@ -247,7 +247,7 @@ test('an owner cancels an accepted pre-handoff case and both preferences remain 
   await page.locator('[data-nav="sets"]').first().click();
   const release=page.getByRole('button',{name:'Cancel before handoff'});
   await expect(release).toBeVisible();
-  page.once('dialog',dialog=>dialog.accept());
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await release.click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('CANCELLED');
   const result=await page.evaluate(()=>({
@@ -299,7 +299,7 @@ test('retired release capability is ignored while canonical set controls remain 
   await page.reload();
   await page.locator('[data-nav="sets"]').first().click();
   await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
-  page.once('dialog',dialog=>dialog.accept());
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await page.locator('[data-exchangeable="ordinary-item"]').check();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.id==='ordinary-item')?.available_for_exchange)).toBe(true);
   const calls=await page.evaluate(()=>window.__bcThreeUser.rpcCalls);
