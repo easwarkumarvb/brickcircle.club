@@ -13,6 +13,10 @@ test('PT409 migration is signature-scoped, count-guarded, metadata-preserving an
   for(const guard of [
     /v_count <> 1 or pg_catalog\.strpos\(v_note, v_new\) <> 0/,
     /v_count <> 1 or pg_catalog\.strpos\(v_mutate, v_new\) <> 0/,
+    /Unexpected admin_support_note 40001 occurrence count/,
+    /Unexpected admin_marketplace_mutate 40001 occurrence count/,
+    /v_count <> 1 then\s+raise exception 'Unexpected admin_support_note 40001 occurrence count/,
+    /v_count <> 2 then\s+raise exception 'Unexpected admin_marketplace_mutate 40001 occurrence count/,
     /Unexpected admin_support_note definition/,
     /Unexpected admin_marketplace_mutate replay definition/,
     /Unexpected admin_marketplace_mutate revision definition/,
@@ -21,6 +25,9 @@ test('PT409 migration is signature-scoped, count-guarded, metadata-preserving an
   assert.match(migration,/raise sqlstate 'PT409' using message = 'Request ID already used for another payload'/);
   assert.match(migration,/raise sqlstate 'PT409' using message = 'Request ID already used for another change'/);
   assert.match(migration,/raise sqlstate 'PT409' using message = 'This record changed\. Refresh and retry\.'/);
+  assert.match(migration,/v_new_code := \$\$'PT409'\$\$/);
+  assert.match(migration,/replace\(v_note, v_new_code, ''\).*<> 1 or\s+pg_catalog\.strpos\(v_note, v_old_code\) <> 0/s);
+  assert.match(migration,/replace\(v_mutate, v_new_code, ''\).*<> 2 or\s+pg_catalog\.strpos\(v_mutate, v_old_code\) <> 0/s);
   assert.doesNotMatch(migration,/\b(?:grant|revoke)\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i);
 });
 

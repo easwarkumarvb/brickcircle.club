@@ -34,29 +34,43 @@ Review that full source set together before any Edge deployment.
    admin sessions or note requests are active. The reported smoke sessions are
    signed out; the single retained audit note remains and must not be deleted as
    part of this rollout.
-2. Before applying SQL, inspect live definitions and metadata for only the two
-   exact signatures. Verify one old conflict statement in the note function, and
-   the two targeted statements in the mutate function (request-ID replay conflict
-   and stale revision). Stop if definitions/counts differ. Apply the new migration
-   through the approved staging migration path only.
-3. Verify the post-migration definitions retain the original owner, ACLs,
+2. Deploy the reviewed `admin-dashboard` function source set above to staging
+   first, using the approved project target. Verify it retains authorization,
+   validation, bounded-body, and no-store behavior and maps both `PT409` and
+   legacy `40001` to the safe HTTP 409 envelope. Its handler is backward-compatible
+   while staging SQL is still unchanged.
+3. Before applying SQL, inspect live definitions and metadata for only the two
+   exact signatures. Verify exactly one quoted `40001` occurrence in the note
+   function and two in the mutate function (request-ID replay conflict and stale
+   revision), plus the expected statement text. Stop if definitions/counts
+   differ. Apply the new migration through the approved staging migration path
+   only.
+4. Verify the post-migration definitions retain the original owner, ACLs,
    `SECURITY DEFINER`, `search_path`, language, arguments, advisory locking,
    authentication/AAL checks, replay behavior and revision checks. Confirm only
    those three raises now use `PT409`, with unchanged messages, and no
    `40001`-retrying conflict raise remains in either function. The migration uses
    `pg_get_functiondef` plus `CREATE OR REPLACE`, preserving the function
    definition attributes; replacement does not change function owner or grants.
-4. After database verification, deploy only the reviewed `admin-dashboard`
-   function source set above to staging, using the approved project target. Verify
-   it returns the safe HTTP 409 conflict envelope for `PT409`, still maps legacy
-   `40001` to that same envelope, and retains authorization, validation,
-   bounded-body, and no-store behavior.
 5. Only after both staging changes are independently approved, rerun the
    protected real-MFA smoke against an approved owned disposable fixture on the
    exact reviewed SHA. Preserve the expected first-write/replay/conflict
    assertions, unchanged case/revision/event invariants, and session cleanup.
    Confirm no retry storm in Edge/database logs. Obtain separate approval for any
    further retained-note handling. Do not use production fixtures or credentials.
+
+The existing disposable fixture is not reset: the prior run's single audit note
+remains as the baseline at revision 0; the support case remains `CANCELLED`
+version 1 with zero events. Each smoke invocation generates a fresh request ID,
+so each successful run appends its own retained note while keeping the support
+case revision/status and events unchanged. Record and compare against the known
+baseline; do not reset or rewrite fixture/audit state.
+
+Do not roll back by restoring deliberate business-conflict `40001` raises. That
+would reintroduce PostgREST 14 retry behavior. If rollback becomes necessary,
+keep the handler's dual-code mapping, pause admin mutation/note smoke tests, and
+obtain a separately reviewed corrective migration that continues to use a
+non-retryable conflict SQLSTATE.
 
 ## Offline validation boundary
 

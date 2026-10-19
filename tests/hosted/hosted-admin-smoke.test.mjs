@@ -44,7 +44,7 @@ test('GitHub masking escapes command separators and is silent outside Actions', 
     assert.deepEqual(logs,['::add-mask::fake%25test%0D%0Asecret']);
   } finally { console.log=oldLog; if(oldEnv===undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS=oldEnv; }
 });
-function mock({failNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=401,failCleanup=false,conflictStatus=409}={}) {
+function mock({failNote=false,malformedNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=401,failCleanup=false,conflictStatus=409}={}) {
   let clients=0, aal='aal1', revoked=false, notes=0; const masks=[]; const requests=[]; const signouts=[];
   const factory=()=>{
     const i=clients++; const user={id:i===0?'member-id':'admin-id',email:config().credentials[i].email,app_metadata:{staging_admin_smoke_run:wrongOwner?'wrong':id}};
@@ -66,7 +66,7 @@ function mock({failNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=4
     else if(body.operation==='note') {
       if(failNote) throw new Error('SECRET-PROVIDER-ERROR');
       if(body.reason.startsWith('Different')){status=conflictStatus;data={error:'SECRET-CONFLICT-PROVIDER-DETAIL',code:'conflict'};}
-      else {data={audit_id:'audit',revision:0,replayed:notes>0};notes=1;}
+      else {data=malformedNote&&notes===0?{revision:0,replayed:false}:{audit_id:'audit',revision:0,replayed:notes>0};notes=1;}
     } else if(body.section==='overview') data={summary:{members:2}};
     else if(body.section==='support') data={rows:[{id}]};
     else if(body.section==='support_detail') data={request:{id,case_id:id,requested_by:'member-id',note:`Owned staging admin smoke ${id}`,revision:0,status:'open'},exchange:{state:'ACTIVE'},total:body.part==='events'?1:notes,rows:body.part==='events'?[{id:'event'}]:[]};
@@ -100,6 +100,17 @@ test('conflict 403 and 503 failures retain only safe phase/status/shape diagnost
       'member-test-password','admin-test-password',config().totpSecret,'verified-token','verified-refresh'])
       assert.ok(!serialized.includes(value));
   }
+});
+test('malformed first-note response fails safely and signs out both sessions',async()=>{
+  const deps=mock({malformedNote:true});const report=await runSmoke(config(),deps);
+  assert.equal(report.passed,false);assert.equal(report.phase,'note-first');
+  assert.deepEqual(report.diagnostics.at(-1),{step:'note-first',status:200,noStore:true,jsonParsed:true,
+    allowedResponseShape:true,noteResponseShape:false,replayedExpected:true});
+  assert.deepEqual(report.cleanup,['local-test-session-signed-out','local-test-session-signed-out']);
+  const serialized=JSON.stringify(report);
+  for(const value of ['SECRET-PROVIDER-ERROR','SECRET-CONFLICT-PROVIDER-DETAIL','member@example.test',
+    'admin@example.test','member-test-password','admin-test-password',config().totpSecret,'verified-token','verified-refresh'])
+    assert.ok(!serialized.includes(value));
 });
 test('failures preserve unknown-delivery cleanup key, suppress provider errors and always sign out',async()=>{
   for(const options of [{failNote:true},{wrongOwner:true},{wrongMfaUser:true},{failCleanup:true}]) {

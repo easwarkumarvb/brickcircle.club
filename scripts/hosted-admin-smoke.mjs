@@ -100,7 +100,8 @@ export async function runSmoke(config, { factory = createClient, transport = fet
     if (response.status !== 200) assertDenied(data); return data;
   }
   const noteResponseShape = data => Boolean(data && typeof data === 'object' && !Array.isArray(data) &&
-    typeof data.audit_id === 'string' && Number.isInteger(data.revision) && typeof data.replayed === 'boolean');
+    typeof data.audit_id === 'string' && data.audit_id.length > 0 &&
+    Number.isInteger(data.revision) && data.revision >= 0 && typeof data.replayed === 'boolean');
   const read = (section, extra = {}) => ({ operation: 'read', version: 2, section, page: 0, ...extra });
   const detail = part => read('support_detail', { id: c.supportId, part });
   try {
@@ -149,11 +150,13 @@ export async function runSmoke(config, { factory = createClient, transport = fet
     const first = await edge(token, envelope, [200], 'note-first');
     diagnostics.at(-1).noteResponseShape = noteResponseShape(first);
     diagnostics.at(-1).replayedExpected = first?.replayed === false;
+    assert.ok(noteResponseShape(first));
     assert.equal(first.replayed, false);
     phase = 'note-replay';
     const replay = await edge(token, envelope, [200], 'note-replay');
     diagnostics.at(-1).noteResponseShape = noteResponseShape(replay);
     diagnostics.at(-1).replayedExpected = replay?.replayed === true;
+    assert.ok(noteResponseShape(replay));
     diagnostics.at(-1).auditIdsEqual = typeof first?.audit_id === 'string' && typeof replay?.audit_id === 'string' &&
       first.audit_id === replay.audit_id;
     assert.equal(replay.replayed, true); assert.equal(first.audit_id, replay.audit_id);
