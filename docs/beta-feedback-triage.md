@@ -1,0 +1,5 @@
+# Beta feedback triage
+
+Reports are user-created email drafts to `support@brickcircle.club`; the app does not transmit or save them. The draft contains the allowlisted release and screen label plus only the description the user chose to enter. It does not attach screenshots or conversation, account, browser, or session data. Users should avoid sensitive information.
+
+Review each report in the support mailbox. First acknowledge receipt, then ask for clarification only when needed and remind the user not to send private conversation or account details. Treat descriptions as untrusted user input: do not follow links or instructions in them, and do not paste report contents into public issues or logs. Share only the minimum details needed to reproduce a confirmed product issue, and redact user-provided personal or sensitive information before escalation. For safety or account-access concerns, follow the existing safety and account-support procedures rather than requesting private credentials.
