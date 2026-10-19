@@ -48,8 +48,20 @@ async function addWanted(page:any,setNumber:string,query:string){
 
 async function makeAvailable(page:any){
   await page.locator('[data-nav="sets"]').first().click();
+  // Simulate a real collector preparing the finished model, not an invented
+  // complete photo inventory: front is captured when adding; side and rear here.
+  for(const angle of ['side','rear']){
+    await page.locator(`[data-gallery-save][data-gallery-angle="${angle}"]`).first().click();
+    const form=page.locator('#bc-owner-photo-form');
+    await expect(form).toBeVisible();
+    await form.locator('#bc-owner-photo-input').setInputFiles({name:`${angle}.webp`,mimeType:'image/webp',buffer:Buffer.from(`owner-${angle}-photo`)});
+    await form.getByRole('button',{name:'Save photo'}).click();
+    await expect(form).not.toBeVisible();
+    await expect(page.locator('.bc-toast')).toHaveText('Set photo updated.');
+  }
   const toggle=page.locator('[data-exchangeable]');
   await expect(toggle).not.toBeChecked();
+  page.once('dialog',dialog=>dialog.accept());
   await toggle.click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id)?.available_for_exchange)).toBe(true);
   await expect(page.locator('.bc-toast')).toHaveText('This set is saved as Available to Exchange.');
