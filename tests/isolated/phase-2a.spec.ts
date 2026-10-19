@@ -86,6 +86,8 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.wishlist.length)).toBe(0);
   await expect(page.getByRole('heading',{name:'Build your wishlist'})).toBeVisible();
   await page.locator('[data-settab="collection"]').click();
+  // Reconcile the canonical case read model before asserting locked listing details.
+  await page.evaluate(async()=>await (window as any).bcV3Refresh());
   const owned=page.locator('.bc-myset');
   await expect(owned).toContainText('McLaren P1');
   await expect(owned).toContainText('Proposal pending');
