@@ -43,6 +43,7 @@ test('target rejects production, provider delivery and public-harness credential
 test('workflow revalidates PR176 after environment approval and preserves staging-only evidence boundaries',async()=>{
  const s=await readFile('.github/workflows/hosted-supabase-beta-release.yml','utf8');
  const doc=await readFile('docs/hosted-beta-release-staging.md','utf8');
+ const vercel=JSON.parse(await readFile('vercel.json','utf8'));
  assert.match(s,/workflow_dispatch:/);
  assert.doesNotMatch(s,/^  (push|pull_request):/m);
  assert.match(s,/environment: hosted-supabase-staging/);
@@ -63,6 +64,8 @@ test('workflow revalidates PR176 after environment approval and preserves stagin
  assert.match(s,/BC_STAGING_NOTIFICATION_MODE/);
  assert.match(doc,/example\.test/);
  assert.match(doc,/outbox-only/);
+ assert.equal(vercel.git.deploymentEnabled['dev/beta-staging-176-20261019'],false);
+ assert.equal(vercel.git.deploymentEnabled.main,false);
  assert.match(s,/validateTarget\(process\.env,\{publicOnly:true/);
  assert.match(s,/Audit fixture outbox with no provider delivery/);
  assert.match(s,/retention-days: 30/);

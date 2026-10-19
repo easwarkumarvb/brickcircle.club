@@ -2,7 +2,8 @@
 
 **Prepared instructions only. No cron job is scheduled and no migration is
 applied by this change.** This runbook is for a separately reviewed, staging-only
-approval after the matching exchange schema is already present.
+approval after the matching exchange schema is already present. Scheduling
+approval is pending; this runbook does not grant it.
 
 ## Target and worker behavior
 
@@ -22,7 +23,8 @@ grants execution to `service_role`. Confirm the actual scheduling role can
 execute it before scheduling. A cron job's database role must not be assumed to
 inherit service-role access.
 
-The approved cadence is every five minutes with a fixed call limit of 100:
+The proposed cadence for review is every five minutes with a fixed call limit
+of 100:
 
 ```sql
 select cron.schedule(
@@ -32,7 +34,7 @@ select cron.schedule(
 );
 ```
 
-Do not widen the cadence or batch size in this approval. Do not install an
+Any different cadence or batch size requires separate review. Do not install an
 extension, alter grants, create a wrapper, apply SQL migrations, or add a
 production schedule as part of this procedure.
 
@@ -45,7 +47,9 @@ production schedule as part of this procedure.
 2. In that staging database, use read-only checks to confirm
    `to_regprocedure('public.expire_exchange_cases(integer)')` exists, inspect
    its definition and grants, and confirm the intended cron execution role has
-   `EXECUTE`. If any check fails or differs from the source, stop.
+   `EXECUTE`. Run the privilege check as the exact database role that will
+   schedule the job; `cron.schedule` runs jobs with the permissions of its
+   caller. If any check fails or differs from the source, stop.
    Example read-only checks:
 
    ```sql
@@ -89,11 +93,12 @@ production schedule as part of this procedure.
    application state, and notification queues for the initial observation
    window.
 
-Only after these checks pass, run the schedule statement once in the verified
-staging SQL editor. Record the returned job ID, exact project ref, approver,
-operator, timestamp, and schedule in the change record. Do not re-run the
-statement merely because the client response is unclear; first inspect
-`cron.job` for the resulting entry.
+Only after these checks pass and separate scheduling approval is explicitly
+granted, run the schedule statement once in the verified staging SQL editor.
+Record the returned job ID, exact project ref, approver, operator, timestamp,
+and schedule in the change record. Do not re-run the statement merely because
+the client response is unclear; first inspect `cron.job` for the resulting
+entry.
 
 ## Monitoring and stop conditions
 
@@ -106,12 +111,13 @@ successful zero count is normal when no due proposals exist. Supabase recommends
 no more than eight concurrently running Cron jobs and jobs shorter than ten
 minutes; this job should ordinarily finish well within its five-minute cadence.
 
-Example read-only monitoring queries:
+Example read-only monitoring queries (replace `12345` with the recorded
+integer job ID before running):
 
 ```sql
 select jobid, status, start_time, end_time, return_message
 from cron.job_run_details
-where jobid = <recorded_job_id>
+where jobid = 12345
 order by start_time desc
 limit 20;
 
@@ -128,15 +134,16 @@ Stop and unschedule the job if it errors repeatedly, overlaps its cadence,
 exceeds the expected bounded work, changes non-staging records, or causes
 unexpected provider delivery or notification growth. Investigate an increasing
 due backlog, missing run records, or notifications not draining under the
-approved staging policy; do not increase limits to mask a problem.
+intended staging policy; do not increase limits to mask a problem.
 
 ## Rollback
 
 Use the recorded job ID to remove only this exact job, then verify it is absent
-or inactive in `cron.job` and confirm no subsequent run starts:
+or inactive in `cron.job` and confirm no subsequent run starts. Replace `12345`
+with the recorded integer job ID before running:
 
 ```sql
-select cron.unschedule(<recorded_job_id>);
+select cron.unschedule(12345);
 ```
 
 Unscheduling prevents future invocations; it does not undo already expired
@@ -157,4 +164,6 @@ rollback plan. Do not copy the staging job or credentials to production.
   2026-10-19). It documents SQL/dashboard scheduling, job run history, and
   recommends no more than eight concurrent jobs and less than ten minutes per
   job.
-- Supabase changelog: <https://supabase.com/changelog> (accessed 2026-10-19).
+- pg_cron documentation: <https://github.com/citusdata/pg_cron> (accessed
+  2026-10-19). It documents the `cron.job` and `cron.job_run_details` fields,
+  caller-role execution, scheduling, and unscheduling APIs.
