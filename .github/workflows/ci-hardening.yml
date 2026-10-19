@@ -33,6 +33,8 @@ jobs:
         run: node qa/owner_photo_static_test.mjs
       - name: Hosted smoke harness regression suite
         run: npm run test:hosted:guard
+      - name: Hosted admin MFA offline regression suite
+        run: npm run test:hosted:admin-mfa
       - name: Non-destructive release and workflow regression suite
         run: npm run test:static
       - name: Install Chromium for regression suite
