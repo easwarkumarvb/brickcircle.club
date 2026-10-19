@@ -11,7 +11,7 @@
     "test:isolated": "playwright test --config=playwright.isolated.config.ts",
     "test:isolated:chromium": "playwright test --config=playwright.isolated.config.ts --project=chromium",
     "test:hosted:guard": "node --test tests/hosted/hosted-exchange-smoke.test.mjs tests/hosted/bootstrap-hosted-smoke-users.test.mjs tests/hosted/hosted-pr125.test.mjs tests/hosted/hosted-pr125-browser.test.mjs tests/hosted/hosted-pr160.test.mjs",
-    "test:hosted:admin-mfa": "node --test tests/hosted/hosted-admin-smoke.test.mjs tests/hosted/admin-mfa-release-readiness.test.mjs",
+    "test:hosted:admin-mfa": "node --test tests/hosted/hosted-admin-smoke.test.mjs tests/hosted/admin-mfa-release-readiness.test.mjs tests/hosted/admin-mfa-fixture-provisioning.test.mjs",
     "smoke:hosted:exchange": "node scripts/hosted-exchange-smoke.mjs",
     "test:cross-browser": "playwright test tests/e2e/cross-browser-accessibility.spec.ts --project=chromium --project=firefox --project=webkit",
     "test:qa-all": "playwright test",
