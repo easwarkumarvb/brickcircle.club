@@ -1,10 +1,11 @@
 # Hosted staging Admin MFA release readiness
 
-This is a manual, source-only verification of the merged PR 178 release using
-the immutable trusted dispatcher checkout as the harness. It does not execute
-the release checkout, deploy it, provision users, grant connector access, or
-apply migrations. Its evidence is server-side Supabase Auth and API evidence
-only; it is not browser, physical-device, or production UI proof.
+This is source preparation for a manual staging verification of the merged PR
+178 release using the immutable trusted dispatcher checkout as the harness.
+It does not execute the release checkout, deploy it, provision users, grant
+access, or apply migrations. The eventual run's evidence is server-side
+Supabase Auth and API evidence only; it is not browser, physical-device, or
+production UI proof.
 
 The only permitted Supabase target is
 `https://tteyypklldgwwicrgjzt.supabase.co`. The production project
@@ -95,25 +96,52 @@ requests. The server key and existing exchange users are not used.
 
 ## Approval, connector review, and retained evidence
 
-After fixture ownership and the outbox/provider check are recorded, a reviewer
-must approve the protected environment run. From Actions, dispatch **Hosted
-admin MFA release readiness** on `main` with PR `178`, merge SHA
-`e135cde511440f73d36c34a4058383f9169d530e`, and confirmation
-`RUN_STAGING_ADMIN_MFA_READINESS`. Do not run from the feature branch.
+### Independent pre-run database allowlist review
 
-Connector allowlisting is a separate, independent operation. Do not grant it
-as part of this workflow or before the report verifies the server-owned run
-marker and records the exact owned admin UUID. Any connector reviewer must
-independently validate the run marker, account ownership, exact requested
-scope, and run evidence before granting a narrowly scoped entry. The workflow
-does not write connector configuration.
+A successful positive hosted run requires the admin account to satisfy the
+existing `is_exchange_admin()` database predicate. Therefore the independent
+staging connector reviewer must complete this ownership and fixture review
+*before* inserting anything into `private.exchange_admins` and *before* the
+positive hosted run:
+
+1. Verify both Auth UUIDs belong to the two distinct, owned disposable
+   `example.test` accounts and both carry the exact server-owned
+   `staging_admin_smoke_run` marker for `BC_ADMIN_MFA_RUN_ID`.
+2. Verify the owned admin has exactly one real verified TOTP factor, and that
+   the owned member is not in `private.exchange_admins`.
+3. Verify the exact support/case/run UUIDs, member ownership of the support
+   request, initial note, actionable state, revision, event page, and exchange
+   association described above.
+4. Only after all checks pass, independently insert **only the owned admin
+   UUID** into `private.exchange_admins` under the existing authorized staging
+   process. Do not allowlist the member or any other identity. Record the
+   review, account UUIDs, exact fixture IDs, and narrow admin-only change for
+   the run evidence.
+
+This table row is a database admin allowlist used by `is_exchange_admin()`;
+it is not an application connector permission or a grant of app/API access.
+Any application connector permissions are a separate authorization surface
+and must not be added or broadened by this runbook or workflow. This source
+change creates no RPC, helper, schema, or access grant; it performs no actual
+allowlist or connector permission changes. The authorized staging reviewer
+owns the independent pre-run procedure above.
+
+Only after fixture ownership, outbox/provider safety, and this independent
+database allowlist review are recorded may a reviewer approve the protected
+environment run. From Actions, dispatch **Hosted admin MFA release readiness**
+on `main` with PR `178`, merge SHA
+`e135cde511440f73d36c34a4058383f9169d530e`, and confirmation
+`RUN_STAGING_ADMIN_MFA_READINESS`. Do not dispatch or approve the positive run
+before the admin-only database allowlist step above, and do not run from the
+feature branch.
 
 The admin note/audit record is intentionally retained for owner review. This
 workflow does not delete or clean up accounts, factors, support records, or
-audit history. Fixture retirement is a separate owner-approved process after
-the report and connector review are complete; it must separately verify
-ownership and preserve required audit history. The uploaded report identifies
-release reference, harness source, server evidence scope, fixture UUIDs,
-session signout results, and the retained audit request ID. It excludes
-credentials, TOTP seed/codes, access and refresh tokens, and provider error
-details. It is not proof of browser behavior or physical UI readiness.
+audit history. Fixture retirement, including any separately authorized
+removal of the admin-only `private.exchange_admins` row, is a distinct
+owner-approved process after the report and review are complete; it must
+separately verify ownership and preserve required audit history. The uploaded
+report identifies release reference, harness source, server evidence scope,
+fixture UUIDs, session signout results, and the retained audit request ID. It
+excludes credentials, TOTP seed/codes, access and refresh tokens, and provider
+error details. It is not proof of browser behavior or physical UI readiness.

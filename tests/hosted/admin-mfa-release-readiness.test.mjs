@@ -7,7 +7,8 @@ import {
   REPOSITORY, validateSelection, WORKFLOW_REF,
 } from '../../scripts/validate-admin-mfa-release.mjs';
 import {
-  configFromEnv, MissingPrerequisitesError, REQUIRED_ENV, runFromEnv, validateAdminMfaConfig,
+  assertPublishableKey, configFromEnv, MissingPrerequisitesError, REQUIRED_ENV, runFromEnv,
+  validateAdminMfaConfig,
 } from '../../scripts/hosted-admin-mfa-release-readiness.mjs';
 
 const id = '11111111-1111-4111-8111-111111111111';
@@ -34,7 +35,7 @@ function selection(overrides = {}) {
 function env(overrides = {}) {
   return {
     BC_STAGING_SUPABASE_URL: `https://${PROJECT}.supabase.co`,
-    BC_STAGING_SUPABASE_PUBLISHABLE_KEY: 'public-test-key',
+    BC_STAGING_SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test_public_key',
     BC_STAGING_NOTIFICATION_MODE: 'outbox-only',
     BC_ADMIN_MFA_CONFIRMATION: CONFIRMATION,
     BC_ADMIN_MFA_PULL_REQUEST_NUMBER: '178',
@@ -108,6 +109,34 @@ test('MFA configuration is exact staging, merged release, two separate disposabl
   assert.ok(!REQUIRED_ENV.some(name => /SECRET_KEY|SERVICE_ROLE/i.test(name)));
 });
 
+test('new runner accepts only publishable or legacy anon keys and rejects privileged keys before client or transport', async () => {
+  const jwt = role => `${Buffer.from('{"alg":"none"}').toString('base64url')}.${Buffer.from(JSON.stringify({ role })).toString('base64url')}.signature`;
+  assert.doesNotThrow(() => assertPublishableKey('sb_publishable_test_key'));
+  assert.doesNotThrow(() => assertPublishableKey(jwt('anon')));
+  const invalidKeys = ['sb_secret_test_key', jwt('service_role'), 'eyJmalformed', 'not-a-key'];
+  let calls = 0;
+  for (const key of invalidKeys) {
+    await assert.rejects(runFromEnv(env({ BC_STAGING_SUPABASE_PUBLISHABLE_KEY: key }), {
+      actualRunnerSha: runnerSha, factory: () => { calls++; }, transport: () => { calls++; },
+    }), { message: 'Supabase public API key required' });
+  }
+  const serviceCredential = 'never-include-this-secret-value';
+  await assert.rejects(runFromEnv(env({ SUPABASE_SERVICE_ROLE_KEY: serviceCredential }), {
+    actualRunnerSha: runnerSha, factory: () => { calls++; }, transport: () => { calls++; },
+  }), error => {
+    assert.equal(error.message, 'Privileged Supabase credential environment variable is forbidden');
+    assert.ok(!error.message.includes(serviceCredential));
+    return true;
+  });
+  assert.doesNotThrow(() => configFromEnv(env({ SUPABASE_SERVICE_ROLE_KEY: '' })));
+  for (const name of ['SUPABASE_SECRET_KEY', 'BC_STAGING_SUPABASE_SECRET_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY', 'BC_STAGING_SUPABASE_SERVICE_ROLE_KEY'])
+    await assert.rejects(runFromEnv(env({ [name]: 'redacted-secret' }), {
+      actualRunnerSha: runnerSha, factory: () => { calls++; }, transport: () => { calls++; },
+    }), { message: 'Privileged Supabase credential environment variable is forbidden' });
+  assert.equal(calls, 0);
+});
+
 test('MFA transport rejects production, non-API paths, escapes, and redirects', async () => {
   let calls = 0;
   const fetcher = guardedFetch(`https://${PROJECT}.supabase.co`, async (_url, options) => {
@@ -129,6 +158,7 @@ test('MFA transport rejects production, non-API paths, escapes, and redirects', 
 test('runner and workflow preserve secret boundaries, API-only evidence, and legacy PR 124 defaults', async () => {
   const workflow = await readFile('.github/workflows/hosted-admin-mfa-release-readiness.yml', 'utf8');
   const runner = await readFile('scripts/hosted-admin-mfa-release-readiness.mjs', 'utf8');
+  const runbook = await readFile('docs/hosted-admin-mfa-release-readiness-runbook.md', 'utf8');
   const legacyWorkflow = await readFile('.github/workflows/hosted-supabase-admin-smoke.yml', 'utf8');
   const core = await readFile('scripts/hosted-admin-smoke.mjs', 'utf8');
   assert.match(workflow, /workflow_dispatch:/);
@@ -148,5 +178,9 @@ test('runner and workflow preserve secret boundaries, API-only evidence, and leg
   assert.match(legacyWorkflow, /PR 124/);
   assert.match(core, /assert\.equal\(c\.pr, '124'\)/);
   assert.match(core, /validate = validateConfig/);
-  assert.doesNotMatch(runner, /SECRET_KEY|service_role|auth\.admin|createUser|deleteUser|forgeJWT/);
+  assert.doesNotMatch(runner, /auth\.admin|createUser|deleteUser|forgeJWT/);
+  assert.ok(runbook.includes('*before* inserting anything into `private.exchange_admins`'));
+  assert.ok(runbook.includes('*before* the'));
+  assert.ok(runbook.includes('positive hosted run:'));
+  assert.match(runbook, /not an application connector permission/);
 });

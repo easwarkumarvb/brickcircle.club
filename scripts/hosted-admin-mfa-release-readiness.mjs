@@ -34,12 +34,35 @@ export class MissingPrerequisitesError extends Error {
   }
 }
 
+const PRIVILEGED_CREDENTIAL_ENV = /^(?:SUPABASE|BC_STAGING_SUPABASE)_(?:SECRET_KEY|SERVICE_ROLE_KEY)$/i;
+export function assertNoPrivilegedCredentialEnv(env) {
+  if (Object.entries(env).some(([name, value]) =>
+    PRIVILEGED_CREDENTIAL_ENV.test(name) && typeof value === 'string' && value.trim() !== ''))
+    throw new Error('Privileged Supabase credential environment variable is forbidden');
+}
+
+export function assertPublishableKey(key) {
+  if (typeof key !== 'string') throw new Error('Supabase public API key required');
+  if (/^sb_publishable_[A-Za-z0-9_-]+$/.test(key)) return key;
+  try {
+    const parts = key.split('.');
+    if (parts.length !== 3 || !parts.every(part => /^[A-Za-z0-9_-]+$/.test(part)))
+      throw new Error();
+    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+    if (payload && payload.role === 'anon') return key;
+  } catch {
+    throw new Error('Supabase public API key required');
+  }
+  throw new Error('Supabase public API key required');
+}
+
 export function configFromEnv(env) {
+  assertNoPrivilegedCredentialEnv(env);
   const missing = REQUIRED_ENV.filter(name => typeof env[name] !== 'string' || env[name].trim() === '');
   if (missing.length) throw new MissingPrerequisitesError(missing);
   return {
     url: env.BC_STAGING_SUPABASE_URL,
-    key: env.BC_STAGING_SUPABASE_PUBLISHABLE_KEY,
+    key: assertPublishableKey(env.BC_STAGING_SUPABASE_PUBLISHABLE_KEY),
     notificationMode: env.BC_STAGING_NOTIFICATION_MODE,
     confirmation: env.BC_ADMIN_MFA_CONFIRMATION,
     pr: env.BC_ADMIN_MFA_PULL_REQUEST_NUMBER,
@@ -59,6 +82,7 @@ export function configFromEnv(env) {
 
 export function validateAdminMfaConfig(config) {
   validateFixtureConfig(config);
+  assertPublishableKey(config.key);
   assert.equal(new Set([config.run, config.caseId, config.supportId].map(id => id.toLowerCase())).size, 3);
   assert.equal(config.confirmation, CONFIRMATION);
   assert.equal(config.notificationMode, 'outbox-only');
