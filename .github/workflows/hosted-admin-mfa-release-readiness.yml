@@ -1,0 +1,147 @@
+name: Hosted admin MFA release readiness
+
+on:
+  workflow_dispatch:
+    inputs:
+      pull_request_number:
+        description: Exact merged release PR (178)
+        required: true
+        type: string
+      expected_release_merge_sha:
+        description: Exact immutable PR 178 merge SHA
+        required: true
+        type: string
+      confirmation:
+        description: Type RUN_STAGING_ADMIN_MFA_READINESS
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: hosted-admin-mfa-release-readiness
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      runner_sha: ${{ steps.selection.outputs.runner_sha }}
+      release_head_sha: ${{ steps.selection.outputs.release_head_sha }}
+      release_merge_sha: ${{ steps.selection.outputs.release_merge_sha }}
+    steps:
+      - name: Check out immutable trusted dispatch source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify trusted dispatch checkout
+        shell: bash
+        env:
+          EXPECTED_RUNNER_SHA: ${{ github.sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RUNNER_SHA"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Offline legacy and release-readiness safety tests
+        run: node --test tests/hosted/hosted-admin-smoke.test.mjs tests/hosted/admin-mfa-release-readiness.test.mjs
+      - name: Validate exact merged PR 178 and trusted workflow source
+        id: selection
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_PR: ${{ inputs.pull_request_number }}
+          EXPECTED_MERGE_SHA: ${{ inputs.expected_release_merge_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-admin-mfa-release.mjs`);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 178 });
+            const selection = validateSelection({
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              ref: context.ref,
+              eventName: context.eventName,
+              workflowRef: process.env.GITHUB_WORKFLOW_REF,
+              dispatchSha: context.sha,
+              number: process.env.REQUESTED_PR,
+              sha: process.env.EXPECTED_MERGE_SHA,
+              confirmation: process.env.CONFIRMATION,
+              pr
+            });
+            core.setOutput('runner_sha', selection.runnerSha);
+            core.setOutput('release_head_sha', selection.headSha);
+            core.setOutput('release_merge_sha', selection.mergeSha);
+
+  staging:
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Configure required human reviewers and restrict this environment to refs/heads/main.
+    environment: hosted-supabase-staging
+    steps:
+      - name: Check out immutable trusted harness, never the release candidate
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.validate.outputs.runner_sha }}
+          persist-credentials: false
+      - name: Verify trusted runner checkout before any staging access
+        shell: bash
+        env:
+          EXPECTED_RUNNER_SHA: ${{ needs.validate.outputs.runner_sha }}
+        run: test "$(git rev-parse HEAD)" = "$EXPECTED_RUNNER_SHA"
+      - name: Revalidate exact merged PR 178 after environment approval
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_PR: ${{ inputs.pull_request_number }}
+          EXPECTED_MERGE_SHA: ${{ needs.validate.outputs.release_merge_sha }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        with:
+          script: |
+            const { validateSelection } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/validate-admin-mfa-release.mjs`);
+            const { data: pr } = await github.rest.pulls.get({ ...context.repo, pull_number: 178 });
+            validateSelection({
+              repository: `${context.repo.owner}/${context.repo.repo}`,
+              ref: context.ref,
+              eventName: context.eventName,
+              workflowRef: process.env.GITHUB_WORKFLOW_REF,
+              dispatchSha: context.sha,
+              number: process.env.REQUESTED_PR,
+              sha: process.env.EXPECTED_MERGE_SHA,
+              confirmation: process.env.CONFIRMATION,
+              pr
+            });
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run server-only staging Admin MFA readiness check
+        run: node scripts/hosted-admin-mfa-release-readiness.mjs
+        env:
+          BC_STAGING_SUPABASE_URL: ${{ secrets.BC_STAGING_SUPABASE_URL }}
+          BC_STAGING_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.BC_STAGING_SUPABASE_PUBLISHABLE_KEY }}
+          BC_STAGING_NOTIFICATION_MODE: ${{ vars.BC_STAGING_NOTIFICATION_MODE }}
+          BC_ADMIN_MFA_CONFIRMATION: ${{ inputs.confirmation }}
+          BC_ADMIN_MFA_PULL_REQUEST_NUMBER: ${{ inputs.pull_request_number }}
+          BC_ADMIN_MFA_RELEASE_HEAD_SHA: ${{ needs.validate.outputs.release_head_sha }}
+          BC_ADMIN_MFA_RELEASE_MERGE_SHA: ${{ needs.validate.outputs.release_merge_sha }}
+          BC_ADMIN_MFA_RUNNER_SHA: ${{ needs.validate.outputs.runner_sha }}
+          BC_ADMIN_MFA_MEMBER_EMAIL: ${{ secrets.BC_ADMIN_MFA_MEMBER_EMAIL }}
+          BC_ADMIN_MFA_MEMBER_PASSWORD: ${{ secrets.BC_ADMIN_MFA_MEMBER_PASSWORD }}
+          BC_ADMIN_MFA_ADMIN_EMAIL: ${{ secrets.BC_ADMIN_MFA_ADMIN_EMAIL }}
+          BC_ADMIN_MFA_ADMIN_PASSWORD: ${{ secrets.BC_ADMIN_MFA_ADMIN_PASSWORD }}
+          BC_ADMIN_MFA_ADMIN_TOTP_SECRET: ${{ secrets.BC_ADMIN_MFA_ADMIN_TOTP_SECRET }}
+          BC_ADMIN_MFA_RUN_ID: ${{ vars.BC_ADMIN_MFA_RUN_ID }}
+          BC_ADMIN_MFA_CASE_ID: ${{ vars.BC_ADMIN_MFA_CASE_ID }}
+          BC_ADMIN_MFA_SUPPORT_ID: ${{ vars.BC_ADMIN_MFA_SUPPORT_ID }}
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: hosted-admin-mfa-release-readiness-${{ needs.validate.outputs.release_merge_sha }}
+          path: artifacts/hosted-admin-mfa-release-readiness.json
+          if-no-files-found: ignore
+          retention-days: 14
