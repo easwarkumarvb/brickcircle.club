@@ -1354,7 +1354,7 @@ async function setExchangeable(id,on){
     try{photosReady=await trustCareAvailabilityReady(item)}catch(error){fail(error,'Could not check the three photos yet. Refresh and try again.')}
     if(initialUid!==S.user?.id||initialEpoch!==authEpoch||logoutLocked)return;
     if(!photosReady){const input=$(`[data-exchangeable="${CSS.escape(id)}"]`);if(input)input.checked=false;return}
-    const agreed=confirm('Build with care. Share with honesty.\\n\\nPlease check your set against the official instructions when practical and disclose any known missing parts in Details. Three finished-set photos are saved.\\n\\nHave you shared what you know about this set, including any gaps? You can say in Details that you have not checked every piece.\\n\\nSelect OK to make it available, or Cancel to review Details first.');
+    const agreed=confirm('Build with care. Share with honesty.\n\nPlease review the official instructions when practical and disclose any known gaps in Details. Three finished-set photos are saved.\n\nHave you shared what you know about this set? If it has not been inventoried, say so in Details.\n\nOK: Make available. Cancel: Review details first.');
     if(initialUid!==S.user?.id||initialEpoch!==authEpoch||logoutLocked)return;
     if(!agreed){const input=$(`[data-exchangeable="${CSS.escape(id)}"]`);if(input)input.checked=false;return}
   }
