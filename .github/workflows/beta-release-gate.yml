@@ -29,6 +29,26 @@ jobs:
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260916052934_canonical_exchange_state_machine.sql
       - name: Apply owner-review recovery migration
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20260930160000_retire_legacy_exchangeability_trigger.sql
+      - name: Prove expired-counter regression fails before the fix
+        run: |
+          if output=$(psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/expired_exchange_counter.sql 2>&1); then
+            echo "Expired-counter regression unexpectedly passed before its migration"
+            exit 1
+          fi
+          if ! printf '%s\n' "$output" | grep -Fq 'regression: expired counter unexpectedly succeeded'; then
+            printf '%s\n' "$output"
+            echo "Pre-fix run failed for a reason other than the expired-counter defect"
+            exit 1
+          fi
+          echo "Confirmed: the real-role regression fails against the pre-fix RPC"
+      - name: Apply expired-counter RPC migration
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261019030051_reject_expired_exchange_counters.sql
+      - name: Verify expired-counter migration is safe to reapply
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/migrations/20261019030051_reject_expired_exchange_counters.sql
+      - name: Verify expired-counter migration static contract
+        run: node tests/static/expired-counter-rpc-migration.test.js
+      - name: Verify expiry, boundary, future counter and participant transitions
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/expired_exchange_counter.sql
       - name: Verify transitions, RLS, idempotency, custody and outboxes
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/canonical_exchange_state_machine.sql
       - name: Verify owner-review recovery with legacy disputed row and canonical lock

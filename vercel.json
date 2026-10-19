@@ -105,7 +105,8 @@
       "qa/merged-beta-staging-20261017": false,
       "dev/conversation-timeline-ux": false,
       "dev/visible-counterproposal-terms": false,
-      "dev/inline-meetup-date-errors": false
+      "dev/inline-meetup-date-errors": false,
+      "dev/exchange-outlier-ux-20261018": false
     }
   }
 }
