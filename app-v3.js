@@ -2701,7 +2701,8 @@ function bindMessagesPage(){
   }
 }
 function renderMessagesUnavailable(message,retry){
-  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button>${empty('⚠️','Conversation unavailable',message,retry?'Retry':'Back to messages',retry?'retry-thread-load':'messages')}`);
+  page(`<button class="bc-btn bc-thread-back" data-action="messages" type="button">← Back to Messages</button>${empty('⚠️','Conversation unavailable',message,retry?'Retry':'Back to messages',retry?'retry-thread-load':'messages')}<button class="bc-btn" type="button" data-open-beta-feedback data-feedback-screen="conversation">Report a problem</button>`);
+  bindBetaFeedback();
   if(retry)$('[data-action="retry-thread-load"]',app()).onclick=retry;
 }
 let pendingMatchProposal=null;
