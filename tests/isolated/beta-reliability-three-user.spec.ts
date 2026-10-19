@@ -288,12 +288,18 @@ test('retired release capability is ignored while canonical set controls remain 
       {id:'reserved-item',user_id:state.actors.easwar.id,set_number:'42143-1',owner_photo_path:'easwar/reserved.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'},
       {id:'reserved-other',user_id:state.actors.ramya.id,set_number:'42115-1',owner_photo_path:'ramya/reserved.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'}
     );
+    // A collector can release an ordinary copy only after uploading all three views.
+    state.data.photoAngles.push(
+      {item_id:'ordinary-item',owner_id:state.actors.easwar.id,angle:'side',storage_path:'easwar/ordinary-side.jpg'},
+      {item_id:'ordinary-item',owner_id:state.actors.easwar.id,angle:'rear',storage_path:'easwar/ordinary-rear.jpg'}
+    );
     state.data.exchanges.push({id:'reserved-exchange',user_a:state.actors.easwar.id,user_b:state.actors.ramya.id,proposer_id:state.actors.easwar.id,recipient_id:state.actors.ramya.id,item_a:'reserved-item',item_b:'reserved-other',duration_days:60,state:'ACCEPTED',state_version:2,created_at:'2026-09-01T12:00:00.000Z',updated_at:'2026-09-01T12:00:00.000Z'});
     state.persist();
   });
   await page.reload();
   await page.locator('[data-nav="sets"]').first().click();
   await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
+  page.once('dialog',dialog=>dialog.accept());
   await page.locator('[data-exchangeable="ordinary-item"]').check();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.id==='ordinary-item')?.available_for_exchange)).toBe(true);
   const calls=await page.evaluate(()=>window.__bcThreeUser.rpcCalls);
