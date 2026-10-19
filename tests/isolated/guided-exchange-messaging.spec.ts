@@ -517,7 +517,7 @@ test('safety checklist is visible before continuing from the mobile exchange car
   const checklist=card.locator('.bc-safety-checklist'),button=card.locator('[data-exchange="guide-case"]');
   await expect(checklist).toBeVisible();
   await expect(checklist.getByRole('heading',{name:'Before you meet'})).toBeVisible();
-  await expect(checklist.locator('ol li')).toHaveCount(4);
+  await expect(checklist.locator('ol li')).toHaveCount(5);
   const checklistBox=await checklist.boundingBox(),buttonBox=await button.boundingBox();
   expect(checklistBox&&buttonBox&&checklistBox.y+checklistBox.height<buttonBox.y).toBe(true);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
