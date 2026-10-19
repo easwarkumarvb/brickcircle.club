@@ -14,12 +14,13 @@ Build with care. Share with honesty. A LEGO set need not be 100% complete. Owner
 - Existing immutable agreement versions remain the binding record of accepted terms. On transition to ACTIVE after both independent physical handoffs, the server captures a new read-only baseline of owner descriptors and photo **storage paths**. It does not copy photo bytes or guarantee permanent Storage availability.
 - The handoff baseline is available to the two participants through Messages. No administrator arbitration, deposit or monetary liability rule was introduced.
 - A second staging migration, `20261019091952_protect_trust_care_photo_bytes.sql`, adds restrictive Storage DELETE/UPDATE policies for currently available/locked set photos and for files recorded in a confirmed handoff baseline during an active exchange and at least 90 days after completion. This blocks direct authenticated Storage removal that would bypass UI restrictions. It does not copy images or run automatic deletion; a service-role administrator can still exercise exceptional retention/privacy controls.
+- A third staging migration, `20261019092759_allow_participants_handoff_evidence_photo_read.sql`, provides only the two accepted-case participants the ability to sign the original photo URLs within the protected review period, even if the owner's current listing changes. The record in Messages provides front, side and rear view links after securely signing them.
 
 ## Staging proof (2026-10-19)
 
 Project: `brickcircle-exchange-staging-20260924` (`tteyypklldgwwicrgjzt`) — **not** the production project.
 
-Applied migration ledger versions: `20261019083950` (`trust_care_condition_safeguards`) and `20261019091952` (`protect_trust_care_photo_bytes`). Filenames match the staging ledger to prevent accidental re-application.
+Applied migration ledger versions: `20261019083950` (`trust_care_condition_safeguards`), `20261019091952` (`protect_trust_care_photo_bytes`) and `20261019092759` (`allow_participants_handoff_evidence_photo_read`). Filenames match the staging ledger to prevent accidental re-application.
 
 Verified by read-only SQL: inventory column exists, handoff baseline table exists and has RLS, exactly one activation guard and one handoff capture trigger exist, participant-read policy exists, anonymous SELECT permission absent.
 
