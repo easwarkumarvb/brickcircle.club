@@ -88,6 +88,7 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await page.locator('[data-settab="collection"]').click();
   const owned=page.locator('.bc-myset');
   await expect(owned).toContainText('McLaren P1');
+  await expect(owned).toContainText('Proposal pending');
   const collectionImage=await owned.locator('img').getAttribute('src');
   expect(collectionImage).toContain('42172-1');
   expect(collectionImage).not.toContain('42172-1-1');
