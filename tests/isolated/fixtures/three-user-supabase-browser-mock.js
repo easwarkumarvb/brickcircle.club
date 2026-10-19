@@ -77,6 +77,7 @@ function visibleRows(table,query){
   if(table==='exchange_cases')rows=data.exchanges.filter(row=>row.user_a===active().id||row.user_b===active().id);
   if(table==='exchange_case_messages')rows=data.messages.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
   if(table==='exchange_case_events')rows=data.events.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
+  if(table==='exchange_case_handoff_baselines')rows=data.exchanges.filter(exchange=>exchange.handoff_at&&(exchange.user_a===active().id||exchange.user_b===active().id)).map(exchange=>({case_id:exchange.id,captured_at:NOW,snapshot:{capture_stage:'mutual_handoff',item_a:{set_number:'42172-1',condition:'Good',inventory_review_status:'known_gaps',notes:'One axle missing'},item_b:{set_number:'42143-1',condition:'Good',inventory_review_status:'not_checked',notes:''}}}));
   if(table==='exchange_case_issues')rows=data.issues.filter(row=>isParticipant(findCase(row.case_id)));
   if(table==='exchange_case_issue_responses')rows=data.issueResponses.filter(row=>{const issue=issueById(row.issue_id);return Boolean(issue)&&isParticipant(findCase(issue.case_id))});
   if(table==='exchange_case_support_requests')rows=data.supportRequests.filter(row=>row.requested_by===active().id);
