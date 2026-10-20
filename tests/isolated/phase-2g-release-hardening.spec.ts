@@ -104,9 +104,15 @@ test('canonical browse owns iconic discovery without a duplicate gallery',async(
 
 test('set card controls persist exchangeability and open photo and details',async({page})=>{
   await page.goto('/v2.html?isolated=partial#sets');
-  await page.evaluate(async()=>{const state=window.__bcIsolated;state.collection[0].owner_photo_path='00000000-0000-4000-8000-000000000007/c1.jpg';await window.bcV3Refresh()});
+  await page.evaluate(async()=>{
+    const state=window.__bcIsolated,item=state.collection[0];
+    item.owner_photo_path='00000000-0000-4000-8000-000000000007/c1.jpg';
+    for(const angle of ['side','rear'])state.photoAngles.push({item_id:item.id,owner_id:item.user_id,angle,storage_path:`${item.user_id}/${item.id}-${angle}.jpg`});
+    await window.bcV3Refresh()
+  });
   const toggle=page.locator('[data-exchangeable]').first();
   const id=await toggle.getAttribute('data-exchangeable');
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await toggle.check();
   await expect.poll(()=>page.evaluate(itemId=>Boolean(window.__bcIsolated.collection.find((item:any)=>item.id===itemId)?.available_for_exchange),id)).toBe(true);
   await page.getByRole('button',{name:'Change photo'}).first().click();

@@ -56,6 +56,15 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   await page.locator('[data-set="42143-1"] [data-want]').click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.wishlist.length)).toBe(1);
   await page.locator('[data-nav="sets"]').first().click();
+  const ownedId=await page.locator('[data-exchangeable]').first().getAttribute('data-exchangeable');
+  for(const angle of ['side','rear']){
+    await page.locator(`[data-gallery-save="${ownedId}"][data-gallery-angle="${angle}"]`).click();
+    const galleryForm=page.locator('#bc-owner-photo-form');
+    await galleryForm.locator('#bc-owner-photo-input').setInputFiles({name:`mclaren-${angle}.jpg`,mimeType:'image/jpeg',buffer:Buffer.from(`assembled-set-${angle}`)});
+    await galleryForm.getByRole('button',{name:'Save photo',exact:true}).click();
+    await expect(galleryForm).not.toBeVisible();
+  }
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await page.locator('[data-exchangeable]').check();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection[0].available_for_exchange)).toBe(true);
   await page.locator('[data-nav="matches"]').first().click();
@@ -83,20 +92,22 @@ test('collection, wishlist, reciprocal match and proposal lifecycle is isolated 
   expect(collectionImage).toContain('42172-1');
   expect(collectionImage).not.toContain('42172-1-1');
   await page.locator('[data-edit-set]').click();
-  await page.locator('#bc-edit-item [name="condition"]').selectOption('Good');
-  await page.locator('#bc-edit-item').getByRole('button',{name:'Save details'}).click();
-  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection[0].condition)).toBe('Good');
-  await expect(page.locator('#bc-edit-item')).toHaveCount(0);
-  await expect(owned).toContainText('Good');
-  await page.locator('[data-edit-set]').click();
   await expect(page.locator('#bc-edit-item')).toBeVisible();
+  // The editor must refresh authoritative case status, even when the local
+  // collection cache has not yet updated after the proposal.
+  // Agreed condition details are frozen until the canonical case is released.
+  await expect(page.locator('#bc-edit-item [name="condition"]')).toBeDisabled();
   await expect(page.locator('#bc-edit-item [data-remove-collection-item]')).toBeDisabled();
   await page.getByRole('button',{name:'Close dialog'}).click();
-  page.once('dialog',dialog=>dialog.accept());
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await page.getByRole('button',{name:'Cancel proposal & free set'}).click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.exchanges[0].state)).toBe('WITHDRAWN');
   await page.locator('[data-edit-set]').click();
-  page.once('dialog',dialog=>dialog.accept());
+  await page.locator('#bc-edit-item [name="condition"]').selectOption('Good');
+  await page.locator('#bc-edit-item').getByRole('button',{name:'Save details'}).click();
+  await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection[0].condition)).toBe('Good');
+  await page.locator('[data-edit-set]').click();
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await page.locator('[data-remove-collection-item]').click();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.collection.length)).toBe(0);
 });

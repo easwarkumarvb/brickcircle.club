@@ -486,7 +486,8 @@ test('safety checklist is visible before acknowledgment and records only the can
   await expect(checklist.locator('> p').first()).toHaveText('These shared checks help both collectors avoid surprises and agree on the condition of the sets before exchanging them.');
   await expect(checklist.locator('ol li')).toHaveText([
     'Meet at the agreed public place and time.',
-    'Inspect both sets together: condition, parts, minifigures and accessories against the listing.',
+    'Inspect both assembled sets together using the front, side and rear owner photographs. Check visible condition, known missing or substituted parts, loose pieces, minifigures and accessories.',
+    'Use the official instructions to check parts when practical. Photos and a short meetup inspection cannot guarantee that every piece is present.',
     'Discuss any differences before continuing. Pause the exchange if either collector is not comfortable.',
     'Confirm the handoff in BrickCircle only after the sets have physically changed hands.'
   ]);
@@ -516,7 +517,7 @@ test('safety checklist is visible before continuing from the mobile exchange car
   const checklist=card.locator('.bc-safety-checklist'),button=card.locator('[data-exchange="guide-case"]');
   await expect(checklist).toBeVisible();
   await expect(checklist.getByRole('heading',{name:'Before you meet'})).toBeVisible();
-  await expect(checklist.locator('ol li')).toHaveCount(4);
+  await expect(checklist.locator('ol li')).toHaveCount(5);
   const checklistBox=await checklist.boundingBox(),buttonBox=await button.boundingBox();
   expect(checklistBox&&buttonBox&&checklistBox.y+checklistBox.height<buttonBox.y).toBe(true);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth)).toBe(true);
@@ -631,4 +632,21 @@ test('closing an explicitly selected exchange preserves its unsent draft without
   await generalChat(page);await expectGeneral(page);await expect(input).toHaveValue('');
   await input.fill('General message remains available');await page.locator('#bc-msg-form').evaluate((f:HTMLFormElement)=>f.requestSubmit());
   await expect.poll(()=>page.evaluate(()=>(window as any).__bcThreeUser.data.directMessages.at(-1)?.body)).toBe('General message remains available');
+});
+
+test('mutual handoff exposes a read-only owner declaration in Messages',async({page})=>{
+  await open(page,'easwar','ACTIVE',{handoff_at:stamp,handoff_a_at:stamp,handoff_b_at:stamp});
+  await focusCase(page,'guide-case');
+  const trigger=page.getByRole('button',{name:'Review handoff condition record'});
+  await expect(trigger).toBeVisible();
+  await trigger.click();
+  const dialog=page.getByRole('dialog',{name:'Handoff condition record'});
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('One axle missing');
+  await expect(dialog).toContainText('Owner did not verify all parts');
+  const originals=dialog.locator('[data-trust-baseline-photo]');
+  await expect(originals).toHaveCount(6);
+  await expect(originals.first()).toBeVisible();
+  await expect(originals.first()).toHaveAttribute('href',/collection-photos.*42172-front/);
+  await expect(originals.first()).toHaveAttribute('rel','noopener noreferrer');
 });

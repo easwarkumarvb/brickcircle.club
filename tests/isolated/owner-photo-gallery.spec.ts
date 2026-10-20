@@ -6,7 +6,8 @@ test('lost commit response keeps candidate and old storage objects',async({page}
 test('missing gallery table preserves primary photo and existing set controls',async({page})=>{await page.goto('/v2.html?isolated=photo-replace#sets');await page.evaluate(()=>window.__bcIsolated.failTables.push('collection_item_photo_angles'));await page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]').click();await page.locator('#bc-owner-photo-input').setInputFiles({name:'side.webp',mimeType:'image/webp',buffer:Buffer.from('side-photo')});await page.getByRole('button',{name:'Save photo',exact:true}).click();await expect(page.locator('#bc-owner-photo-form')).toBeVisible();expect(await page.evaluate(()=>window.__bcIsolated.storage.uploads.length)).toBe(0)});
 test('supplemental photo deletion confirms owner-scoped metadata removal before storage cleanup',async({page})=>{
   await page.goto('/v2.html?isolated=photo-replace#sets');await save(page);
-  const remove=page.getByRole('button',{name:'Remove side photo of set 42172-1'});await expect(remove).toBeVisible();
+  const remove=page.getByRole('button',{name:'Remove side photo of set 42172-1'});await expect(remove).toBeVisible();await expect(remove).toBeDisabled();
+  await page.locator('[data-exchangeable="photo-item-1"]').uncheck();await expect(remove).toBeEnabled();
   page.once('dialog',dialog=>dialog.accept());await remove.click();await expect(page.locator('.bc-toast')).toHaveText('Side photo removed.');
   const result=await page.evaluate(()=>({angles:window.__bcIsolated.photoAngles,uploads:window.__bcIsolated.storage.uploads,removals:window.__bcIsolated.storage.removals,queries:window.__bcIsolated.queries}));
   expect(result.angles).toHaveLength(0);expect(result.removals).toEqual(result.uploads);

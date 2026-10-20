@@ -23,13 +23,13 @@ const CANCELLABLE_STATES=['PROPOSED','ACCEPTED','MEETUP_PLANNING','MEETUP_CONFIR
 function fresh(){
   return {
     profiles:Object.values(actors).map(actor=>({id:actor.id,display_name:actor.name,email:actor.email,country:'India',city:'Bengaluru',bio:'Isolated reliability fixture',avatar_url:null,rating:0,review_count:0,member_since:NOW,created_at:NOW,adult_confirmed_at:NOW,adult_confirmation_version:'2026-09-11'})),
-    collection:[],wishlist:[],exchanges:[],events:[],notifications:[],messages:[],directMessages:[],reviews:[],
+    collection:[],photoAngles:[],wishlist:[],exchanges:[],events:[],notifications:[],messages:[],directMessages:[],reviews:[],
     issues:[],issueResponses:[],supportRequests:[],peerReviews:[]
   };
 }
 let data;
 try{data=JSON.parse(localStorage.getItem(STORE)||'null')||fresh()}catch(_){data=fresh()}
-data.directMessages||=[];data.reviews||=[];
+data.directMessages||=[];data.reviews||=[];data.photoAngles||=[];
 data.issues||=[];data.issueResponses||=[];data.supportRequests||=[];data.peerReviews||=[];
 let actorKey=localStorage.getItem(ACTOR)||'easwar';
 let signedOut=false;
@@ -73,10 +73,12 @@ function visibleRows(table,query){
   if(table==='profiles')rows=data.profiles;
   if(table==='public_profiles')rows=data.profiles;
   if(table==='collection_items')rows=data.collection;
+  if(table==='collection_item_photo_angles')rows=data.photoAngles.filter(row=>data.collection.some(item=>item.id===row.item_id&&item.user_id===active().id));
   if(table==='wishlists')rows=data.wishlist;
   if(table==='exchange_cases')rows=data.exchanges.filter(row=>row.user_a===active().id||row.user_b===active().id);
   if(table==='exchange_case_messages')rows=data.messages.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
   if(table==='exchange_case_events')rows=data.events.filter(row=>data.exchanges.some(exchange=>exchange.id===row.case_id&&(exchange.user_a===active().id||exchange.user_b===active().id)));
+  if(table==='exchange_case_handoff_baselines')rows=data.exchanges.filter(exchange=>exchange.handoff_at&&(exchange.user_a===active().id||exchange.user_b===active().id)).map(exchange=>({case_id:exchange.id,captured_at:NOW,snapshot:{capture_stage:'mutual_handoff',item_a:{set_number:'42172-1',condition:'Good',inventory_review_status:'known_gaps',notes:'One axle missing',photos:{front:'easwar/42172-front.jpg',side:'easwar/42172-side.jpg',rear:'easwar/42172-rear.jpg'}},item_b:{set_number:'42143-1',condition:'Good',inventory_review_status:'not_checked',notes:'',photos:{front:'ramya/42143-front.jpg',side:'ramya/42143-side.jpg',rear:'ramya/42143-rear.jpg'}}}}));
   if(table==='exchange_case_issues')rows=data.issues.filter(row=>isParticipant(findCase(row.case_id)));
   if(table==='exchange_case_issue_responses')rows=data.issueResponses.filter(row=>{const issue=issueById(row.issue_id);return Boolean(issue)&&isParticipant(findCase(issue.case_id))});
   if(table==='exchange_case_support_requests')rows=data.supportRequests.filter(row=>row.requested_by===active().id);
@@ -120,6 +122,7 @@ function chain(table){
         for(const row of query.rows){
           let created;
           if(table==='collection_items'&&!data.collection.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number)){created={id:`collection-${data.collection.length+1}`,...row,available_for_exchange:row.available_for_exchange||false,created_at:NOW};data.collection.push(created)}
+          if(table==='collection_item_photo_angles'&&row.owner_id===active().id&&data.collection.some(item=>item.id===row.item_id&&item.user_id===active().id)&&!data.photoAngles.some(p=>p.item_id===row.item_id&&p.angle===row.angle)){created={...row,created_at:NOW};data.photoAngles.push(created)}
           if(table==='wishlists'&&!data.wishlist.some(item=>item.user_id===row.user_id&&item.set_number===row.set_number)){created={id:`wishlist-${data.wishlist.length+1}`,...row,priority:row.priority||3,created_at:NOW};data.wishlist.push(created)}
           if(table==='exchange_case_messages'){created={id:`message-${data.messages.length+1}`,...row,created_at:NOW};data.messages.push(created)}
           if(table==='messages'){created={id:`direct-${data.directMessages.length+1}`,...row,exchange_id:null,created_at:NOW};data.directMessages.push(created)}
@@ -133,11 +136,11 @@ function chain(table){
         result=result.sort((a,b)=>(query.descending?String(b.created_at).localeCompare(String(a.created_at)):String(a.created_at).localeCompare(String(b.created_at)))||String(b.id).localeCompare(String(a.id))).slice(0,query.limitValue);
       }
       if(query.mode==='update'){
-        const source=table==='collection_items'?data.collection:table==='wishlists'?data.wishlist:table==='notifications'?data.notifications:table==='profiles'?data.profiles:[];
+        const source=table==='collection_items'?data.collection:table==='collection_item_photo_angles'?data.photoAngles:table==='wishlists'?data.wishlist:table==='notifications'?data.notifications:table==='profiles'?data.profiles:[];
         const changed=source.filter(matches);changed.forEach(row=>Object.assign(row,query.patch));persist();result=query.selected?changed.map(row=>({...row})):null;
       }
       if(query.mode==='delete'){
-        const key=table==='collection_items'?'collection':table==='wishlists'?'wishlist':table==='notifications'?'notifications':null;
+        const key=table==='collection_items'?'collection':table==='collection_item_photo_angles'?'photoAngles':table==='wishlists'?'wishlist':table==='notifications'?'notifications':null;
         if(key){const removed=data[key].filter(matches);data[key]=data[key].filter(row=>!matches(row));persist();result=removed.map(row=>({id:row.id}))}
       }
       return Promise.resolve({data:result,error:null}).then(resolve);
