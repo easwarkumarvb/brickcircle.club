@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const source=readFileSync(new URL('../../app-v3.js',import.meta.url),'utf8');
+const source=readFileSync(new URL('../../app-v3.js',import.meta.url),'utf8').replace(/\r\n/g,'\n');
 const start=source.indexOf('async function trustCareAvailabilityReady(item){');
 const end=source.indexOf('\n}\nfunction addOwnedSetWithPhoto',start);
 assert.ok(start>=0&&end>start,'live trust readiness function exists');
