@@ -120,6 +120,7 @@ export function createHandler(createClient, env) {
         const code = result.error.code;
         if (code === 'PT403') return response(403, {error: 'Authenticator verification required.', code: 'mfa_required'});
         if (code === '42501') return response(403, {error: 'Administrator access or active session required.'});
+        if (code === 'PT409') return response(409, {error: 'Record changed or request ID reused. Refresh and review the latest record.'});
         if (code === '40001') return response(409, {error: 'Record changed or request ID reused. Refresh and review the latest record.'});
         if (['22023', '22P02'].includes(code)) return response(400, {error: 'Invalid request values.'});
         if (code === 'P0002') return response(404, {error: 'Record not found.'});

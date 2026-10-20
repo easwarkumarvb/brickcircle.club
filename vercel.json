@@ -109,7 +109,9 @@
       "dev/exchange-outlier-ux-20261018": false,
       "dev/beta-feedback-20261019": false,
       "dev/beta-staging-176-20261019": false,
-      "dev/admin-mfa-release-readiness-20261019": false
+      "dev/admin-mfa-release-readiness-20261019": false,
+      "dev/admin-mfa-fixtures-20261019": false,
+      "dev/admin-mfa-note-diagnostics-20261019": false
     }
   }
 }
