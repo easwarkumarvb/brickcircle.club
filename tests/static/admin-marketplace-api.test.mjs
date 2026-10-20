@@ -57,6 +57,12 @@ for(const edit of [{entity:'members'},{value:'delete'},{revision:-1},{revision:0
 for(const [code,status] of [['PT403',403],['42501',403],['40001',409],['22023',400],['22P02',400],['P0002',404],['XX000',503]])test(`database error ${code} is safe`,async()=>{
   const f=fixture({dbError:{code,message:'sensitive DB internals'}});const r=await f.handler(f.request(validChange()));assert.equal(r.status,status);assert.doesNotMatch(await r.text(),/sensitive/);
 });
+test('PT409 business conflicts retain the safe conflict envelope for notes and mutations',async()=>{
+  for(const body of [{operation:'note',id:validID,reason:'An internal support note',request_id:validID},validChange()]){
+    const f=fixture({dbError:{code:'PT409',message:'sensitive DB internals'}});const r=await f.handler(f.request(body));
+    assert.equal(r.status,409);assert.deepEqual(await r.json(),{error:'Record changed or request ID reused. Refresh and review the latest record.',code:'conflict'});
+  }
+});
 test('oversized and malformed JSON are rejected without executing data RPC',async()=>{
   const f=fixture();for(const body of ['{','"scalar"','['+(' '.repeat(9000))+']']){
     const r=await f.handler(new Request('https://example.com',{method:'POST',headers:{Authorization:'Bearer test','Content-Type':'application/json'},body}));assert.ok([400,413].includes(r.status));
