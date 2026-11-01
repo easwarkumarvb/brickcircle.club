@@ -285,6 +285,51 @@ async function unusedCatalogSetNumber(session, excludedSetNumbers) {
   throw new Error(`No unused catalogue set is available for staging user ${session.label}`);
 }
 
+// 1x1 valid PNG, deliberately synthetic. Hosted staging tests photo storage and
+// access controls; these bytes do NOT represent a finished LEGO build.
+export const STAGING_QA_IMAGE_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9VaQAAAABJRU5ErkJggg==',
+  'base64'
+);
+
+export function stagingPhotoPath(session, item, runId, angle) {
+  const label = String(session.label || 'collector').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  const normalizedAngle = String(angle || '').toLowerCase();
+  if (!['front','side','rear'].includes(normalizedAngle)) throw new Error('Invalid QA photo angle');
+  return `${session.id}/hosted-smoke/${runId}/${label}-${item.id}-${normalizedAngle}.png`;
+}
+
+export async function prepareTrustCarePhotos(session, item, runId, bytes = STAGING_QA_IMAGE_BYTES) {
+  // Use the real owner session and private Storage bucket. Unlike a fake DB
+  // reference, uploads exercise the Storage INSERT/SELECT permissions too.
+  const paths = {};
+  for (const angle of ['front','side','rear']) {
+    const path = angle === 'front'
+      ? item.owner_photo_path
+      : stagingPhotoPath(session,item,runId,angle);
+    if (!path?.startsWith(`${session.id}/`)) {
+      throw new Error('Staging photo path must belong to the authenticated owner');
+    }
+    const { error: uploadError } = await session.client.storage.from('collection-photos')
+      .upload(path,bytes,{contentType:'image/png',upsert:false});
+    if (uploadError) throw new Error(`Could not upload staging ${angle} view: ${uploadError.message}`);
+    paths[angle] = path;
+    if (angle !== 'front') {
+      const { error } = await session.client.from('collection_item_photo_angles')
+        .insert({ item_id:item.id,owner_id:session.id,angle,storage_path:path });
+      if (error) throw new Error(`Could not persist staging ${angle} view: ${error.message}`);
+    }
+  }
+  const { data, error } = await session.client.from('collection_item_photo_angles')
+    .select('angle,storage_path').eq('item_id',item.id).eq('owner_id',session.id);
+  if (error) throw new Error(`Could not verify stored photo metadata: ${error.message}`);
+  for (const angle of ['side','rear']) {
+    assert.ok(data.some(row => row.angle===angle && row.storage_path===paths[angle]),
+      `Staging ${angle} view is not committed to the owner gallery`);
+  }
+  return paths;
+}
+
 export async function insertOwnedItem(session, setNumber, runId, excludedSetNumbers = []) {
   const insert = targetSetNumber => session.client.from('collection_items').insert({
     user_id: session.id,
@@ -293,7 +338,7 @@ export async function insertOwnedItem(session, setNumber, runId, excludedSetNumb
     completeness: 100,
     original_box: false,
     notes: `[${runId}] hosted Supabase release-gate fixture`,
-    owner_photo_path: `hosted-smoke/${runId}/${session.label.toLowerCase()}.jpg`
+    owner_photo_path: `${session.id}/hosted-smoke/${runId}/${session.label.toLowerCase()}-front.png`
   }).select('*').single();
   let { data, error } = await insert(setNumber);
   if (error?.code === '23505') {
@@ -487,7 +532,28 @@ async function runHostedSmoke(config) {
     const itemA = await insertOwnedItem(a, config.setA, config.runId, [config.setB]);
     const itemB = await insertOwnedItem(b, config.setB, config.runId, [itemA.set_number]);
     await Promise.all([ensureWishlist(a, itemB.set_number), ensureWishlist(b, itemA.set_number)]);
+    stage('Trust & Care owner photos and availability guard');
+    const incompleteAttempt = await a.client.rpc('set_exchange_item_availability',
+      {p_item_id:itemA.id,p_available:true});
+    assert.ok(incompleteAttempt.error, 'A set with only the primary photo must not be made available');
+    const [photoPathsA,photoPathsB] = await Promise.all([
+      prepareTrustCarePhotos(a,itemA,config.runId),
+      prepareTrustCarePhotos(b,itemB,config.runId)
+    ]);
+    const [ownerA,ownerB] = await Promise.all([
+      a.client.from('collection_items').update({inventory_review_status:'checked'}).eq('id',itemA.id).eq('user_id',a.id).select('inventory_review_status').single(),
+      b.client.from('collection_items').update({
+        inventory_review_status:'known_gaps',
+        notes:`[${config.runId}] synthetic QA disclosure: illustrative missing piece, not real inventory`
+      }).eq('id',itemB.id).eq('user_id',b.id).select('inventory_review_status,notes').single()
+    ]);
+    assert.ifError(ownerA.error);
+    assert.ifError(ownerB.error);
+    assert.equal(ownerA.data.inventory_review_status,'checked');
+    assert.equal(ownerB.data.inventory_review_status,'known_gaps');
+    assert.match(ownerB.data.notes,/synthetic QA disclosure/);
     await Promise.all([setAvailable(a, itemA.id), setAvailable(b, itemB.id)]);
+    passed('three uploaded owner photos, blocked incomplete availability and durable honest parts declarations');
 
     const [matchesA, matchesB] = await Promise.all([
       a.client.rpc('find_matches', { p_user: a.id }),
@@ -684,6 +750,34 @@ async function runHostedSmoke(config) {
     assert.equal(currentCase.state, 'ACTIVE');
     assert.ok(currentCase.handoff_at);
     assert.ok(currentCase.return_due_at);
+    stage('immutable photo/condition evidence and participant isolation');
+    const [baselineA,baselineB,baselineC] = await Promise.all([
+      a.client.from('exchange_case_handoff_baselines').select('snapshot,captured_at').eq('case_id',caseId).single(),
+      b.client.from('exchange_case_handoff_baselines').select('snapshot,captured_at').eq('case_id',caseId).single(),
+      c.client.from('exchange_case_handoff_baselines').select('case_id').eq('case_id',caseId)
+    ]);
+    assert.ifError(baselineA.error);
+    assert.ifError(baselineB.error);
+    assert.ifError(baselineC.error);
+    assert.deepEqual(baselineC.data,[], 'An unrelated collector cannot read a private handoff baseline');
+    assert.deepEqual(baselineA.data.snapshot,baselineB.data.snapshot);
+    const evidence = baselineA.data.snapshot;
+    for (const [side,photos] of [['item_a',photoPathsA],['item_b',photoPathsB]]) {
+      assert.equal(evidence[side]?.photos?.front,photos.front);
+      assert.equal(evidence[side]?.photos?.side,photos.side);
+      assert.equal(evidence[side]?.photos?.rear,photos.rear);
+    }
+    assert.equal(evidence.item_a.inventory_review_status,'checked');
+    assert.equal(evidence.item_b.inventory_review_status,'known_gaps');
+    const altered = await a.client.from('exchange_case_handoff_baselines')
+      .update({snapshot:{capture_stage:'tampered'}}).eq('case_id',caseId);
+    assert.ok(altered.error || altered.count===0,
+      'A participant must not be able to change immutable handoff evidence');
+    const originalPhoto = await b.client.storage.from('collection-photos')
+      .download(photoPathsA.front);
+    assert.ifError(originalPhoto.error);
+    assert.ok(originalPhoto.data?.size>0,'Counterparty must be able to read owner handoff image');
+    passed('mutually confirmed immutable photo baseline, signed-session peer access and third-party RLS');
     const handoffDurationMs = new Date(currentCase.return_due_at).getTime() - new Date(currentCase.handoff_at).getTime();
     assert.ok(Math.abs(handoffDurationMs - (60 * 86_400_000)) <= 2_000, 'Return deadline must be 60 days after mutual handoff');
     passed('two-session meetup, both-arrived inspection, and handoff activation');
