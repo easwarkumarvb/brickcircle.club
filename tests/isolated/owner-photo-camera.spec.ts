@@ -30,7 +30,11 @@ async function open(page:Page,mode='photo-replace',route='sets'){
     for(const name of ['focus','hashchange','pageshow','pagehide'])window.addEventListener(name,record,true);
   });
   await page.goto(`/v2.html?isolated=${mode}#${route}`);
-  if(mode==='photo-replace')await page.locator('[data-change-photo="photo-item-1"]').click();
+  if(mode==='photo-replace'){
+    // Offered-set photographic evidence is frozen. First stop offering it.
+    await page.locator('[data-exchangeable="photo-item-1"]').uncheck();
+    await page.locator('[data-change-photo="photo-item-1"]').click();
+  }
   else if(mode==='partial')await page.locator('[data-exchangeable="c1"]').click();
   else await page.locator('[data-own]').first().click();
   try{await expect(page.locator('#bc-owner-photo-form')).toBeVisible()}
