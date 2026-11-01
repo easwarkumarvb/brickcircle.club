@@ -14,9 +14,9 @@ test('startup finishes delayed provider bookkeeping before exposing usable contr
   await expect(page.locator('[data-change-photo]')).toHaveCount(0);
   await expect(page.locator('#bc-main')).toContainText('Opening BrickCircle');
   await page.evaluate(()=>(window as any).__startupGate.release());
-  await expect(page.locator('[data-change-photo="photo-item-1"]')).toBeVisible();
+  await expect(page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]')).toBeVisible();
   await page.evaluate(()=>(window as any).__usableMain=document.getElementById('bc-main'));
-  await page.locator('[data-change-photo="photo-item-1"]').click();
+  await page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]').click();
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
   expect(await page.evaluate(()=>document.getElementById('bc-main')===(window as any).__usableMain)).toBe(true);
@@ -34,7 +34,7 @@ test('a hidden transition during startup cannot replace a newly opened photo pic
     window.dispatchEvent(new Event('pagehide'));
   });
   await page.evaluate(()=>(window as any).__startupGate.release());
-  const action=page.locator('[data-change-photo="photo-item-1"]');
+  const action=page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]');
   await expect(action).toBeVisible();
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
   await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
@@ -51,7 +51,7 @@ test('optional startup deadline permits entry without a late shell replacement',
   await expect(page.locator('[data-change-photo]')).toHaveCount(0);
   await page.clock.fastForward(8001);
   expect(await page.evaluate(()=>getComputedStyle(document.documentElement).scrollBehavior)).toBe('auto');
-  const action=page.locator('[data-change-photo="photo-item-1"]');
+  const action=page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]');
   await expect(action).toBeVisible();
   expect((await action.boundingBox())?.y).toBeGreaterThan(320);
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
@@ -123,7 +123,7 @@ for(const destination of ['profile','signout'] as const){
 test('ordinary focus preserves the active picker without starting another authentication hydration',async({page})=>{
   await page.goto('/v2.html?isolated=photo-replace#sets');
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
-  await page.locator('[data-change-photo="photo-item-1"]').click();
+  await page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]').click();
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
   const audit=await page.evaluate(()=>{
     const auth=(window as any).BC_SUPABASE.auth,original=auth.getSession.bind(auth);
@@ -155,7 +155,7 @@ test('concurrent genuine resume events share one authentication validation and p
   expect(await page.evaluate(()=>(window as any).__resumeGate.calls)).toBe(1);
   await page.evaluate(()=>(window as any).__resumeGate.release());
   await expect.poll(()=>page.evaluate(()=>document.getElementById('bc-main')!==(window as any).__resumeMain)).toBe(true);
-  await expect(page.locator('[data-change-photo="photo-item-1"]')).toBeVisible();
+  await expect(page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]')).toBeVisible();
   const calls=await page.evaluate(()=>{window.dispatchEvent(new Event('focus'));return (window as any).__resumeGate.calls});
   expect(calls).toBe(1);
 });
@@ -180,7 +180,7 @@ test('a newer hidden transition retires the old resume response even at the same
   expect(await page.evaluate(()=>document.getElementById('bc-main')===(window as any).__resumeMain)).toBe(true);
   await page.evaluate(()=>(window as any).__resumeGate.releases[1]());
   await expect.poll(()=>page.evaluate(()=>document.getElementById('bc-main')!==(window as any).__resumeMain)).toBe(true);
-  await expect(page.locator('[data-change-photo="photo-item-1"]')).toBeVisible();
+  await expect(page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]')).toBeVisible();
 });
 
 test('a hidden transition during authenticated hydration cannot replace the active shell',async({page})=>{
@@ -207,7 +207,7 @@ test('a hidden transition during authenticated hydration cannot replace the acti
 test('confirmed missing authentication on genuine resume clears the protected shell',async({page})=>{
   await page.goto('/v2.html?isolated=photo-replace#sets');
   await expect.poll(()=>page.evaluate(()=>window.__bcIsolated.metrics.channelSubscriptions)).toBe(1);
-  await page.locator('[data-change-photo="photo-item-1"]').click();
+  await page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]').click();
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
   await page.evaluate(()=>(window as any).__privateOverlay=document.getElementById('bc-overlay'));
   await page.evaluate(()=>{
@@ -217,7 +217,7 @@ test('confirmed missing authentication on genuine resume clears the protected sh
   await expect(page.locator('.bc-signin')).toBeVisible();
   expect(await page.evaluate(()=>(window as any).__privateOverlay.isConnected)).toBe(false);
   await expect(page.locator('#bc-owner-photo-form')).toHaveCount(0);
-  await expect(page.locator('[data-change-photo="photo-item-1"]')).toHaveCount(0);
+  await expect(page.locator('[data-gallery-save="photo-item-1"][data-gallery-angle="side"]')).toHaveCount(0);
 });
 
 const gatedSigning=mock+"(()=>{\n const factory=window.supabase.createClient;\n window.supabase.createClient=(...args)=>{\n  const db=factory(...args),gate=window.__signingGate={calls:0,releases:[],released:false,outcome:'success'};\n  if(new URLSearchParams(location.search).get('isolated')==='matched'){\n   window.__bcIsolated.collection.push({id:'other-item-1',user_id:'00000000-0000-4000-8000-000000000099',set_number:'42143-1',available_for_exchange:true,owner_photo_path:'00000000-0000-4000-8000-000000000099/match-owner.jpg'});\n  }\n  const storage=db.storage.from.bind(db.storage);\n  db.storage.from=bucket=>{\n   const api=storage(bucket);\n   if(bucket==='collection-photos')api.createSignedUrl=async()=>{\n    gate.calls++;\n    if(!gate.released)await new Promise(resolve=>gate.releases.push(resolve));\n    return gate.outcome==='denied'?{data:null,error:{message:'Photo unavailable'}}:{data:{signedUrl:'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=='},error:null};\n   };\n   return api;\n  };\n  return db;\n };\n})();";
@@ -237,7 +237,7 @@ for(const width of [320,390,1280])for(const view of ['collection','match'] as co
 test(`signed gallery hydration preserves ${view} controls at ${width}px`,async({page})=>{
   await page.setViewportSize({width,height:1000});
   await signingGate(page,view);
-  const action=page.locator(view==='collection'?'[data-change-photo="photo-item-1"]':'[data-propose]').first();
+  const action=page.locator(view==='collection'?'[data-gallery-save="photo-item-1"][data-gallery-angle="side"]':'[data-propose]').first();
   await expect(action).toBeVisible();
   await action.scrollIntoViewIfNeeded();
   const before=await action.boundingBox();expect(before).not.toBeNull();
@@ -254,7 +254,7 @@ test(`signed gallery hydration preserves ${view} controls at ${width}px`,async({
 for(const view of ['collection','match'] as const)test(`photo signing denial preserves ${view} action geometry`,async({page})=>{
   await page.setViewportSize({width:390,height:1000});
   await signingGate(page,view,'denied');
-  const action=page.locator(view==='collection'?'[data-change-photo="photo-item-1"]':'[data-propose]').first();
+  const action=page.locator(view==='collection'?'[data-gallery-save="photo-item-1"][data-gallery-angle="side"]':'[data-propose]').first();
   await action.scrollIntoViewIfNeeded();
   const before=await action.boundingBox();expect(before).not.toBeNull();
   await releaseSigning(page);
@@ -268,7 +268,7 @@ for(const view of ['collection','match'] as const)test(`photo signing denial pre
 for(const view of ['collection','match'] as const)test(`one ${view} action works while photo signing remains pending`,async({page})=>{
   await page.setViewportSize({width:390,height:1000});
   await signingGate(page,view);
-  await page.locator(view==='collection'?'[data-change-photo="photo-item-1"]':'[data-propose]').first().click();
+  await page.locator(view==='collection'?'[data-gallery-save="photo-item-1"][data-gallery-angle="side"]':'[data-propose]').first().click();
   const form=page.locator(view==='collection'?'#bc-owner-photo-form':'#bc-inline-proposal');
   await expect(form).toBeVisible();
   await page.evaluate(()=>(window as any).__pendingPhotoForm=document.querySelector('#bc-owner-photo-form,#bc-inline-proposal'));
