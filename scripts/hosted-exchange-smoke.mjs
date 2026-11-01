@@ -288,7 +288,7 @@ async function unusedCatalogSetNumber(session, excludedSetNumbers) {
 // 1x1 valid PNG, deliberately synthetic. Hosted staging tests photo storage and
 // access controls; these bytes do NOT represent a finished LEGO build.
 export const STAGING_QA_IMAGE_BYTES = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9VaQAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGNoamoCAAMQAYch7cvWAAAAAElFTkSuQmCC',
   'base64'
 );
 
