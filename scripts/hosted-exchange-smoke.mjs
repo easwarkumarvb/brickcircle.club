@@ -770,8 +770,8 @@ async function runHostedSmoke(config) {
     assert.equal(evidence.item_a.inventory_review_status,'checked');
     assert.equal(evidence.item_b.inventory_review_status,'known_gaps');
     const altered = await a.client.from('exchange_case_handoff_baselines')
-      .update({snapshot:{capture_stage:'tampered'}}).eq('case_id',caseId);
-    assert.ok(altered.error || altered.count===0,
+      .update({snapshot:{capture_stage:'tampered'}}).eq('case_id',caseId).select('case_id');
+    assert.ok(altered.error || (altered.data||[]).length===0,
       'A participant must not be able to change immutable handoff evidence');
     const originalPhoto = await b.client.storage.from('collection-photos')
       .download(photoPathsA.front);
