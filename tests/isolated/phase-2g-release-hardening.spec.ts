@@ -115,7 +115,12 @@ test('set card controls persist exchangeability and open photo and details',asyn
   page.once('dialog',(dialog:any)=>dialog.accept());
   await toggle.check();
   await expect.poll(()=>page.evaluate(itemId=>Boolean(window.__bcIsolated.collection.find((item:any)=>item.id===itemId)?.available_for_exchange),id)).toBe(true);
-  await page.getByRole('button',{name:'Change photo'}).first().click();
+  const changePhoto=page.getByRole('button',{name:'Change photo'}).first();
+  await expect(changePhoto).toBeDisabled();
+  await toggle.uncheck();
+  await expect.poll(()=>page.evaluate(itemId=>Boolean(window.__bcIsolated.collection.find((item:any)=>item.id===itemId)?.available_for_exchange),id)).toBe(false);
+  await expect(changePhoto).toBeEnabled();
+  await changePhoto.click();
   await expect(page.locator('#bc-owner-photo-form')).toBeVisible();
   await page.locator('[data-close]').first().click();
   await page.getByRole('button',{name:'Details'}).first().click();
