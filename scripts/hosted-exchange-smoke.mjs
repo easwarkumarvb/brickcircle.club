@@ -802,7 +802,21 @@ async function runHostedSmoke(config) {
     await transition(a, 'return_confirm', {}, 'return-confirm-a');
     await transition(b, 'return_confirm', {}, 'return-confirm-b');
     assert.equal(currentCase.state, 'COMPLETED');
-    passed('two-session return inspection and completion');
+    const [retainedA,retainedB,retainedC] = await Promise.all([
+      a.client.from('exchange_case_handoff_baselines').select('snapshot').eq('case_id',caseId).single(),
+      b.client.from('exchange_case_handoff_baselines').select('snapshot').eq('case_id',caseId).single(),
+      c.client.from('exchange_case_handoff_baselines').select('case_id').eq('case_id',caseId)
+    ]);
+    assert.ifError(retainedA.error);
+    assert.ifError(retainedB.error);
+    assert.ifError(retainedC.error);
+    assert.deepEqual(retainedA.data.snapshot,evidence,'The initial handoff baseline must survive return');
+    assert.deepEqual(retainedB.data.snapshot,evidence,'The other participant must retain the same baseline');
+    assert.deepEqual(retainedC.data,[],'Third parties cannot view completed handoff evidence');
+    const returnedPhoto = await a.client.storage.from('collection-photos').download(photoPathsB.rear);
+    assert.ifError(returnedPhoto.error);
+    assert.ok(returnedPhoto.data?.size>0,'Original handoff photos must remain accessible after return');
+    passed('two-session return inspection, completed handoff evidence retention and peer-only visibility');
 
     stage('conversation archival');
     const [conversationA, conversationB, conversationC, messagesA, messagesB, messagesC] = await Promise.all([
