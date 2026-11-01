@@ -1,16 +1,8 @@
 # Disposable authenticated admin smoke — review checkpoint
 
-Staging run `39364424409` on 20 October confirmed the real TOTP/AAL2 flow, ordinary
-and AAL1 denials, authorized reads, note first/replay/conflict, and unchanged case
-and event evidence. Note diagnostics were 200, 200, 409, 200 with no retry storm.
-Auth logout returned 204, subsequent Auth user validation returned 403, and both
-session-cleanup labels plus independent database verification reported zero
-sessions. The bounded report omitted the final Edge response, so the exact
-saved-token denial assertion remains unresolved; these results neither establish
-nor imply an authorization vulnerability. This source change adds fixed-label,
-status/boolean diagnostics at that final boundary without weakening the 401/403,
-`no-store`, error-envelope, or cleanup checks. Do not rerun without existing
-trusted workflow/environment approvals and disposable-fixture ownership checks.
+This follow-up is a **prepared harness, not hosted execution evidence**. Do not run
+it or dispatch its workflow until Codex reviews the source, credentials/fixture
+ownership, and retained-audit plan. No production authorization is granted.
 
 ## Route and prerequisites
 
@@ -93,30 +85,21 @@ immutable checkout, and repeats the head check immediately before credential use
 
 GitHub requires a `workflow_dispatch` workflow to exist on the **default branch**:
 https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow
-For an approved rerun, use the existing **Hosted Supabase Admin Smoke** workflow
-in Actions with branch `main`, only after the reviewed workflow/source is
-available there. Set `expected_head_sha` to the exact currently reviewed PR 124
-head and `confirmation` to `RUN_OWNED_DISPOSABLE_ADMIN_SMOKE`. The workflow
-rechecks PR state, repository, branch and SHA before exposing staging credentials;
-the protected `hosted-supabase-staging` environment must also be approved by its
-required reviewers. Do not dispatch this development branch or the canonical
-exchange workflow. No hosted operation is authorized by this source-only change.
+This new branch-only workflow therefore **cannot be dispatched yet**. Installing
+it on default requires a separately approved routing change/merge; none is
+authorized here. After review, the protected local command above is the available
+alternative. Do not modify or dispatch the canonical exchange workflow for PR 124.
 Environment credential names/configuration remain concrete setup blockers until
 provisioned; existing exchange secrets alone are insufficient.
 
 ## Checks, retention and cleanup
 
-The intended checks are ordinary-member denial; allowlisted AAL1 `mfa_required`;
-actual TOTP verification and Auth-issued AAL2; overview, structured support filter
-and history/event detail; append-only note, exact immutable replay and conflicting
+The run proves ordinary-member denial; allowlisted AAL1 `mfa_required`; actual
+TOTP verification and Auth-issued AAL2; overview, structured support filter and
+history/event detail; append-only note, exact immutable replay and conflicting
 payload denial; unchanged support revision/status and visible case/event baseline;
-and saved-token denial (401 or 403) after local-session sign-out. The cited
-staging run established every listed step before the final saved-token Edge
-assertion, but did not preserve enough final-response evidence to establish it.
-Denials must be error-only envelopes, including no `summary`, and responses must
-be `no-store`. The final diagnostic records only fixed step labels, numeric HTTP
-status when a response exists, and booleans for transport, parsing, response
-shape and cache policy; malformed and service-error responses still fail closed.
+and saved-token denial (401 or 403) after local-session sign-out. Denials must be
+error-only envelopes, including no `summary`, and responses must be `no-store`.
 
 Only test sessions are automatically signed out. No accounts, factors, allowlist
 entries or database records are automatically deleted. **One run-owned internal
