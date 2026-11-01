@@ -1,120 +1,129 @@
-# Admin business-conflict PT409 rollout
+# Admin business-conflict PT409 and revoked-session runbook
 
-**Source change only; no staging or production operation is authorized by this
-runbook.** Supabase documents that PostgREST 14 retries RPC failures using
-SQLSTATE `40001`, even when raised deliberately for a business conflict, and
-recommends `PT409` for an HTTP 409 response:
-[PostgREST 14 custom error-code retries](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b).
+**This is source-only documentation. No staging/production operation, SQL
+migration, deployment, push, or merge is authorized by this change.**
 
-## Reviewed scope and source difference
+## Historical PT409 rollout — completed 2026-10-20
 
-The new migration resolves only `public.admin_support_note(uuid,text,uuid)` and
+Supabase documents that PostgREST 14 retries RPC failures using SQLSTATE
+`40001`, even when raised deliberately for a business conflict, and recommends
+`PT409` for an HTTP 409 response:
+[PostgREST custom error-code retries](https://supabase.com/docs/guides/troubleshooting/high-cpu-and-infinite-transaction-retries-when-using-custom-error-codes-in-rpc-functions-77326b).
+
+The historical migration resolved only
+`public.admin_support_note(uuid,text,uuid)` and
 `public.admin_marketplace_mutate(text,text,text,integer,text,uuid)` through
-`pg_get_functiondef`, checks exact old/new statement occurrence counts, and
-replaces the three intentional business-conflict raises with `PT409`. It fails
-closed on missing/duplicate/unexpected statements. It does not rewrite historical
-migrations, change ACLs, or add helpers/grants. The handler maps `PT409` to the
-existing safe HTTP 409 conflict envelope and retains `40001` compatibility.
+`pg_get_functiondef`, checked exact old/new statement occurrence counts, and
+replaced the three intentional business-conflict raises with `PT409`. It failed
+closed on missing, duplicate, or unexpected statements. It did not rewrite
+historical migrations, change ACLs, or add helpers/grants. The handler mapped
+`PT409` to the existing safe HTTP 409 conflict envelope and retained `40001`
+compatibility.
 
-The currently deployed staging `admin-dashboard` v2 predates repository changes
-to bounded request parsing and growth reporting. Deploying the current reviewed
-handler therefore includes those broader source differences; this is not a
-conflict-only Edge update. Its exact local source/import set is:
+The historical staging rollout was completed on 2026-10-20. Its source review
+treated the three-file Edge bundle as one unit because staging's deployed
+`admin-dashboard` v2 predated bounded request parsing and growth reporting:
 
-- `supabase/functions/admin-dashboard/index.ts` (entrypoint; imports `./handler.mjs`, and pins `@supabase/supabase-js@2.57.4`).
-- `supabase/functions/admin-dashboard/handler.mjs` (current request, auth, RPC and response handler; imports `../_shared/bounded-json.mjs`).
-- `supabase/functions/_shared/bounded-json.mjs` (bounded JSON parser and `RequestBodyError`).
+- `supabase/functions/admin-dashboard/index.ts` — entrypoint importing
+  `./handler.mjs` and pinning `@supabase/supabase-js@2.57.4`.
+- `supabase/functions/admin-dashboard/handler.mjs` — request, auth, RPC, and
+  response handler importing `../_shared/bounded-json.mjs`.
+- `supabase/functions/_shared/bounded-json.mjs` — bounded JSON parser and
+  `RequestBodyError`.
 
-Review that full source set together before any Edge deployment.
+The completed rollout inspected only the two exact function signatures and
+confirmed one quoted `40001` in the note function and two in the mutation
+function (request-ID replay and stale-revision conflicts) before applying the
+migration. Post-migration verification retained owner, ACLs, `SECURITY
+DEFINER`, `search_path`, language, arguments, advisory locking, authentication/
+AAL checks, replay behavior, revision checks, and unchanged conflict messages.
+Only the three intended raises changed to `PT409`; no `40001`-retrying conflict
+raise remained. No further SQL replay is part of the current revoked-session
+fix.
 
-## Guarded staging update and verification
-
-1. Obtain explicit staging-owner approval for the exact migration and function
-   source. Confirm the target is the designated staging project and no disposable
-   admin sessions or note requests are active. The reported smoke sessions are
-   signed out; the single retained audit note remains and must not be deleted as
-   part of this rollout.
-2. Deploy the reviewed `admin-dashboard` function source set above to staging
-   first, using the approved project target. Verify it retains authorization,
-   validation, bounded-body, and no-store behavior and maps both `PT409` and
-   legacy `40001` to the safe HTTP 409 envelope. Its handler is backward-compatible
-   while staging SQL is still unchanged.
-3. Before applying SQL, inspect live definitions and metadata for only the two
-   exact signatures. Verify exactly one quoted `40001` occurrence in the note
-   function and two in the mutate function (request-ID replay conflict and stale
-   revision), plus the expected statement text. Stop if definitions/counts
-   differ. Apply the new migration through the approved staging migration path
-   only.
-4. Verify the post-migration definitions retain the original owner, ACLs,
-   `SECURITY DEFINER`, `search_path`, language, arguments, advisory locking,
-   authentication/AAL checks, replay behavior and revision checks. Confirm only
-   those three raises now use `PT409`, with unchanged messages, and no
-   `40001`-retrying conflict raise remains in either function. The migration uses
-   `pg_get_functiondef` plus `CREATE OR REPLACE`, preserving the function
-   definition attributes; replacement does not change function owner or grants.
-5. Only after both staging changes are independently approved, rerun the
-   protected real-MFA smoke against an approved owned disposable fixture on the
-   exact reviewed SHA. Preserve the expected first-write/replay/conflict
-   assertions, unchanged case/revision/event invariants, and session cleanup.
-   Confirm no retry storm in Edge/database logs. Obtain separate approval for any
-   further retained-note handling. Do not use production fixtures or credentials.
-
-The existing disposable fixture is not reset: the prior run's single audit note
-remains as the baseline at revision 0; the support case remains `CANCELLED`
-version 1 with zero events. Each smoke invocation generates a fresh request ID,
-so each successful run appends its own retained note while keeping the support
-case revision/status and events unchanged. Record and compare against the known
-baseline; do not reset or rewrite fixture/audit state.
-
-Do not roll back by restoring deliberate business-conflict `40001` raises. That
-would reintroduce PostgREST 14 retry behavior. If rollback becomes necessary,
+Do not roll back by restoring deliberate business-conflict `40001` raises:
+that would reintroduce PostgREST retry behavior. If a rollback is ever needed,
 keep the handler's dual-code mapping, pause admin mutation/note smoke tests, and
 obtain a separately reviewed corrective migration that continues to use a
 non-retryable conflict SQLSTATE.
 
-## 2026-11-01 — Admin MFA sign-out diagnostic rerun
+## Pinned SDK root cause
 
-The bounded report from staging run `39364424409` confirms the first/replay/conflict
-note requests returned 200/200/409, the subsequent note check returned 200, and
-the case/event invariants held. Auth logout returned 204 and subsequent Auth user
-validation returned 403; cleanup labels and independent session inspection
-confirmed zero sessions. The report did not retain the final saved-token Edge
-response, so that assertion remains unresolved. Do not infer an authorization
-vulnerability or weaken the expected 401/403 denial, `no-store`, safe error
-envelope, or cleanup requirements.
+The Edge entrypoint pins `@supabase/supabase-js@2.57.4`, resolving
+`@supabase/auth-js@2.71.1`. In that pinned source,
+[`handleError` converts `session_not_found` into `new AuthSessionMissingError()`](https://github.com/supabase/auth-js/blob/v2.71.1/src/lib/fetch.ts#L95-L99).
+The class sets `name` to `AuthSessionMissingError`, `status` to 400, leaves
+`code` undefined, and inherits `__isAuthError === true`:
+[pinned errors.ts](https://github.com/supabase/auth-js/blob/v2.71.1/src/lib/errors.ts#L66-L74).
+The previous Edge handler recognized 401/403 statuses and selected error codes,
+but not this branded SDK shape, so the real revoked-session error incorrectly
+became HTTP 503. Local reproduction with an actual imported SDK instance
+returned 503 and made zero RPC calls. This was an HTTP denial-classification
+bug, not evidence of an authorization bypass.
 
-After this source change is reviewed and merged, rerun only through
-`.github/workflows/hosted-admin-mfa-release-readiness.yml` on `main`, with
-`pull_request_number=178`, `expected_release_merge_sha=e135cde511440f73d36c34a4058383f9169d530e`,
-and `confirmation=RUN_STAGING_ADMIN_MFA_READINESS`. The workflow validator also
-pins the merged PR 178 head to `0c02e2a344bbf11aae9fffadd654bbe0b15b259f` on
-`dev/beta-feedback-20261019`, and requires dispatch from `main` through the exact
-workflow reference. The trusted runner must be the reviewed `main` source
-containing this diagnostic change after this new PR is approved and merged; do
-not dispatch this development branch or substitute the PR head for the release
-merge SHA. Preserve the protected environment approval and immutable runner
-checkout checks.
+The minimal fix classifies only
+`__isAuthError === true && name === 'AuthSessionMissingError'` as the existing
+safe 401 expired-session response. Generic 400s, unbranded same-name objects,
+branded non-session errors, retryable/network failures, and server errors remain
+safe 503s. Existing 401/403 and
+`bad_jwt`/`session_not_found`/`user_not_found` mappings and PT409 behavior remain
+unchanged. No SDK upgrade is needed or intended.
 
-The existing `BC_ADMIN_MFA` protected credentials and fixture variables are
-provisioned. Before approval, independently reconfirm ownership and current state
-of both disposable identities, the single verified admin TOTP factor, and absence
-of active sessions; recheck that the staging notification path is outbox-only and
-cannot deliver externally. Provisioning is not implied by those existing inputs.
+## Definitive bounded staging evidence — 2026-11-01
 
-Preserve the current baseline: two retained audit rows; support revision 0 and
-status `open`; the associated case `CANCELLED` at version 1 with zero events.
-Do not reset or rewrite fixtures, delete retained audit, or reuse request IDs.
-Each rerun must use a fresh request ID and independently compare case/revision/
-status/events afterward. Retain the successful legacy 200/200/409 note evidence
-and cleanup checks while reviewing the newly captured final denial diagnostics.
-No hosted call is authorized by this documentation change.
+PR 183 merged after all four CI checks were green (1,533 browser and 9 visual
+checks). Protected run `41276416491` on runner
+`7161abdb34c55bc58959d33423fab40d4d9f80cd` again passed ordinary-member and
+AAL1 denial, real TOTP/AAL2, authorized reads, and note/replay/conflict
+responses of 200/200/409. The post-note check returned 200; case and event
+state remained unchanged.
+
+Explicit signout completed. Route logs show logout 204 at `05:19:26.566Z`, Auth
+user validation 403 at `05:19:27.094Z`, and final Edge response 503 at
+`05:19:27.380Z`. The final diagnostic had
+`transportCompleted`/`jsonParsed`/`noStore`/`allowedResponseShape` all true.
+There was no REST admin lookup after the Auth 403. The pinned SDK shape above
+explains the remaining 503 without weakening any authorization control.
+
+Cleanup recorded two successful signouts and independently verified zero
+sessions. Preserve all three audit rows. The baseline is support open at
+revision 0; the associated case is `CANCELLED` version 1 with zero events.
+Never reset fixture state, delete retained audit notes, or reuse request IDs.
+
+## Minimal staging rollout and protected rerun
+
+After this source change is reviewed and merged, any staging action requires
+separate staging-owner approval. If approved, deploy only the reviewed
+`admin-dashboard` Edge function update containing this handler mapping; do not
+apply or replay SQL. Review the complete three-file Edge source/import set
+listed above. Verify the actual SDK-shaped missing-session error returns 401,
+while ordinary/AAL1 denial, real TOTP/AAL2, authorized reads, PT409
+replay/conflict, and cleanup invariants continue to pass.
+
+Only after separate approval, rerun through
+`.github/workflows/hosted-admin-mfa-release-readiness.yml` from `main` only,
+with `pull_request_number=178`,
+`expected_release_merge_sha=e135cde511440f73d36c34a4058383f9169d530e`, and
+`confirmation=RUN_STAGING_ADMIN_MFA_READINESS`. The workflow also validates the
+merged PR 178 head pin and exact workflow reference. Use the immutable reviewed
+runner SHA on `main` after this fix is approved and merged; never dispatch this
+development branch or substitute a PR head for the release merge SHA. Retain
+the protected staging environment approval and immutable runner checkout and
+revalidation gates.
+
+Before approval, freshly reconfirm ownership and current state of both
+disposable identities, the single verified admin TOTP factor, and absence of
+active sessions. Recheck that the staging notification path is outbox-only and
+cannot deliver externally; existing credentials or fixture variables do not
+replace this preflight. Compare against the three-audit-row baseline, retain all
+notes, use fresh request IDs, confirm zero sessions after cleanup, and verify
+the support revision/status and case/events are unchanged. No hosted call is
+authorized by this documentation change.
 
 ## Offline validation boundary
 
-The Node migration regression checks the exact reviewed migration scope and
-source-level occurrence guards; handler and mocked smoke tests exercise status
-mapping and safe diagnostics. Offline checks do not execute PL/pgSQL against
-PostgreSQL, emulate PostgREST's SQLSTATE behavior, or prove live function
-formatting, owner/ACL preservation, or Edge deployment behavior. Those require
-the guarded staging inspection and verification above; no hosted check is
-performed by this change.
+The SDK-instance regression verifies the exact safe response, while negative
+SDK and generic error tests verify safe 503 responses, no-store headers, and no
+RPC calls. PT409/authorization tests retain the existing contracts. Offline
+tests do not deploy the Edge function or prove live staging behavior; those
+actions require the separate protected approval and rerun described above.
