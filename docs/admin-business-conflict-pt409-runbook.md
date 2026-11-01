@@ -72,6 +72,43 @@ keep the handler's dual-code mapping, pause admin mutation/note smoke tests, and
 obtain a separately reviewed corrective migration that continues to use a
 non-retryable conflict SQLSTATE.
 
+## 2026-11-01 — Admin MFA sign-out diagnostic rerun
+
+The bounded report from staging run `39364424409` confirms the first/replay/conflict
+note requests returned 200/200/409, the subsequent note check returned 200, and
+the case/event invariants held. Auth logout returned 204 and subsequent Auth user
+validation returned 403; cleanup labels and independent session inspection
+confirmed zero sessions. The report did not retain the final saved-token Edge
+response, so that assertion remains unresolved. Do not infer an authorization
+vulnerability or weaken the expected 401/403 denial, `no-store`, safe error
+envelope, or cleanup requirements.
+
+After this source change is reviewed and merged, rerun only through
+`.github/workflows/hosted-admin-mfa-release-readiness.yml` on `main`, with
+`pull_request_number=178`, `expected_release_merge_sha=e135cde511440f73d36c34a4058383f9169d530e`,
+and `confirmation=RUN_STAGING_ADMIN_MFA_READINESS`. The workflow validator also
+pins the merged PR 178 head to `0c02e2a344bbf11aae9fffadd654bbe0b15b259f` on
+`dev/beta-feedback-20261019`, and requires dispatch from `main` through the exact
+workflow reference. The trusted runner must be the reviewed `main` source
+containing this diagnostic change after this new PR is approved and merged; do
+not dispatch this development branch or substitute the PR head for the release
+merge SHA. Preserve the protected environment approval and immutable runner
+checkout checks.
+
+The existing `BC_ADMIN_MFA` protected credentials and fixture variables are
+provisioned. Before approval, independently reconfirm ownership and current state
+of both disposable identities, the single verified admin TOTP factor, and absence
+of active sessions; recheck that the staging notification path is outbox-only and
+cannot deliver externally. Provisioning is not implied by those existing inputs.
+
+Preserve the current baseline: two retained audit rows; support revision 0 and
+status `open`; the associated case `CANCELLED` at version 1 with zero events.
+Do not reset or rewrite fixtures, delete retained audit, or reuse request IDs.
+Each rerun must use a fresh request ID and independently compare case/revision/
+status/events afterward. Retain the successful legacy 200/200/409 note evidence
+and cleanup checks while reviewing the newly captured final denial diagnostics.
+No hosted call is authorized by this documentation change.
+
 ## Offline validation boundary
 
 The Node migration regression checks the exact reviewed migration scope and
