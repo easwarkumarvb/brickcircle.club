@@ -35,6 +35,16 @@ Code: 6 Node contract tests, 90 isolated Chromium tests after sync with main, `n
 - Ten focused Node contracts and 21 Chromium gallery, mobile, inventory and proposal tests passed. Firefox/WebKit and GitHub CI re-runs are separate release checks.
 - Three photo **metadata paths** and human inspection are the beta trust controls; they do not prove that the files contain real LEGO builds or establish a certified piece inventory. The physical meetup remains the source of final mutual acceptance.
 
+## November 1 — protected real-session smoke preparation
+
+- The original protected `hosted-supabase-exchange-smoke.yml` workflow is locked to the earlier canonical-exchange branch. Do **not** loosen or bypass its guard.
+- **Draft PR #185** (`dev/trust-care-staging-dispatcher-20261101`) proposes a new, manual-only staging dispatcher for **draft PR #179 exclusively**. It checks the exact 40-character approved head SHA, the expected branch, confirmation phrase, staging environment, restricted staging email sink, and outbox-only delivery. This is a **workflow-only PR**, and its merge requires separate owner approval.
+- PR #179's hosted harness was upgraded to upload **three valid synthetic QA PNGs** to the staging private Storage bucket through each owner's authenticated session, persist side/rear gallery rows, prove incomplete-photo availability is rejected, and self-declare checked/known gaps. The synthetic fixtures test technical upload and evidence controls; they are **not photos of actual finished LEGO sets**.
+- After two independent handoffs, the harness checks immutable accepted-case condition snapshots and front/side/rear photo references, both authenticated participants' read access, third-user baseline RLS denial, and photo retrieval. It rechecks identical baseline evidence after both return confirmations and completion.
+- **89/89 hosted harness contract tests passed** with a separate three-test dispatcher authorization contract suite. The actual credentialed, hosted three-user workflow has **not** been run.
+- When PR #185 is independently approved and merged to `main`, invoke its `workflow_dispatch` on the current `main` workflow, passing `pull_request_number=179`, the exact then-current PR #179 head SHA, and `RUN_ISOLATED_BRICKCIRCLE_STAGING_SMOKE`. The `hosted-supabase-staging` environment approval is a separate explicit authorization gate. Never use production credentials.
+- Continue to require explicit approval for both PR merges and production deployment.
+
 ## Production release checklist
 
 1. Review/approve PR #179 and the feature's limited trust claims; **do not** describe three photos as a verified complete parts inventory.
