@@ -50,3 +50,17 @@ test('only the two participants retain signed read access to original handoff ph
   assert.match(evidenceRead,/revoke all on function private\.bc_handoff_photo_readable_by_peer\(text,uuid\) from public,anon,authenticated/);
   assert.match(app,/async function hydrateTrustBaselinePhotos/);
 });
+
+const insertAndPhotoIntegrity=readFileSync(new URL('../../supabase/migrations/20261101054637_trust_care_availability_insert_and_photo_integrity.sql',import.meta.url),'utf8');
+test('direct INSERT cannot offer a copy before three photo angles are uploaded',()=>{
+  assert.match(insertAndPhotoIntegrity,/if tg_op='INSERT' then[\s\S]*?if new\.available_for_exchange is true then/);
+  assert.match(insertAndPhotoIntegrity,/before insert or update on public\.collection_items/);
+  assert.match(insertAndPhotoIntegrity,/new\.available_for_exchange is true[\s\S]*?old\.available_for_exchange is not true/);
+});
+test('available set cannot silently change photo paths, but legacy missing views may still be added',()=>{
+  assert.match(insertAndPhotoIntegrity,/old\.available_for_exchange is true[\s\S]*?new\.owner_photo_path is distinct from old\.owner_photo_path/);
+  assert.match(insertAndPhotoIntegrity,/new\.storage_path is distinct from old\.storage_path/);
+  assert.match(insertAndPhotoIntegrity,/before insert or update or delete on public\.collection_item_photo_angles/);
+  assert.match(app,/Make this set unavailable before replacing its front photo/);
+  assert.match(app,/Make this set unavailable before replacing a saved photo/);
+});
