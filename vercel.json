@@ -112,7 +112,8 @@
       "dev/admin-mfa-release-readiness-20261019": false,
       "dev/admin-mfa-fixtures-20261019": false,
       "dev/admin-mfa-note-diagnostics-20261019": false,
-      "dev/admin-signout-verification-20261101": false
+      "dev/admin-signout-verification-20261101": false,
+      "dev/admin-revoked-session-response-20261101": false
     }
   }
 }

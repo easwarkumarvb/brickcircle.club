@@ -55,7 +55,8 @@ export function createHandler(createClient, env) {
         auth: {persistSession: false, autoRefreshToken: false}});
       const {data: authData, error: authError} = await userClient.auth.getUser();
       if (authError) {
-        const invalid = [401,403].includes(authError.status) || ['bad_jwt','session_not_found','user_not_found'].includes(authError.code);
+        const invalid = [401,403].includes(authError.status) || ['bad_jwt','session_not_found','user_not_found'].includes(authError.code) ||
+          (authError.__isAuthError === true && authError.name === 'AuthSessionMissingError');
         return invalid ? response(401, {error: 'Your session expired. Sign in again.'}) : response(503, {error: 'Authentication temporarily unavailable. Retry shortly.'});
       }
       if (!authData?.user) return response(401, {error: 'Your session expired. Sign in again.'});

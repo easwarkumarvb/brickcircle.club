@@ -1,5 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import {AuthSessionMissingError} from '@supabase/supabase-js';
 import {createHandler} from '../../supabase/functions/admin-dashboard/handler.mjs';
 
 const validID = '12345678-1234-1234-1234-123456789012';
@@ -37,6 +39,46 @@ test('authorization failure fails closed',async()=>{
 test('Auth transport failure is unavailable, not logout, and runs no RPC',async()=>{
   const f=fixture({authError:{status:503,message:'upstream unavailable'}});
   const r=await f.handler(f.request({operation:'read'}));assert.equal(r.status,503);assert.equal((await r.json()).code,'unavailable');assert.equal(f.calls.some(c=>c.name),false);
+});
+test('pinned Supabase AuthSessionMissingError is a safe expired-session denial with no RPC',async()=>{
+  const error=new AuthSessionMissingError();
+  assert.equal(error.status,400);assert.equal(error.code,undefined);assert.equal(error.__isAuthError,true);
+  const f=fixture({authError:error});const r=await f.handler(f.request({operation:'read'}));
+  assert.equal(r.status,401);assert.equal(r.headers.get('Cache-Control'),'no-store');
+  assert.deepEqual(await r.json(),{error:'Your session expired. Sign in again.',code:'unauthenticated'});
+  assert.equal(f.calls.some(c=>c.name),false);
+});
+test('unknown, retryable, and unbranded Auth errors remain safe unavailable responses',async()=>{
+  const secret='private upstream error details';
+  for(const authError of [
+    {status:400,message:secret,payload:{secret}},
+    {name:'AuthSessionMissingError',status:400,code:undefined,message:secret},
+    {name:'AuthRetryableFetchError',status:503,message:secret},
+    {status:0,message:`Network request failed: ${secret}`},
+    {status:500,code:'internal_error',message:secret},
+  ]){
+    const f=fixture({authError});const r=await f.handler(f.request({operation:'read'}));
+    assert.equal(r.status,503);assert.equal(r.headers.get('Cache-Control'),'no-store');
+    assert.deepEqual(await r.json(),{error:'Authentication temporarily unavailable. Retry shortly.',code:'unavailable'});
+    assert.equal(f.calls.some(c=>c.name),false);
+  }
+});
+test('existing Auth status and code invalid-session mappings remain safe denials',async()=>{
+  for(const authError of [
+    {status:401,message:'private auth detail'},
+    {status:403,message:'private auth detail'},
+    ...['bad_jwt','session_not_found','user_not_found'].map(code=>({code,message:'private auth detail'})),
+  ]){
+    const f=fixture({authError});const r=await f.handler(f.request({operation:'read'}));
+    assert.equal(r.status,401);
+    assert.deepEqual(await r.json(),{error:'Your session expired. Sign in again.',code:'unauthenticated'});
+    assert.equal(f.calls.some(c=>c.name),false);
+  }
+});
+test('Vercel automatic deployments stay disabled for this branch and main',async()=>{
+  const vercel=JSON.parse(await readFile('vercel.json','utf8'));
+  assert.equal(vercel.git.deploymentEnabled['dev/admin-revoked-session-response-20261101'],false);
+  assert.equal(vercel.git.deploymentEnabled.main,false);
 });
 test('authorized read preserves user credentials and applies bounded pagination',async()=>{
   const f=fixture();const r=await f.handler(f.request({operation:'read',section:'members',page:2,query:'City'}));assert.equal(r.status,200);
