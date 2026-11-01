@@ -44,7 +44,8 @@ test('GitHub masking escapes command separators and is silent outside Actions', 
     assert.deepEqual(logs,['::add-mask::fake%25test%0D%0Asecret']);
   } finally { console.log=oldLog; if(oldEnv===undefined) delete process.env.GITHUB_ACTIONS; else process.env.GITHUB_ACTIONS=oldEnv; }
 });
-function mock({failNote=false,malformedNote=false,wrongOwner=false,wrongMfaUser=false,denialStatus=401,failCleanup=false,conflictStatus=409}={}) {
+function mock({failNote=false,malformedNote=false,malformedFinalDenial=false,failFinalTransport=false,failExplicitSignout=false,
+  wrongOwner=false,wrongMfaUser=false,denialStatus=401,failCleanup=false,conflictStatus=409}={}) {
   let clients=0, aal='aal1', revoked=false, notes=0; const masks=[]; const requests=[]; const signouts=[];
   const factory=()=>{
     const i=clients++; const user={id:i===0?'member-id':'admin-id',email:config().credentials[i].email,app_metadata:{staging_admin_smoke_run:wrongOwner?'wrong':id}};
@@ -52,7 +53,11 @@ function mock({failNote=false,malformedNote=false,wrongOwner=false,wrongMfaUser=
       signInWithPassword:async()=>({data:{session:{access_token:`token-${i}`,refresh_token:`refresh-${i}`,user}}}),
       getUser:async()=>({data:{user}}),
       getSession:async()=>({data:{session:{access_token:'verified-token',refresh_token:'verified-refresh',user:wrongMfaUser?{id:'other'}:user}}}),
-      signOut:async()=>{signouts.push(i);revoked ||= i===1;return failCleanup?{error:{message:'SECRET-PROVIDER-ERROR'}}:{data:{}};},
+      signOut:async()=>{
+        const priorCalls=signouts.filter(index=>index===i).length;signouts.push(i);
+        if(failCleanup||(failExplicitSignout&&i===1&&priorCalls===0))return {error:{message:'SECRET-PROVIDER-ERROR'}};
+        revoked ||= i===1;return {data:{}};
+      },
       mfa:{ getAuthenticatorAssuranceLevel:async()=>({data:{currentLevel:aal}}),listFactors:async()=>({data:{totp:[{id:'factor',status:'verified'}]}}),
         challengeAndVerify:async(args)=>{assert.equal(args.factorId,'factor');assert.match(args.code,/^\d{6}$/);aal='aal2';return {data:{access_token:'verified-token',refresh_token:'verified-refresh'}};}}
     }};
@@ -62,7 +67,11 @@ function mock({failNote=false,malformedNote=false,wrongOwner=false,wrongMfaUser=
     const token=opts.headers.Authorization;
     if(token==='Bearer token-0'){status=403;data={error:'Denied',code:'forbidden'};}
     else if(token==='Bearer token-1'){status=403;data={error:'MFA',code:'mfa_required'};}
-    else if(revoked){status=denialStatus;data={error:'Expired',code:'unauthenticated'};}
+    else if(revoked){
+      if(failFinalTransport)throw new Error('SECRET-FINAL-TRANSPORT-DETAIL');
+      status=denialStatus;data={error:'Expired',code:'unauthenticated'};
+      if(malformedFinalDenial)return new Response('SECRET-FINAL-RAW-BODY',{status,headers:{'cache-control':'no-store'}});
+    }
     else if(body.operation==='note') {
       if(failNote) throw new Error('SECRET-PROVIDER-ERROR');
       if(body.reason.startsWith('Different')){status=conflictStatus;data={error:'SECRET-CONFLICT-PROVIDER-DETAIL',code:'conflict'};}
@@ -79,10 +88,16 @@ test('mocked legitimate MFA API sequence, exact replay/conflict, revocation and 
     const deps=mock({denialStatus});const report=await runSmoke(config(),deps);
     assert.equal(report.passed,true);assert.equal(report.realMfa,true);assert.equal(report.retainedDisposableAudit,true);
     assert.ok(report.evidence.includes('note-replay-conflict'));
-    assert.deepEqual(report.diagnostics.map(x=>x.step),['note-first','note-replay','note-conflict','post-note-verification']);
+    assert.deepEqual(report.diagnostics.map(x=>x.step),[
+      'note-first','note-replay','note-conflict','post-note-verification','signout-request','signout-revoked-denial'
+    ]);
     assert.equal(report.diagnostics[0].noteResponseShape,true);assert.equal(report.diagnostics[0].replayedExpected,true);
     assert.equal(report.diagnostics[1].noteResponseShape,true);assert.equal(report.diagnostics[1].replayedExpected,true);
     assert.equal(report.diagnostics[1].auditIdsEqual,true);
+    assert.deepEqual(report.diagnostics.slice(-2),[
+      {step:'signout-request',signoutCompleted:true},
+      {step:'signout-revoked-denial',transportCompleted:true,status:denialStatus,noStore:true,jsonParsed:true,allowedResponseShape:true}
+    ]);
     assert.deepEqual(deps.requests.filter(x=>x.operation==='note').slice(0,2)[0],deps.requests.filter(x=>x.operation==='note')[1]);
     assert.ok(deps.masks.includes('verified-token'));assert.ok(deps.masks.includes(config().totpSecret));
     assert.ok(deps.signouts.includes(0));assert.ok(deps.signouts.includes(1));
@@ -111,6 +126,33 @@ test('malformed first-note response fails safely and signs out both sessions',as
   for(const value of ['SECRET-PROVIDER-ERROR','SECRET-CONFLICT-PROVIDER-DETAIL','member@example.test',
     'admin@example.test','member-test-password','admin-test-password',config().totpSecret,'verified-token','verified-refresh'])
     assert.ok(!serialized.includes(value));
+});
+test('sign-out Auth error is identified without exposing provider details and cleanup continues',async()=>{
+  const deps=mock({failExplicitSignout:true});const report=await runSmoke(config(),deps);
+  assert.equal(report.passed,false);assert.equal(report.phase,'signout-request');
+  assert.deepEqual(report.diagnostics.at(-1),{step:'signout-request',signoutCompleted:false});
+  assert.deepEqual(report.cleanup,['local-test-session-signed-out','local-test-session-signed-out']);
+  assert.ok(deps.signouts.includes(0));assert.equal(deps.signouts.filter(index=>index===1).length,2);
+  assert.ok(!JSON.stringify(report).includes('SECRET-PROVIDER-ERROR'));
+});
+test('final revocation denial preserves malformed JSON and 503 diagnostics without changing fail-closed behavior',async()=>{
+  for(const options of [
+    {failFinalTransport:true,
+      expected:{step:'signout-revoked-denial',transportCompleted:false,jsonParsed:false,noStore:false,allowedResponseShape:false}},
+    {denialStatus:403,malformedFinalDenial:true,
+      expected:{step:'signout-revoked-denial',transportCompleted:true,status:403,noStore:true,jsonParsed:false,allowedResponseShape:false}},
+    {denialStatus:503,
+      expected:{step:'signout-revoked-denial',transportCompleted:true,status:503,noStore:true,jsonParsed:true,allowedResponseShape:true}}
+  ]) {
+    const deps=mock(options);const report=await runSmoke(config(),deps);
+    assert.equal(report.passed,false);assert.equal(report.phase,'signout-revoked-denial');
+    assert.deepEqual(report.diagnostics.at(-1),options.expected);
+    assert.deepEqual(report.cleanup,['local-test-session-signed-out','local-test-session-signed-out']);
+    const serialized=JSON.stringify(report);
+    for(const value of ['SECRET-FINAL-RAW-BODY','SECRET-FINAL-TRANSPORT-DETAIL','SECRET-PROVIDER-ERROR','member@example.test',
+      'admin@example.test','member-test-password','admin-test-password',config().totpSecret,'verified-token','verified-refresh'])
+      assert.ok(!serialized.includes(value));
+  }
 });
 test('failures preserve unknown-delivery cleanup key, suppress provider errors and always sign out',async()=>{
   for(const options of [{failNote:true},{wrongOwner:true},{wrongMfaUser:true},{failCleanup:true}]) {

@@ -81,11 +81,18 @@ export async function runSmoke(config, { factory = createClient, transport = fet
   const client = () => factory(c.url, c.key, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: guarded } });
   const member = client(); const admin = client();
   async function edge(token, body, statuses = [200], diagnosticStep) {
+    const finalDiagnostic = diagnosticStep === 'signout-revoked-denial' ?
+      {step: diagnosticStep, transportCompleted: false, jsonParsed: false, noStore: false, allowedResponseShape: false} : null;
+    if (finalDiagnostic) diagnostics.push(finalDiagnostic);
     const response = await guarded(`${c.url}/functions/v1/admin-dashboard`, { method: 'POST',
       headers: { apikey: c.key, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    const diagnostic = diagnosticStep ? {step: diagnosticStep, status: response.status,
-      noStore: response.headers.get('cache-control') === 'no-store', jsonParsed: false, allowedResponseShape: false} : null;
-    if (diagnostic) diagnostics.push(diagnostic);
+    const diagnostic = finalDiagnostic || (diagnosticStep ? {step: diagnosticStep, status: response.status,
+      noStore: response.headers.get('cache-control') === 'no-store', jsonParsed: false, allowedResponseShape: false} : null);
+    if (finalDiagnostic) {
+      finalDiagnostic.transportCompleted = true;
+      finalDiagnostic.status = response.status;
+      finalDiagnostic.noStore = response.headers.get('cache-control') === 'no-store';
+    } else if (diagnostic) diagnostics.push(diagnostic);
     let data;
     try { data = await response.json(); }
     catch { throw new Error('Invalid diagnostic response JSON'); }
@@ -169,8 +176,13 @@ export async function runSmoke(config, { factory = createClient, transport = fet
     const eventsAfter = await edge(token, detail('events'));
     assert.equal(eventsAfter.total, eventsBefore.total); assert.deepEqual(eventsAfter.rows, eventsBefore.rows);
     evidence.push('note-replay-conflict', 'unchanged-visible-case-and-event-page');
-    phase = 'signout-revoked-denial'; checked(await admin.auth.signOut({ scope: 'local' }));
-    await edge(token, read('overview'), [401, 403]); evidence.push(phase);
+    phase = 'signout-request';
+    const signoutDiagnostic = {step: 'signout-request', signoutCompleted: false};
+    diagnostics.push(signoutDiagnostic);
+    checked(await admin.auth.signOut({ scope: 'local' }));
+    signoutDiagnostic.signoutCompleted = true;
+    phase = 'signout-revoked-denial';
+    await edge(token, read('overview'), [401, 403], 'signout-revoked-denial'); evidence.push(phase);
   } catch { failed = true; }
   finally {
     for (const sdk of [member, admin]) {
