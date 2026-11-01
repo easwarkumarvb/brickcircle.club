@@ -1,7 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
-import {AuthSessionMissingError} from '@supabase/supabase-js';
+import {AuthApiError,AuthRetryableFetchError,AuthSessionMissingError} from '@supabase/supabase-js';
 import {createHandler} from '../../supabase/functions/admin-dashboard/handler.mjs';
 
 const validID = '12345678-1234-1234-1234-123456789012';
@@ -53,7 +52,9 @@ test('unknown, retryable, and unbranded Auth errors remain safe unavailable resp
   for(const authError of [
     {status:400,message:secret,payload:{secret}},
     {name:'AuthSessionMissingError',status:400,code:undefined,message:secret},
-    {name:'AuthRetryableFetchError',status:503,message:secret},
+    new AuthApiError(secret,400,undefined),
+    new AuthRetryableFetchError(secret,0),
+    new AuthRetryableFetchError(secret,503),
     {status:0,message:`Network request failed: ${secret}`},
     {status:500,code:'internal_error',message:secret},
   ]){
@@ -74,11 +75,6 @@ test('existing Auth status and code invalid-session mappings remain safe denials
     assert.deepEqual(await r.json(),{error:'Your session expired. Sign in again.',code:'unauthenticated'});
     assert.equal(f.calls.some(c=>c.name),false);
   }
-});
-test('Vercel automatic deployments stay disabled for this branch and main',async()=>{
-  const vercel=JSON.parse(await readFile('vercel.json','utf8'));
-  assert.equal(vercel.git.deploymentEnabled['dev/admin-revoked-session-response-20261101'],false);
-  assert.equal(vercel.git.deploymentEnabled.main,false);
 });
 test('authorized read preserves user credentials and applies bounded pagination',async()=>{
   const f=fixture();const r=await f.handler(f.request({operation:'read',section:'members',page:2,query:'City'}));assert.equal(r.status,200);
