@@ -104,7 +104,8 @@ test('online recipient receives a live badge and clean proposal notification',as
 
 test('existing reciprocal-match login notice still appears when no proposal is unread',async({page})=>{
   await page.goto('/v2.html?isolated=matched#home');
-  await expect(page.locator('.bc-match-login-notice')).toContainText('New local match found');
+  await expect(page.locator('.bc-match-login-notice')).toContainText('Local match');
+  await expect(page.locator('.bc-match-login-notice')).not.toContainText('New local match found');
   await expect(page.locator('.bc-match-login-notice')).toContainText('Match Collector');
 });
 
