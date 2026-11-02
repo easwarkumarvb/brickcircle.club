@@ -151,6 +151,12 @@ html.bc-collector .bc-set-card img{height:140px!important}
 }
 @media(prefers-reduced-motion:reduce){html.bc-collector *,html.bc-collector *::before,html.bc-collector *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
+html.bc-collector .bc-story-flow article.bc-story-saturn .bc-story-image .bc-set-image{width:44px;height:250px;margin-inline:auto;justify-content:flex-start;border:0;background:#fff}
+html.bc-collector .bc-story-flow article.bc-story-saturn .bc-story-image .bc-set-image img{width:auto!important;height:100%!important;max-width:none!important;flex:none!important;object-fit:contain!important;padding:0!important}
+@media(max-width:700px){
+ html.bc-collector .bc-story-flow article.bc-story-saturn .bc-story-image .bc-set-image{width:56px;height:320px}
+}
+
 /* Approved adult collector sign-in design; all decoration stays inside the dialog. */
 body:has(> .bc-auth-overlay){overflow:hidden}
 html.bc-collector .bc-auth-overlay{display:flex!important;align-items:flex-start!important;bottom:auto;height:var(--bc-auth-viewport-height,100dvh);overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))!important;scroll-padding:16px}
