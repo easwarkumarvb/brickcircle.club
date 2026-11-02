@@ -51,7 +51,21 @@ jobs:
         run: |
           cp app-v3.js "$RUNNER_TEMP/photo-frame-app.js"
           cp app-v3.css "$RUNNER_TEMP/photo-frame.css"
-          trap 'cp "$RUNNER_TEMP/photo-frame-app.js" app-v3.js; cp "$RUNNER_TEMP/photo-frame.css" app-v3.css' EXIT
+          cp tests/isolated/startup-action-order.spec.ts "$RUNNER_TEMP/photo-frame-test.ts"
+          trap 'cp "$RUNNER_TEMP/photo-frame-app.js" app-v3.js; cp "$RUNNER_TEMP/photo-frame.css" app-v3.css; cp "$RUNNER_TEMP/photo-frame-test.ts" tests/isolated/startup-action-order.spec.ts' EXIT
+          # Historical baseline: verify the original front-photo action moved.
+          # Current Trust & Care tests intentionally use an allowed side-photo
+          # action while the set is available; only the negative proof uses
+          # the original front selector, and the current spec is restored.
+          node - <<'JS'
+          const fs=require('node:fs');
+          const file='tests/isolated/startup-action-order.spec.ts';
+          const before='[data-gallery-save="photo-item-1"][data-gallery-angle="side"]';
+          const original='[data-change-photo="photo-item-1"]';
+          const spec=fs.readFileSync(file,'utf8');
+          if(!spec.includes(before))throw new Error('Current gallery action selector changed: update historical regression proof');
+          fs.writeFileSync(file,spec.replaceAll(before,original));
+          JS
           git show fee987ce6ae6fb678c0a5960febf06963e02d39a:app-v3.js > app-v3.js
           git show fee987ce6ae6fb678c0a5960febf06963e02d39a:app-v3.css > app-v3.css
           if npx playwright test --config=playwright.isolated.config.ts tests/isolated/startup-action-order.spec.ts --project="$ENGINE" --grep "signed gallery hydration preserves collection controls at 390px" --retries=0 --reporter=json > "$RUNNER_TEMP/photo-frame-before.json"; then

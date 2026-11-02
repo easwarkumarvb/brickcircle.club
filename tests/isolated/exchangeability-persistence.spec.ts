@@ -1,6 +1,7 @@
 import {test,expect} from './fixtures';
 
 test('Ready for Exchange remains checked only after the owner update is confirmed',async({page})=>{
+  page.on('dialog',dialog=>dialog.accept());
   await page.goto('/v2.html?isolated=ready-zero#sets');
   const toggle=page.locator('[data-exchangeable]').first();
   await toggle.check();
@@ -10,6 +11,7 @@ test('Ready for Exchange remains checked only after the owner update is confirme
 });
 
 test('Ready for Exchange reverts when the canonical availability RPC fails',async({page})=>{
+  page.on('dialog',dialog=>dialog.accept());
   await page.goto('/v2.html?isolated=ready-zero#sets');
   await page.evaluate(()=>window.__bcIsolated.failRpcs=['set_exchange_item_availability']);
   await page.locator('[data-exchangeable]').first().evaluate((input:HTMLInputElement)=>{input.checked=true;input.dispatchEvent(new Event('change',{bubbles:true}))});

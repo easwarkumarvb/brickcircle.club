@@ -11,6 +11,9 @@ import {
   countRows,
   idempotencyKey,
   insertOwnedItem,
+  prepareTrustCarePhotos,
+  stagingPhotoPath,
+  STAGING_QA_IMAGE_BYTES,
   loadHostedSmokeConfig,
   projectRefFromUrl,
   redactIdentifier,
@@ -163,6 +166,59 @@ test('insertOwnedItem never writes the protected id or available_for_exchange co
     'only descriptively granted columns may be inserted directly'
   );
   assert.equal(inserted.id, generatedId, 'the database-generated id must be captured');
+  assert.ok(sent[0].owner_photo_path.startsWith(session.id+'/'), 'front owner photo must be scoped to session id');
+});
+
+test('staging photo paths are owner scoped, have distinct angles, and reject unrecognized views', () => {
+  const session={id:'11111111-1111-4111-8111-111111111111',label:'QA-A'};
+  const item={id:'22222222-2222-4222-8222-222222222222'};
+  assert.equal(STAGING_QA_IMAGE_BYTES.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+  assert.match(stagingPhotoPath(session,item,'run-1','side'),/^11111111-1111-4111-8111-111111111111\/hosted-smoke\/run-1\//);
+  assert.notEqual(stagingPhotoPath(session,item,'run-1','side'),stagingPhotoPath(session,item,'run-1','rear'));
+  assert.throws(()=>stagingPhotoPath(session,item,'run-1','other'),/Invalid QA photo angle/);
+});
+
+test('hosted Trust & Care fixture uploads real owner Storage objects and commits both angle rows before availability', async () => {
+  const uploaded=[],stored=[], ownerId='11111111-1111-4111-8111-111111111111',itemId='22222222-2222-4222-8222-222222222222';
+  const session={id:ownerId,label:'A',client:{
+    storage:{from(bucket){
+      assert.equal(bucket,'collection-photos');
+      return {upload:async(path,bytes,options)=>{
+        uploaded.push({path,bytes,options});
+        return {error:null};
+      }};
+    }},
+    from(table){
+      assert.equal(table,'collection_item_photo_angles');
+      return {
+        insert:async(row)=>{stored.push(row);return {error:null}},
+        select:()=>({
+          eq(){return this},
+          then(resolve,reject){return Promise.resolve({data:stored,error:null}).then(resolve,reject)}
+        })
+      };
+    }
+  }};
+  const item={id:itemId,owner_photo_path:`${ownerId}/hosted-smoke/run-1/a-front.png`};
+  const result=await prepareTrustCarePhotos(session,item,'run-1');
+  assert.deepEqual(uploaded.map(x=>x.path),[result.front,result.side,result.rear]);
+  assert.equal(uploaded.length,3);
+  for(const entry of uploaded){
+    assert.ok(entry.path.startsWith(ownerId+'/'));
+    assert.equal(entry.options.contentType,'image/png');
+    assert.equal(entry.options.upsert,false);
+    assert.equal(Buffer.from(entry.bytes).subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+  }
+  assert.deepEqual(stored.map(x=>x.angle),['side','rear']);
+  assert.ok(stored.every(row=>row.item_id===itemId&&row.owner_id===ownerId));
+});
+
+test('hosted Trust & Care fixture fails closed on an unauthorized photo upload',async()=>{
+  const session={id:'11111111-1111-4111-8111-111111111111',label:'A',
+    client:{storage:{from:()=>({upload:async()=>({error:{message:'RLS denied'}})})}}};
+  const item={id:'22222222-2222-4222-8222-222222222222',
+    owner_photo_path:'11111111-1111-4111-8111-111111111111/hosted-smoke/run-1/a-front.png'};
+  await assert.rejects(()=>prepareTrustCarePhotos(session,item,'run-1'),/Could not upload staging front view: RLS denied/);
 });
 
 test('insertOwnedItem fails closed when the insert is rejected or no id is returned', async () => {

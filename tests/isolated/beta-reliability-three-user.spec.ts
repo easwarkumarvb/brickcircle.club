@@ -48,8 +48,20 @@ async function addWanted(page:any,setNumber:string,query:string){
 
 async function makeAvailable(page:any){
   await page.locator('[data-nav="sets"]').first().click();
+  // Simulate a real collector preparing the finished model, not an invented
+  // complete photo inventory: front is captured when adding; side and rear here.
+  for(const angle of ['side','rear']){
+    await page.locator(`[data-gallery-save][data-gallery-angle="${angle}"]`).first().click();
+    const form=page.locator('#bc-owner-photo-form');
+    await expect(form).toBeVisible();
+    await form.locator('#bc-owner-photo-input').setInputFiles({name:`${angle}.webp`,mimeType:'image/webp',buffer:Buffer.from(`owner-${angle}-photo`)});
+    await form.getByRole('button',{name:'Save photo'}).click();
+    await expect(form).not.toBeVisible();
+    await expect(page.locator('.bc-toast')).toHaveText('Set photo updated.');
+  }
   const toggle=page.locator('[data-exchangeable]');
   await expect(toggle).not.toBeChecked();
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await toggle.click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.user_id===window.__bcThreeUser.actors[window.__bcThreeUser.actor].id)?.available_for_exchange)).toBe(true);
   await expect(page.locator('.bc-toast')).toHaveText('This set is saved as Available to Exchange.');
@@ -235,7 +247,7 @@ test('an owner cancels an accepted pre-handoff case and both preferences remain 
   await page.locator('[data-nav="sets"]').first().click();
   const release=page.getByRole('button',{name:'Cancel before handoff'});
   await expect(release).toBeVisible();
-  page.once('dialog',dialog=>dialog.accept());
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await release.click();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.exchanges[0].state)).toBe('CANCELLED');
   const result=await page.evaluate(()=>({
@@ -276,12 +288,18 @@ test('retired release capability is ignored while canonical set controls remain 
       {id:'reserved-item',user_id:state.actors.easwar.id,set_number:'42143-1',owner_photo_path:'easwar/reserved.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'},
       {id:'reserved-other',user_id:state.actors.ramya.id,set_number:'42115-1',owner_photo_path:'ramya/reserved.jpg',available_for_exchange:false,created_at:'2026-09-01T12:00:00.000Z'}
     );
+    // A collector can release an ordinary copy only after uploading all three views.
+    state.data.photoAngles.push(
+      {item_id:'ordinary-item',owner_id:state.actors.easwar.id,angle:'side',storage_path:'easwar/ordinary-side.jpg'},
+      {item_id:'ordinary-item',owner_id:state.actors.easwar.id,angle:'rear',storage_path:'easwar/ordinary-rear.jpg'}
+    );
     state.data.exchanges.push({id:'reserved-exchange',user_a:state.actors.easwar.id,user_b:state.actors.ramya.id,proposer_id:state.actors.easwar.id,recipient_id:state.actors.ramya.id,item_a:'reserved-item',item_b:'reserved-other',duration_days:60,state:'ACCEPTED',state_version:2,created_at:'2026-09-01T12:00:00.000Z',updated_at:'2026-09-01T12:00:00.000Z'});
     state.persist();
   });
   await page.reload();
   await page.locator('[data-nav="sets"]').first().click();
   await expect(page.getByRole('button',{name:'Cancel before handoff'})).toBeVisible();
+  page.once('dialog',(dialog:any)=>dialog.accept());
   await page.locator('[data-exchangeable="ordinary-item"]').check();
   await expect.poll(()=>page.evaluate(()=>window.__bcThreeUser.data.collection.find((row:any)=>row.id==='ordinary-item')?.available_for_exchange)).toBe(true);
   const calls=await page.evaluate(()=>window.__bcThreeUser.rpcCalls);

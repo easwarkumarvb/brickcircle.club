@@ -1,6 +1,8 @@
 import {test,expect} from './fixtures';
 
 async function selectReplacement(page:any){
+  const offered=page.locator('[data-exchangeable="photo-item-1"]');
+  if(await offered.isChecked())await offered.uncheck();
   await page.locator('[data-change-photo="photo-item-1"]').click();
   const form=page.locator('#bc-owner-photo-form');
   await expect(form).toBeVisible();
@@ -20,7 +22,7 @@ test('replaces an owned-set photo only after the owner-scoped database update su
     removals:window.__bcIsolated.storage.removals
   }));
   expect(result.item.owner_photo_path).not.toBe(oldPath);
-  expect(result.item.available_for_exchange).toBe(true);
+  expect(result.item.available_for_exchange).toBe(false);
   expect(result.removals).toContain(oldPath);
   expect(result.updates).toContainEqual(expect.objectContaining({
     table:'collection_items',
@@ -45,7 +47,7 @@ test('cleans up only the new upload when the owner-scoped database update fails'
   await selectReplacement(page);
   const result=await page.evaluate(()=>({item:window.__bcIsolated.collection[0],uploads:window.__bcIsolated.storage.uploads,removals:window.__bcIsolated.storage.removals}));
   expect(result.item.owner_photo_path).toBe(oldPath);
-  expect(result.item.available_for_exchange).toBe(true);
+  expect(result.item.available_for_exchange).toBe(false);
   expect(result.uploads).toHaveLength(1);
   expect(result.removals).toContain(result.uploads[0]);
   expect(result.removals).not.toContain(oldPath);
@@ -55,7 +57,10 @@ declare global {interface Window {__bcIsolated:any}}
 
 for(const mode of ['photo-replace','partial','empty'])for(const outcome of ['zero','lost'])test(`${mode} photo metadata ${outcome} never deletes a referenced photo or reports success`,async({page})=>{
   await page.goto(`/v2.html?isolated=${mode}#${mode==='empty'?'browse':'sets'}`);
-  if(mode==='photo-replace')await page.locator('[data-change-photo="photo-item-1"]').click();
+  if(mode==='photo-replace'){
+    await page.locator('[data-exchangeable="photo-item-1"]').uncheck();
+    await page.locator('[data-change-photo="photo-item-1"]').click();
+  }
   else if(mode==='partial')await page.locator('[data-exchangeable="c1"]').click();
   else await page.locator('[data-own]').first().click();
   await page.evaluate(outcome=>{if(outcome==='zero')window.__bcIsolated.silentNoUpdate=true;else window.__bcIsolated.lostCommitTables.push('collection_items')},outcome);
