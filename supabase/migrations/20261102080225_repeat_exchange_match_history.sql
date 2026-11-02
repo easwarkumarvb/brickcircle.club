@@ -74,7 +74,7 @@ begin
             case when c.user_a=auth.uid() then c.item_a else c.item_b end as offered_item,
             offered.set_number as offered_set,offered_set.name as offered_name,
             case when c.user_a=auth.uid() then c.item_b else c.item_a end as requested_item,
-            requested.set_number as requested_set,requested_set.name as requested_name,
+            requested_item_row.set_number as requested_set,requested_set.name as requested_name,
             pg_catalog.jsonb_build_object(
               'case_id',c.id,'state',c.state,
               'occurred_at',case when c.state='COMPLETED' then c.completed_at else c.handoff_at end,
@@ -82,13 +82,13 @@ begin
               'offered_item',case when c.user_a=auth.uid() then c.item_a else c.item_b end,
               'offered_set',offered.set_number,'offered_name',offered_set.name,
               'requested_item',case when c.user_a=auth.uid() then c.item_b else c.item_a end,
-              'requested_set',requested.set_number,'requested_name',requested_set.name
+              'requested_set',requested_item_row.set_number,'requested_name',requested_set.name
             ) as row_data
           from public.exchange_cases c
           join public.collection_items offered on offered.id=case when c.user_a=auth.uid() then c.item_a else c.item_b end
           join public.lego_sets offered_set on offered_set.set_number=offered.set_number
-          join public.collection_items requested on requested.id=case when c.user_a=auth.uid() then c.item_b else c.item_a end
-          join public.lego_sets requested_set on requested_set.set_number=requested.set_number
+          join public.collection_items requested_item_row on requested_item_row.id=case when c.user_a=auth.uid() then c.item_b else c.item_a end
+          join public.lego_sets requested_set on requested_set.set_number=requested_item_row.set_number
           where ((c.user_a=auth.uid() and c.user_b=requested.peer_id)
               or (c.user_b=auth.uid() and c.user_a=requested.peer_id))
             and not c.migration_review_required
@@ -161,7 +161,7 @@ begin
     order by coalesce(c.completed_at,c.handoff_at,c.created_at) desc,c.id desc
     limit p_limit+1
   ), numbered as (
-    select candidates.*,pg_catalog.row_number() over(order by sort_at desc,case_id desc) as row_number,
+    select candidates.*,pg_catalog.row_number() over(order by candidates.sort_at desc,candidates.case_id desc) as row_number,
       pg_catalog.count(*) over() as fetched_count
     from candidates
   )
