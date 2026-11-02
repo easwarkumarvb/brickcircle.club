@@ -6,7 +6,7 @@ test('mobile Find Sets is search-first, category-led and opens collector set det
   await page.goto('/v2.html?isolated=ready-one#browse');
 
   await expect(page.getByText('FIND YOUR NEXT BUILD')).toBeVisible();
-  await expect(page.locator('#bc-q')).toHaveAttribute('placeholder',/Search any LEGO set/i);
+  await expect(page.locator('#bc-q')).toHaveAttribute('placeholder',/Set name or number/i);
   await expect(page.locator('.bc-discovery-chips .bc-pop-chip')).toHaveCount(12);
   await expect(page.getByRole('button',{name:'Technic'})).toBeVisible();
   await expect(page.getByRole('button',{name:'Space'})).toBeVisible();

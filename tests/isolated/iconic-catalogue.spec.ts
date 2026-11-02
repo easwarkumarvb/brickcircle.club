@@ -11,7 +11,7 @@ test('Find sets opens on the iconic one-page collection and searches the full ca
   await expect(page.locator('#bc-cat-page-size')).toHaveText('3 curated sets · one page');
 
   const search=page.locator('#bc-q');
-  await expect(search).toHaveAttribute('placeholder',/product code or keywords/i);
+  await expect(search).toHaveAttribute('placeholder',/Set name or number/i);
 
   await search.fill('McLaren');
   await expect(page.locator('#bc-cat-status')).toContainText('matching “McLaren”');
