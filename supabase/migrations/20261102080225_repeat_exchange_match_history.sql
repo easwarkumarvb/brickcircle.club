@@ -5,13 +5,13 @@ create index if not exists exchange_cases_shared_history_a_idx
   on public.exchange_cases(user_a,user_b,(coalesce(completed_at,handoff_at,created_at)) desc,id desc)
   include (state,completed_at,handoff_at,item_a,item_b)
   where (state='COMPLETED'
-     or (handoff_at is not null and state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+     or (handoff_at is not null and state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
      and not migration_review_required;
 create index if not exists exchange_cases_shared_history_b_idx
   on public.exchange_cases(user_b,user_a,(coalesce(completed_at,handoff_at,created_at)) desc,id desc)
   include (state,completed_at,handoff_at,item_a,item_b)
   where (state='COMPLETED'
-     or (handoff_at is not null and state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+     or (handoff_at is not null and state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
      and not migration_review_required;
 create index if not exists exchange_cases_completed_item_a_idx
   on public.exchange_cases(item_a,(coalesce(completed_at,created_at)) desc,id desc)
@@ -61,7 +61,7 @@ begin
             or (c.user_b=auth.uid() and c.user_a=requested.peer_id))
           and not c.migration_review_required
           and (c.state='COMPLETED'
-            or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+            or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
         order by coalesce(c.completed_at,c.handoff_at,c.created_at) desc,c.id desc
         limit 1
       ) as latest_at,
@@ -93,7 +93,7 @@ begin
               or (c.user_b=auth.uid() and c.user_a=requested.peer_id))
             and not c.migration_review_required
             and (c.state='COMPLETED'
-              or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+              or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
           order by coalesce(c.completed_at,c.handoff_at,c.created_at) desc,c.id desc
           limit p_limit
         ) rows
@@ -103,7 +103,7 @@ begin
         or (c.user_b=auth.uid() and c.user_a=requested.peer_id))
       and not c.migration_review_required
       and (c.state='COMPLETED'
-        or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+        or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
   ) history;
 end;
 $$;
@@ -155,7 +155,7 @@ begin
         or (c.user_b=auth.uid() and c.user_a=p_peer_id))
       and not c.migration_review_required
       and (c.state='COMPLETED'
-        or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+        or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
       and (p_before_sort_at is null
         or (coalesce(c.completed_at,c.handoff_at,c.created_at),c.id)<(p_before_sort_at,p_before_case_id))
     order by coalesce(c.completed_at,c.handoff_at,c.created_at) desc,c.id desc
@@ -240,7 +240,7 @@ begin
           or (c.user_b=reciprocal.recipient_id and c.user_a=reciprocal.partner_id))
         and not c.migration_review_required
         and (c.state='COMPLETED'
-          or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED')))
+          or (c.handoff_at is not null and c.state in ('ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED')))
     ) shared
     cross join lateral (
       select
@@ -267,9 +267,8 @@ begin
   select recipient_id,'reciprocal_match',
     case when shared_count>0 then 'A past exchange is a match again' else 'You have a new local BrickCircle match' end,
     case when shared_count>0 then pg_catalog.format(
-      'You and %s have exchanged before (%s shared %s). Your local match is available again.%s',
-      partner_name,shared_count,case when shared_count=1 then 'exchange' else 'exchanges' end,
-      case when latest_shared_at is null then '' else ' Latest shared exchange: '||pg_catalog.to_char(latest_shared_at at time zone 'UTC','FMMonth FMDD, YYYY')||'.' end)
+      'You and %s have exchanged before (%s shared %s). Your local match is available again.',
+      partner_name,shared_count,case when shared_count=1 then 'exchange' else 'exchanges' end)
       else pg_catalog.format('%s has a reciprocal LEGO match with you.',partner_name) end,
     partner_id,'reciprocal_match',event_id,
     pg_catalog.jsonb_build_object(

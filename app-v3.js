@@ -239,7 +239,7 @@ async function canonicalRpc(name,args,intent){const uid=S.user?.id,key=canonical
 const S={
   user:null,profile:null,liquidity:null,membership:null,collection:[],wishlist:[],matches:[],
   requests:[],exchanges:[],notifications:[],messages:[],reviews:[],profiles:{},items:{},sets:{},
-  sharedHistoryUid:null,sharedHistory:{},
+  sharedHistoryUid:null,sharedHistory:{},sharedHistoryGeneration:0,
   reputation:{},caseOverdue:{},submittedPeerReviews:new Set(),
   exchangeCapabilities:{checked:true,releaseItem:true,contractVersion:2},
   browse:{page:0,q:'',theme:'',year:'',rows:[],busy:false,lastCount:0,category:'all'},
@@ -624,7 +624,8 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.sharedHistoryUid=null;S.sharedHistory={};S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();uncertainThreadSends.clear();scrubThreadStorage();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function resetSharedHistory(uid=null){S.sharedHistoryGeneration++;S.sharedHistoryUid=uid;S.sharedHistory={};return S.sharedHistoryGeneration}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;resetSharedHistory();S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();uncertainThreadSends.clear();scrubThreadStorage();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -667,6 +668,14 @@ async function refreshCore(){
   S.collection.forEach(i=>{S.items[i.id]=i;if(i.lego_sets)S.sets[i.set_number]=i.lego_sets});S.wishlist.forEach(i=>{if(i.lego_sets)S.sets[i.set_number]=i.lego_sets});
   window.bcWebPush?.consider(S.user,{meaningful:S.collection.length+S.wishlist.length>0});
   const people=new Set();S.exchanges.forEach(e=>{people.add(e.user_a);people.add(e.user_b)});S.matches.forEach(m=>people.add(m.match_user));S.messages.forEach(m=>{people.add(m.sender_id);people.add(m.recipient_id)});people.delete(uid);if(people.size){const result=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',[...people]));if(generation!==refreshGeneration||S.user?.id!==uid)return;if(result.error)S.refreshWarning=S.refreshWarning||result.error.message||'Collector details could not refresh.';else(result.data||[]).forEach(p=>S.profiles[p.id]=p)}
+  const historyGeneration=resetSharedHistory(uid),historyPeers=routeName()==='matches'&&document.querySelector('.bc-match-list [data-shared-history-peer]')
+    ?[...new Set(S.matches.map(match=>match.match_user))]
+    :routeName()==='messages'&&pendingMatchProposal?.uid===uid&&collectorFocus?.uid===uid&&$('#bc-collector-proposal [data-shared-history-peer]')
+      ?[collectorFocus.peerId]:[];
+  for(let offset=0;offset<historyPeers.length;offset+=50){
+    if(generation!==refreshGeneration||S.user?.id!==uid)return;
+    await loadSharedMatchHistory(historyPeers.slice(offset,offset+50),uid,S.renderToken,historyGeneration);
+  }
 }
 async function refreshRoute(){const epoch=authEpoch;if(logoutLocked||explicitLogout)return;await refreshCore();if(epoch!==authEpoch||logoutLocked)return;shell();await renderRoute()}
 
@@ -1469,7 +1478,7 @@ async function removeCollectionItem(id,name,button){
 }
 
 function sharedHistoryStatus(peerId){return S.sharedHistoryUid===S.user?.id?S.sharedHistory[peerId]:null}
-function sharedExchangeStateLabel(state){return ({COMPLETED:'Completed',ACTIVE:'Exchange in progress',EARLY_RETURN:'Early return requested',RETURN_PLANNING:'Return meetup planned',RETURN_INSPECTION:'Return inspection',DISPUTED:'Exchange issue unresolved'})[state]||'Exchange in progress'}
+function sharedExchangeStateLabel(state){return ({COMPLETED:'Completed',ACTIVE:'Exchange in progress',EARLY_RETURN:'Early return requested',RETURN_PLANNING:'Return meetup planned',RETURN_INSPECTION:'Return inspection',DISPUTED:'Exchange issue unresolved',CANCELLED:'Closed after confirmed handoff'})[state]||'Exchange in progress'}
 function sharedHistoryMarkup(peerId){
   const history=sharedHistoryStatus(peerId),count=Number(history?.shared_count||0);
   if(!history||history.status==='loading')return `<aside class="bc-notice" data-shared-history-peer="${attr(peerId)}" role="status">Checking shared exchange history…</aside>`;
@@ -1497,15 +1506,17 @@ function updateSharedHistoryCard(peerId,root=document){
   const containers=[...(root.matches?.(selector)?[root]:[]),...root.querySelectorAll(selector)];
   containers.forEach(container=>{
     const wasOpen=$('details',container)?.open;
-    container.outerHTML=sharedHistoryMarkup(peerId);
-    const replacement=container.parentElement?.querySelector(selector);
+    const template=document.createElement('template');
+    template.innerHTML=sharedHistoryMarkup(peerId);
+    const replacement=template.content.firstElementChild;
+    container.replaceWith(replacement);
     if(wasOpen&&$('details',replacement))$('details',replacement).open=true;
   });
   bindSharedHistoryActions(root);
 }
-async function loadSharedMatchHistory(peerIds,uid,token){
+async function loadSharedMatchHistory(peerIds,uid,token,historyGeneration=S.sharedHistoryGeneration){
   if(!peerIds.length||!uid)return;
-  const stillCurrent=()=>S.user?.id===uid&&S.sharedHistoryUid===uid&&token===S.renderToken&&!logoutLocked;
+  const stillCurrent=()=>S.user?.id===uid&&S.sharedHistoryUid===uid&&historyGeneration===S.sharedHistoryGeneration&&token===S.renderToken&&!logoutLocked;
   peerIds.forEach(peerId=>{const previous=S.sharedHistory[peerId];S.sharedHistory[peerId]={...(previous||{}),status:'loading',requestToken:token,rows:previous?.rows||[],shared_count:previous?.shared_count||0}});
   peerIds.forEach(peerId=>updateSharedHistoryCard(peerId));
   const result=await settledTimeout(db.rpc('shared_exchange_history',{p_peer_ids:peerIds,p_limit:3}),12000);
@@ -1527,7 +1538,7 @@ async function loadSharedMatchHistory(peerIds,uid,token){
   peerIds.forEach(peerId=>updateSharedHistoryCard(peerId));
 }
 async function loadMoreSharedHistory(peerId,button){
-  const uid=S.user?.id,token=S.renderToken,history=sharedHistoryStatus(peerId);
+  const uid=S.user?.id,token=S.renderToken,historyGeneration=S.sharedHistoryGeneration,history=sharedHistoryStatus(peerId);
   if(!uid||!history||history.status!=='ready'||history.pageLoading)return;
   const cursor=history.rows.at(-1);
   if(!cursor?.sort_at||!cursor?.case_id){history.pageError=true;updateSharedHistoryCard(peerId);return}
@@ -1535,7 +1546,7 @@ async function loadMoreSharedHistory(peerId,button){
   const result=await settledTimeout(db.rpc('shared_exchange_history_page',{
     p_peer_id:peerId,p_before_sort_at:cursor.sort_at,p_before_case_id:cursor.case_id,p_limit:20
   }),12000);
-  if(S.user?.id!==uid||S.sharedHistoryUid!==uid||token!==S.renderToken||logoutLocked)return;
+  if(S.user?.id!==uid||S.sharedHistoryUid!==uid||historyGeneration!==S.sharedHistoryGeneration||token!==S.renderToken||logoutLocked)return;
   history.pageLoading=false;
   if(result.error||!Array.isArray(result.data)){
     history.pageError=true;
@@ -1553,13 +1564,13 @@ async function renderMatches(token){
   if(!S.user){showAuth();return navigate('home')}const rd=readiness();if(rd.score<40&&!S.matches.length){page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div></div>${empty('⇄','Finish your match setup','Add owned sets, mark exchangeable copies and build a wishlist. BrickCircle can only create a reciprocal match when both sides line up.','Continue setup','sets')}`);return}
   const uid=S.user.id,ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);if(!current())return;(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
   if(!current())return;
-  S.sharedHistoryUid=uid;S.sharedHistory={};
+  resetSharedHistory(uid);
   ids.forEach(peerId=>S.sharedHistory[peerId]={status:'loading',shared_count:0,rows:[]});
   page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div>${S.matches.length?trustCareNudge('match','A great match is more enjoyable when both collectors review the set photos, known gaps and instructions before meeting.'):''}<div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);
   bindMatchCardActions(app());
   for(let offset=0;offset<ids.length;offset+=50){
     if(!current())return;
-    await loadSharedMatchHistory(ids.slice(offset,offset+50),uid,token);
+    await loadSharedMatchHistory(ids.slice(offset,offset+50),uid,token,S.sharedHistoryGeneration);
   }
 }
 function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium" data-requested-item="${attr(m.requested_item)}"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div>${sharedHistoryMarkup(m.match_user)}<div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small><div class="bc-owner-proof"><div class="bc-owner-proof-preview" data-owner-proof-preview>Loading owner photo</div><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div><details class="bc-match-parts"><summary>Owner's parts declaration</summary><p class="bc-small" data-match-parts-status>Loading owner declaration</p></details>${ownerGalleryMarkup(m.requested_item)}</div></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
@@ -2953,8 +2964,8 @@ function renderInlineProposal(peerId){
   bindMatchOptions();bindSharedHistoryActions(host);
   const history=sharedHistoryStatus(peerId);
   if((!history||history.status==='loading'&&history.requestToken!==S.renderToken)&&S.user?.id===collectorFocus?.uid){
-    if(S.sharedHistoryUid!==S.user.id){S.sharedHistoryUid=S.user.id;S.sharedHistory={}}
-    loadSharedMatchHistory([peerId],S.user.id,S.renderToken);
+    const historyGeneration=S.sharedHistoryUid===S.user.id?S.sharedHistoryGeneration:resetSharedHistory(S.user.id);
+    loadSharedMatchHistory([peerId],S.user.id,S.renderToken,historyGeneration);
   }
   const dialog=$('dialog',host),form=$('#bc-inline-proposal',host);
   if(dialog){

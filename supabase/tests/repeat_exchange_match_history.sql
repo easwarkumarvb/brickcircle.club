@@ -108,6 +108,16 @@ insert into public.exchange_cases(
 );
 insert into public.exchange_cases(
   id,user_a,user_b,item_a,item_b,proposer_id,recipient_id,duration_days,state,
+  owner_preference_a,owner_preference_b,created_at,handoff_at,cancelled_at
+) values (
+  '62000000-0000-4000-8000-000000000007',
+  '00000000-0000-4000-8000-000000000061','00000000-0000-4000-8000-000000000064',
+  '51000000-0000-4000-8000-000000000013','51000000-0000-4000-8000-000000000016',
+  '00000000-0000-4000-8000-000000000061','00000000-0000-4000-8000-000000000064',
+  60,'CANCELLED',true,true,'2026-05-05','2026-05-05','2026-05-06'
+);
+insert into public.exchange_cases(
+  id,user_a,user_b,item_a,item_b,proposer_id,recipient_id,duration_days,state,
   owner_preference_a,owner_preference_b,created_at,completed_at,handoff_at,migration_review_required
 ) values (
   '62000000-0000-4000-8000-000000000005',
@@ -143,8 +153,10 @@ begin
     and summary.recent->0->>'requested_set'='history-b','A sees prior sets in viewer-relative order');
   perform pg_temp.assert_true((select shared_count=0 and recent='[]'::jsonb from public.shared_exchange_history(
     array['00000000-0000-4000-8000-000000000063']::uuid[],3)),'A-C disputed legacy case without handoff is not reported as an exchange');
-  perform pg_temp.assert_true((select shared_count=0 and recent='[]'::jsonb from public.shared_exchange_history(
-    array['00000000-0000-4000-8000-000000000064']::uuid[],3)),'a canceled-before-handoff-only pair is not reported as an exchange');
+  perform pg_temp.assert_true((select shared_count=1 and recent->0->>'case_id'='62000000-0000-4000-8000-000000000007'
+    and recent->0->>'state'='CANCELLED' from public.shared_exchange_history(
+    array['00000000-0000-4000-8000-000000000064']::uuid[],3)),
+    'a confirmed handoff remains history when later canceled, while the pre-handoff cancellation is excluded');
   perform pg_temp.assert_true((select count(*)=85 from public.exchange_cases c
     where ((c.user_a='00000000-0000-4000-8000-000000000061' and c.user_b='00000000-0000-4000-8000-000000000062')
         or (c.user_b='00000000-0000-4000-8000-000000000061' and c.user_a='00000000-0000-4000-8000-000000000062'))
@@ -236,7 +248,8 @@ begin
       and title='You have a new local BrickCircle match'),'first-time discovery remains clearly labeled');
   perform pg_temp.assert_true((select count(*)=2 from public.notifications
     where kind='reciprocal_match' and metadata->>'shared_exchange_count'='85'
-      and title='A past exchange is a match again'),'repeat-aware copy is sent to both A-B participants');
+      and title='A past exchange is a match again' and body not ilike '%Latest shared exchange:%'),
+    'repeat-aware copy is sent to both A-B participants without an unlabeled UTC date');
   perform pg_temp.assert_true(public.queue_new_reciprocal_match_notifications('00000000-0000-4000-8000-000000000061')=0
     and public.queue_new_reciprocal_match_notifications('00000000-0000-4000-8000-000000000062')=0,
     'refreshing either participant is idempotent');

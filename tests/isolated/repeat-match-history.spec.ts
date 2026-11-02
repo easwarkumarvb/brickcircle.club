@@ -84,14 +84,31 @@ test('both match participants see their shared history, peer history stays priva
   const details=bCard.locator('[data-shared-history-peer] details');
   await details.locator('summary').click();
   await expect(details.locator('ol li')).toHaveCount(3);
+  await a.evaluate(()=> (window as any).__bcThreeUser.failRpc('shared_exchange_history_page'));
+  await bCard.locator('[data-shared-history-more]').click();
+  await expect(details).toContainText('Older shared exchange details could not be loaded');
+  await expect(details).toHaveJSProperty('open',true);
+  await a.evaluate(()=> (window as any).__bcThreeUser.failedRpcs.delete('shared_exchange_history_page'));
+  await details.getByRole('button',{name:'Retry'}).click();
+  await expect(details.locator('ol li')).toHaveCount(23);
+  await expect(details).toHaveJSProperty('open',true);
   for(let page=0;page<5;page++){
-    if(!(await details.evaluate((element:HTMLDetailsElement)=>element.open)))await details.locator('summary').click();
     const more=bCard.locator('[data-shared-history-more]');
     if(!(await more.count()))break;
     await more.click();
+    await expect(details).toHaveJSProperty('open',true);
   }
   await expect(details.locator('ol li')).toHaveCount(85);
   await expect(bCard).toContainText('You’ve exchanged before');
+  await bCard.locator(`[data-shared-history-case="${caseId(1)}"]`).click();
+  const oldCase=a.locator(`.bc-collector-case-chip[data-view-collector-case="${caseId(1)}"]`);
+  await expect(oldCase).toContainText('McLaren P1');
+  await expect(oldCase).toBeVisible();
+  const participantScopedDetailFetch=await a.evaluate(id=>(
+    (window as any).__bcThreeUser.tableQueries.some((query:any)=>query.table==='exchange_cases'
+      &&query.filters.some((filter:any[])=>filter[0]==='id'&&filter[1]===id))
+  ),caseId(1));
+  expect(participantScopedDetailFetch).toBe(true);
   await aContext.close();
 
   const bContext=await browser.newContext(),b=await openActor(bContext,'ramya',database);
@@ -104,6 +121,21 @@ test('both match participants see their shared history, peer history stays priva
   const proposal=b.getByRole('dialog',{name:'Propose an exchange'});
   await expect(proposal).toContainText('You’ve exchanged before · 85 shared exchanges');
   await bContext.close();
+});
+
+test('a confirmed handoff remains in shared history if its canonical case was later closed',async({browser})=>{
+  const database=seed(),a=actors.easwar,b=actors.ramya;
+  database.exchanges.push({
+    id:caseId(999),user_a:a.id,user_b:b.id,item_a:'item-a',item_b:'item-b',state:'CANCELLED',
+    handoff_at:stamp(95),created_at:stamp(94),updated_at:stamp(96)
+  });
+  const context=await browser.newContext(),page=await openActor(context,'easwar',database);
+  const card=page.locator('article[data-requested-item="item-b"]');
+  await expect(card).toContainText('You’ve exchanged before · 86 shared exchanges');
+  const details=card.locator('[data-shared-history-peer] details');
+  await details.locator('summary').click();
+  await expect(details).toContainText('Closed after confirmed handoff');
+  await context.close();
 });
 
 test('history loading and errors are not presented as new; retry and account switching remain isolated',async({browser})=>{
@@ -120,6 +152,28 @@ test('history loading and errors are not presented as new; retry and account swi
   const aCard=page.locator('article[data-requested-item="item-a"]');
   await expect(aCard).toContainText('New reciprocal match');
   await expect(aCard).not.toContainText('You’ve exchanged before');
+  await context.close();
+});
+
+test('a successful empty history is refreshed in a direct-message proposal after completion',async({browser})=>{
+  const database=seed(),context=await browser.newContext();
+  database.exchanges=database.exchanges.filter(row=>row.state!=='COMPLETED');
+  const page=await openActor(context,'easwar',database),card=page.locator('article[data-requested-item="item-b"]');
+  await expect(card).toContainText('New reciprocal match');
+  await card.getByRole('button',{name:'View & propose'}).click();
+  const proposal=page.getByRole('dialog',{name:'Propose an exchange'});
+  await expect(proposal).toContainText('New reciprocal match');
+  await page.evaluate(({id,createdAt,completedAt,actors})=>{
+    const state=(window as any).__bcThreeUser;
+    state.data.exchanges.push({
+      id,user_a:actors.a,user_b:actors.b,item_a:'item-a',item_b:'item-b',
+      state:'COMPLETED',created_at:createdAt,completed_at:completedAt,handoff_at:createdAt
+    });
+    state.persist();
+    state.refresh();
+  },{id:caseId(950),createdAt:stamp(96),completedAt:stamp(97),actors:{a:actors.easwar.id,b:actors.ramya.id}});
+  await expect(page.getByRole('dialog',{name:'Propose an exchange'})).toContainText('You’ve exchanged before · 1 shared exchange');
+  await expect(page.getByRole('dialog',{name:'Propose an exchange'})).not.toContainText('New reciprocal match');
   await context.close();
 });
 

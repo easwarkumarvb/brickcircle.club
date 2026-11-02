@@ -39,16 +39,17 @@ const active=()=>actors[actorKey];
 const user=()=>({id:active().id,email:active().email,created_at:NOW,app_metadata:{provider:'email'},identities:[{provider:'email'}]});
 const persist=()=>localStorage.setItem(STORE,JSON.stringify(data));
 const state={
-  actors,sets,rpcCalls:[],rpcArgs:[],lostResponses:new Set(),
+  actors,sets,rpcCalls:[],rpcArgs:[],tableQueries:[],lostResponses:new Set(),
   failedRpcs:new Set(repeatFixtureOptions.fail?['shared_exchange_history']:[]),
   rpcDelays:repeatFixtureOptions.delay?{shared_exchange_history:1200}:{},
   get actor(){return actorKey},get data(){return data},
-  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;state.rpcArgs.length=0;state.lostResponses.clear();state.failedRpcs.clear();state.rpcDelays={};localStorage.setItem(ACTOR,actorKey);persist()},
+  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;state.rpcArgs.length=0;state.tableQueries.length=0;state.lostResponses.clear();state.failedRpcs.clear();state.rpcDelays={};localStorage.setItem(ACTOR,actorKey);persist()},
   persist,
   loseNextResponse(name){state.lostResponses.add(name)},
   failRpc(name){state.failedRpcs.add(name)},
   delayRpc(name,ms){state.rpcDelays[name]=ms},
-  switchActor(next){if(!actors[next])throw new Error(`Unknown actor ${next}`);actorKey=next;signedOut=false;localStorage.setItem(ACTOR,next)}
+  switchActor(next){if(!actors[next])throw new Error(`Unknown actor ${next}`);actorKey=next;signedOut=false;localStorage.setItem(ACTOR,next)},
+  refresh(){emitAuth('TOKEN_REFRESHED',{user:user()})}
 };
 window.__bcThreeUser=state;
 window.__bcIsolated=state;
@@ -104,7 +105,7 @@ function chain(table){
     update(patch){query.mode='update';query.patch=patch;return query},delete(){query.mode='delete';return query},
     upsert(patch){const profile=data.profiles.find(row=>row.id===patch.id);if(profile)Object.assign(profile,patch);else data.profiles.push({...patch,created_at:NOW});persist();return Promise.resolve({data:[patch],error:null})},
     insert(value){query.mode='insert';query.rows=Array.isArray(value)?value:[value];return query},
-    maybeSingle(){return Promise.resolve({data:visibleRows(table,query)[0]||null,error:null})},
+    maybeSingle(){state.tableQueries.push({table,filters:query.filters.map(filter=>[...filter])});return Promise.resolve({data:visibleRows(table,query)[0]||null,error:null})},
     then(resolve){
       const matches=row=>query.filters.every(([key,value,operator])=>operator==='is'&&value===null?row[key]==null:row[key]===value)&&query.ins.every(([key,values])=>values.includes(row[key]));
       let result=visibleRows(table,query);
@@ -175,7 +176,7 @@ function sharedHistoryRows(peerId){
   return data.exchanges.filter(row=>{
     const participants=[row.user_a,row.user_b];
     return participants.includes(active().id)&&participants.includes(peerId)&&
-      (row.state==='COMPLETED'||(row.handoff_at&&['ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED'].includes(row.state)));
+    (row.state==='COMPLETED'||(row.handoff_at&&['ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED','CANCELLED'].includes(row.state)));
   }).map(row=>{
     const mineIsA=row.user_a===active().id;
     const offered=data.collection.find(item=>item.id===(mineIsA?row.item_a:row.item_b));
