@@ -239,6 +239,7 @@ async function canonicalRpc(name,args,intent){const uid=S.user?.id,key=canonical
 const S={
   user:null,profile:null,liquidity:null,membership:null,collection:[],wishlist:[],matches:[],
   requests:[],exchanges:[],notifications:[],messages:[],reviews:[],profiles:{},items:{},sets:{},
+  sharedHistoryUid:null,sharedHistory:{},sharedHistoryGeneration:0,
   reputation:{},caseOverdue:{},submittedPeerReviews:new Set(),
   exchangeCapabilities:{checked:true,releaseItem:true,contractVersion:2},
   browse:{page:0,q:'',theme:'',year:'',rows:[],busy:false,lastCount:0,category:'all'},
@@ -623,7 +624,8 @@ function showOnboarding(){
   const form=$('#bc-onboard',o),country=$('[name="country"]',form),city=$('[name="city"]',form);country.onchange=()=>{city.innerHTML=cityOptions(country.value);city.disabled=!country.value};form.onsubmit=async e=>{e.preventDefault();if(form.dataset.bcSaving==='1')return;form.dataset.bcSaving='1';const f=new FormData(form),needsAdultConfirmation=!p.adult_confirmed_at,btn=$('button',form),original=btn.textContent;if(needsAdultConfirmation&&f.get('adult_confirmation')!=='on'){form.dataset.bcSaving='0';return toast('Please confirm that you are at least 18 years old.');}btn.disabled=true;btn.textContent='Saving…';try{const {data:{user},error:userError}=await withTimeout(db.auth.getUser(),8000);if(userError||!user)throw userError||new Error('Your sign-in session expired. Please sign in again.');const patch={id:user.id,display_name:String(f.get('name')||'').trim(),country:String(f.get('country')||'').trim(),city:String(f.get('city')||'').trim(),updated_at:new Date().toISOString()};if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please choose your name, country and city.');const {error}=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}),12000);if(error)throw error;if(needsAdultConfirmation){const confirmation=await withTimeout(db.rpc('confirm_adult_status',{p_attestation:ADULT_ATTESTATION,p_version:ADULT_CONFIRMATION_VERSION}),12000);if(confirmation.error)throw confirmation.error;patch.adult_confirmed_at=confirmation.data||new Date().toISOString();patch.adult_confirmation_version=ADULT_CONFIRMATION_VERSION}S.profile={...(S.profile||{}),...patch};closeOverlay();await refreshCore();S.setTab='collection';navigate('browse');toast('Great — now add at least 3 LEGO sets you own.');track('onboarding_location_completed',patch)}catch(error){fail(error,'Could not save your profile. Please retry.');form.dataset.bcSaving='0';btn.disabled=false;btn.textContent=original}};
 }
 
-function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();uncertainThreadSends.clear();scrubThreadStorage();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
+function resetSharedHistory(uid=null){S.sharedHistoryGeneration++;S.sharedHistoryUid=uid;S.sharedHistory={};return S.sharedHistoryGeneration}
+function clearProtectedState(){stopThreadSync();collectorFocus=null;pendingMatchProposal=null;S.user=null;S.profile=null;S.collection=[];S.wishlist=[];S.matches=[];S.requests=[];S.exchanges=[];S.notifications=[];S.messages=[];S.reviews=[];S.liquidity=null;S.membership=null;resetSharedHistory();S.exchangeCapabilities={checked:true,releaseItem:true,contractVersion:2};S.profiles={};S.items={};S.sets={};threadCaches.direct.clear();threadCaches.case.clear();threadDrafts.clear();uncertainThreadSends.clear();scrubThreadStorage();pendingSends.clear();messageIndexByUid.clear();messageIndexUid=null;}
 async function refreshMembership(){const epoch=authEpoch;const result=await settledTimeout(db.rpc('bc_membership_status'));if(epoch===authEpoch&&!logoutLocked&&!result.error)S.membership=Array.isArray(result.data)?result.data[0]:result.data;return result}
 const settled=promise=>Promise.resolve(promise).catch(error=>({data:null,error}));
 const settledTimeout=(promise,ms=10000)=>settled(withTimeout(promise,ms));
@@ -666,6 +668,14 @@ async function refreshCore(){
   S.collection.forEach(i=>{S.items[i.id]=i;if(i.lego_sets)S.sets[i.set_number]=i.lego_sets});S.wishlist.forEach(i=>{if(i.lego_sets)S.sets[i.set_number]=i.lego_sets});
   window.bcWebPush?.consider(S.user,{meaningful:S.collection.length+S.wishlist.length>0});
   const people=new Set();S.exchanges.forEach(e=>{people.add(e.user_a);people.add(e.user_b)});S.matches.forEach(m=>people.add(m.match_user));S.messages.forEach(m=>{people.add(m.sender_id);people.add(m.recipient_id)});people.delete(uid);if(people.size){const result=await settledTimeout(db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',[...people]));if(generation!==refreshGeneration||S.user?.id!==uid)return;if(result.error)S.refreshWarning=S.refreshWarning||result.error.message||'Collector details could not refresh.';else(result.data||[]).forEach(p=>S.profiles[p.id]=p)}
+  const historyGeneration=resetSharedHistory(uid),historyPeers=routeName()==='matches'&&document.querySelector('.bc-match-list [data-shared-history-peer]')
+    ?[...new Set(S.matches.map(match=>match.match_user))]
+    :routeName()==='messages'&&pendingMatchProposal?.uid===uid&&collectorFocus?.uid===uid&&$('#bc-collector-proposal [data-shared-history-peer]')
+      ?[collectorFocus.peerId]:[];
+  for(let offset=0;offset<historyPeers.length;offset+=50){
+    if(generation!==refreshGeneration||S.user?.id!==uid)return;
+    await loadSharedMatchHistory(historyPeers.slice(offset,offset+50),uid,S.renderToken,historyGeneration);
+  }
 }
 async function refreshRoute(){const epoch=authEpoch;if(logoutLocked||explicitLogout)return;await refreshCore();if(epoch!==authEpoch||logoutLocked)return;shell();await renderRoute()}
 
@@ -783,8 +793,32 @@ function showUnreadProposalNotice(){
 }
 
 function notificationExchangeId(notification){return notification?.exchange_case_id||notification?.metadata?.exchange_case_id||notification?.metadata?.exchange_id}
+function reciprocalMatchNotificationCopy(notification){
+  const metadata=notification?.metadata,hasCount=metadata&&Object.prototype.hasOwnProperty.call(metadata,'shared_exchange_count');
+  const count=hasCount?Number(metadata.shared_exchange_count):NaN;
+  if(Number.isInteger(count)&&count>0)return {
+    label:'Repeat local match',
+    title:notification.title||'A past exchange is a match again',
+    body:notification.body||`You and this collector have exchanged before (${count} shared ${count===1?'exchange':'exchanges'}).`
+  };
+  if(Number.isInteger(count)&&count===0)return {
+    label:'New local match',
+    title:notification.title||'You have a new local BrickCircle match',
+    body:notification.body||'A nearby collector has a reciprocal LEGO match with you.'
+  };
+  return {
+    label:'Local match',
+    title:'Local match',
+    body:'A nearby collector has a reciprocal LEGO match with you.'
+  };
+}
+function notificationDisplayCopy(notification){
+  return isReciprocalMatchNotification(notification)
+    ?reciprocalMatchNotificationCopy(notification)
+    :{title:notification.title||String(notification.kind||'Update').replace(/_/g,' '),body:notification.body||''};
+}
 function lifecyclePresentation(notification){
-  if(notification.kind==='reciprocal_match')return {label:'New local match',fallback:'A nearby collector has a reciprocal LEGO match with you.',action:'View matches',route:'matches'};
+  if(notification.kind==='reciprocal_match'){const copy=reciprocalMatchNotificationCopy(notification);return {label:copy.label,fallback:copy.body,action:'View matches',route:'matches'}}
   if(notification.kind==='exchange_accepted')return {label:'Exchange accepted',fallback:'Your BrickCircle exchange has been accepted.',action:'Open conversation',route:'messages',thread:`case:${notificationExchangeId(notification)}`};
   if(notification.kind==='exchange_declined')return {label:'Proposal declined',fallback:'Your BrickCircle proposal was declined.',action:'Open exchanges',route:'exchanges'};
   if(notification.kind==='exchange_cancelled')return {label:'Proposal cancelled',fallback:'Your BrickCircle exchange was cancelled.',action:'Open exchanges',route:'exchanges'};
@@ -808,7 +842,8 @@ function showLifecycleNotification(notification){
   if(!isCurrentNotificationRecipient(notification)||notification.read_at||!LIFECYCLE_NOTIFICATION_KINDS.has(notification.kind)||lifecycleNoticeSeen(notification)||notificationPresentationActive())return false;
   try{sessionStorage.setItem(`bc_lifecycle_notice_seen:${S.user.id}:${notification.id}`,'1')}catch(_){}
   const view=lifecyclePresentation(notification),root=document.createElement('section');root.id='bc-exchange-lifecycle-notice';root.className='bc-lifecycle-notice';root.setAttribute('role','status');
-  root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(notification.title||view.label)}</h2><p>${esc(notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
+  const copy=notification.kind==='reciprocal_match'?reciprocalMatchNotificationCopy(notification):null;
+  root.innerHTML=`<span>${esc(view.label)}</span><h2>${esc(copy?.title||notification.title||view.label)}</h2><p>${esc(copy?.body||notification.body||view.fallback)}</p><div><button class="bc-btn" type="button" data-life-later>Not now</button><button class="bc-btn primary" type="button" data-life-open>${esc(view.action)}</button></div>`;
   document.body.appendChild(root);$('[data-life-later]',root).onclick=()=>root.remove();$('[data-life-open]',root).onclick=async()=>{await markNotificationRead(notification);root.remove();if(view.thread)navigate('messages',view.thread);else if(view.exchangeId)navigate('messages',`case:${view.exchangeId}`);else if(notificationExchangeId(notification))navigate('messages',`case:${notificationExchangeId(notification)}`);else navigate(view.route)};return true;
 }
 function showUnreadLifecycleNotice(){const notification=S.notifications.find(item=>!item.read_at&&isCurrentNotificationRecipient(item)&&LIFECYCLE_NOTIFICATION_KINDS.has(item.kind));return showLifecycleNotification(notification)}
@@ -822,7 +857,9 @@ function showLoginMatchNotice(){
   if(!S.user||!S.matches.length||loginMatchNoticeSeen()||window.BC_PROPOSAL_NOTICE_ACTIVE||document.getElementById('bc-exchange-lifecycle-notice')||$('.bc-match-login-notice'))return false;
   const match=S.matches[0],profile=S.profiles[match.match_user]||{},notice=document.createElement('section');
   try{sessionStorage.setItem(`bc_login_match_notice_seen:${S.user.id}`,'1')}catch(_){}
-  notice.className='bc-match-login-notice';notice.setAttribute('role','status');notice.innerHTML=`<h2>New local match found</h2><p><b>${esc(profile.display_name||'A nearby member')}</b> has <b>${esc(match.requested_name||match.requested_set)}</b> available and wants <b>${esc(match.offered_name||match.offered_set)}</b>.${S.matches.length>1?` You have ${S.matches.length} local reciprocal matches in total.`:''}</p><div class="bc-match-login-actions"><button class="bc-btn primary" type="button" data-view-match>View matches</button><button class="bc-btn" type="button" data-dismiss-match>Not now</button></div>`;
+  const history=S.sharedHistoryUid===S.user.id?S.sharedHistory[match.match_user]:null;
+  const intro=history?.status==='ready'&&history.shared_count>0?'You have exchanged before.':'A local reciprocal match is available.';
+  notice.className='bc-match-login-notice';notice.setAttribute('role','status');notice.innerHTML=`<h2>Local match found</h2><p><b>${esc(profile.display_name||'A nearby member')}</b> has <b>${esc(match.requested_name||match.requested_set)}</b> available and wants <b>${esc(match.offered_name||match.offered_set)}</b>. ${intro}${S.matches.length>1?` You have ${S.matches.length} local reciprocal matches in total.`:''}</p><div class="bc-match-login-actions"><button class="bc-btn primary" type="button" data-view-match>View matches</button><button class="bc-btn" type="button" data-dismiss-match>Not now</button></div>`;
   document.body.appendChild(notice);$('[data-view-match]',notice).onclick=()=>{notice.remove();navigate('matches')};$('[data-dismiss-match]',notice).onclick=()=>notice.remove();return true;
 }
 
@@ -1440,18 +1477,107 @@ async function removeCollectionItem(id,name,button){
   }catch(error){const raw=String(error?.message||''),message=/foreign key constraint|exchanges_item_[ab]_fkey|exchanges_request_id_fkey/i.test(raw)?'This set is still linked to an exchange. Open Exchanges and resolve or cancel it before trying again.':(error?.message||'Could not remove this set. Please try again.');fail(new Error(message),message);if(button){button.disabled=false;button.textContent=original}}
 }
 
+function sharedHistoryStatus(peerId){return S.sharedHistoryUid===S.user?.id?S.sharedHistory[peerId]:null}
+function sharedExchangeStateLabel(state){return ({COMPLETED:'Completed',ACTIVE:'Exchange in progress',EARLY_RETURN:'Early return requested',RETURN_PLANNING:'Return meetup planned',RETURN_INSPECTION:'Return inspection',DISPUTED:'Exchange issue unresolved',CANCELLED:'Closed after confirmed handoff'})[state]||'Exchange in progress'}
+function sharedHistoryMarkup(peerId){
+  const history=sharedHistoryStatus(peerId),count=Number(history?.shared_count||0);
+  if(!history||history.status==='loading')return `<aside class="bc-notice" data-shared-history-peer="${attr(peerId)}" role="status">Checking shared exchange history…</aside>`;
+  if(history.status==='unavailable')return `<aside class="bc-notice warn" data-shared-history-peer="${attr(peerId)}" role="status"><b>Shared exchange history unavailable.</b><br>We could not verify whether you have exchanged before. This match is not labelled as new.<br><button class="bc-btn" type="button" data-shared-history-retry="${attr(peerId)}">Retry history check</button></aside>`;
+  if(count===0)return `<aside class="bc-notice" data-shared-history-peer="${attr(peerId)}" role="status"><b>New reciprocal match</b><br>No previous completed exchange or confirmed handoff is recorded with this collector.</aside>`;
+  if(!history.rows?.length)return `<aside class="bc-notice warn" data-shared-history-peer="${attr(peerId)}" role="status"><b>You have exchanged before.</b><br>${count} shared exchange${count===1?'':'s'} recorded, but the case details are temporarily unavailable.</aside>`;
+  const latest=history.latest_at?` Latest shared exchange: ${esc(fmtDate(history.latest_at))}.`:' The latest exchange date was not recorded.';
+  const rows=history.rows.map(row=>`<li><b>${esc(row.offered_name||row.offered_set)} ⇄ ${esc(row.requested_name||row.requested_set)}</b><br><span>${esc(row.occurred_at?fmtDate(row.occurred_at):'Date not recorded')} · ${esc(sharedExchangeStateLabel(row.state))}</span><br><button class="bc-btn" type="button" data-shared-history-case="${attr(row.case_id)}">View exchange details</button></li>`).join('');
+  const older=history.has_more?`<button class="bc-btn" type="button" data-shared-history-more="${attr(peerId)}"${history.pageLoading?' disabled':''}>${history.pageLoading?'Loading…':'View older shared exchanges'}</button>`:'';
+  const pageError=history.pageError?`<p class="bc-notice warn" role="status">Older shared exchange details could not be loaded. <button class="bc-btn" type="button" data-shared-history-more="${attr(peerId)}">Retry</button></p>`:'';
+  return `<aside class="bc-notice warn" data-shared-history-peer="${attr(peerId)}" role="status"><b>You’ve exchanged before · ${count} shared exchange${count===1?'':'s'}.</b><br>${latest}<details><summary>View dated shared history</summary><ol>${rows}</ol>${pageError}${older}</details></aside>`;
+}
+function bindSharedHistoryActions(root=app()){
+  $$('[data-shared-history-retry]',root).forEach(button=>button.onclick=()=>loadSharedMatchHistory([button.dataset.sharedHistoryRetry],S.user?.id,S.renderToken));
+  $$('[data-shared-history-more]',root).forEach(button=>button.onclick=()=>loadMoreSharedHistory(button.dataset.sharedHistoryMore,button));
+  $$('[data-shared-history-case]',root).forEach(button=>button.onclick=()=>navigate('exchange',button.dataset.sharedHistoryCase));
+}
+function bindMatchCardActions(root=app()){
+  $$('[data-propose]',root).forEach(button=>button.onclick=()=>openMatchInMessages(Number(button.dataset.propose)));
+  $$('[data-message-person]',root).forEach(button=>button.onclick=()=>navigate('messages',`direct:${button.dataset.messagePerson}`));
+  bindSharedHistoryActions(root);bindCommon(root);wireImages(root);hydrateMatchPhotos(root);
+}
+function updateSharedHistoryCard(peerId,root=document){
+  const selector=`[data-shared-history-peer="${CSS.escape(peerId)}"]`;
+  const containers=[...(root.matches?.(selector)?[root]:[]),...root.querySelectorAll(selector)];
+  containers.forEach(container=>{
+    const wasOpen=$('details',container)?.open;
+    const template=document.createElement('template');
+    template.innerHTML=sharedHistoryMarkup(peerId);
+    const replacement=template.content.firstElementChild;
+    container.replaceWith(replacement);
+    if(wasOpen&&$('details',replacement))$('details',replacement).open=true;
+  });
+  bindSharedHistoryActions(root);
+}
+async function loadSharedMatchHistory(peerIds,uid,token,historyGeneration=S.sharedHistoryGeneration){
+  if(!peerIds.length||!uid)return;
+  const stillCurrent=()=>S.user?.id===uid&&S.sharedHistoryUid===uid&&historyGeneration===S.sharedHistoryGeneration&&token===S.renderToken&&!logoutLocked;
+  peerIds.forEach(peerId=>{const previous=S.sharedHistory[peerId];S.sharedHistory[peerId]={...(previous||{}),status:'loading',requestToken:token,rows:previous?.rows||[],shared_count:previous?.shared_count||0}});
+  peerIds.forEach(peerId=>updateSharedHistoryCard(peerId));
+  const result=await settledTimeout(db.rpc('shared_exchange_history',{p_peer_ids:peerIds,p_limit:3}),12000);
+  if(!stillCurrent())return;
+  const responseRows=result.data;
+  if(result.error||!Array.isArray(responseRows)){
+    peerIds.forEach(peerId=>{S.sharedHistory[peerId]={status:'unavailable',rows:[],shared_count:0}});
+  }else{
+    const byPeer=new Map(responseRows.filter(row=>peerIds.includes(row.peer_id)).map(row=>[row.peer_id,row]));
+    peerIds.forEach(peerId=>{
+      const row=byPeer.get(peerId),count=Number(row?.shared_count),recent=row?.recent;
+      if(!row||!Number.isSafeInteger(count)||count<0||!Array.isArray(recent)){
+        S.sharedHistory[peerId]={status:'unavailable',rows:[],shared_count:0};
+        return;
+      }
+      S.sharedHistory[peerId]={status:'ready',shared_count:count,latest_at:row.latest_at||null,rows:recent,has_more:row.has_more===true,pageLoading:false,pageError:false};
+    });
+  }
+  peerIds.forEach(peerId=>updateSharedHistoryCard(peerId));
+}
+async function loadMoreSharedHistory(peerId,button){
+  const uid=S.user?.id,token=S.renderToken,historyGeneration=S.sharedHistoryGeneration,history=sharedHistoryStatus(peerId);
+  if(!uid||!history||history.status!=='ready'||history.pageLoading)return;
+  const cursor=history.rows.at(-1);
+  if(!cursor?.sort_at||!cursor?.case_id){history.pageError=true;updateSharedHistoryCard(peerId);return}
+  history.pageLoading=true;history.pageError=false;if(button)button.disabled=true;updateSharedHistoryCard(peerId);
+  const result=await settledTimeout(db.rpc('shared_exchange_history_page',{
+    p_peer_id:peerId,p_before_sort_at:cursor.sort_at,p_before_case_id:cursor.case_id,p_limit:20
+  }),12000);
+  if(S.user?.id!==uid||S.sharedHistoryUid!==uid||historyGeneration!==S.sharedHistoryGeneration||token!==S.renderToken||logoutLocked)return;
+  history.pageLoading=false;
+  if(result.error||!Array.isArray(result.data)){
+    history.pageError=true;
+  }else if(!result.data.length&&history.rows.length<history.shared_count){
+    history.pageError=true;
+  }else{
+    const existing=new Set(history.rows.map(row=>row.case_id));
+    history.rows.push(...result.data.filter(row=>row?.case_id&&!existing.has(row.case_id)));
+    history.has_more=result.data.at(-1)?.has_more===true;
+  }
+  updateSharedHistoryCard(peerId);
+}
 async function renderMatches(token){
   const epoch=logoutEpoch,current=()=>epoch===logoutEpoch&&token===S.renderToken&&!logoutLocked;
   if(!S.user){showAuth();return navigate('home')}const rd=readiness();if(rd.score<40&&!S.matches.length){page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div></div>${empty('⇄','Finish your match setup','Add owned sets, mark exchangeable copies and build a wishlist. BrickCircle can only create a reciprocal match when both sides line up.','Continue setup','sets')}`);return}
-  const ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);if(!current())return;(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
+  const uid=S.user.id,ids=[...new Set(S.matches.map(m=>m.match_user))];if(ids.length){const {data}=await db.from('public_profiles').select('id,display_name,country,city,bio,avatar_url,rating,review_count,identity_verified,member_since').in('id',ids);if(!current())return;(data||[]).forEach(p=>S.profiles[p.id]=p);await loadPeerReputations(ids)}
   if(!current())return;
-  page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div>${S.matches.length?trustCareNudge('match','A great match is more enjoyable when both collectors review the set photos, known gaps and instructions before meeting.'):''}<div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);$$('[data-propose]',app()).forEach(b=>b.onclick=()=>openMatchInMessages(Number(b.dataset.propose)));$$('[data-message-person]',app()).forEach(b=>b.onclick=()=>navigate('messages',`direct:${b.dataset.messagePerson}`));bindCommon(app());wireImages(app());hydrateMatchPhotos(app());
+  resetSharedHistory(uid);
+  ids.forEach(peerId=>S.sharedHistory[peerId]={status:'loading',shared_count:0,rows:[]});
+  page(`<div class="bc-page-head"><div><h1>Great matches</h1><p>Collectors who want something you own — and own something you want.</p></div><div class="bc-head-actions">${pill(`${S.matches.length} reciprocal`,S.matches.length?'green':'')}</div></div>${S.matches.length?trustCareNudge('match','A great match is more enjoyable when both collectors review the set photos, known gaps and instructions before meeting.'):''}<div class="bc-match-list">${S.matches.length?S.matches.map((m,i)=>matchCard(m,i)).join(''):empty('🔎','No reciprocal match yet','Your wishlist and exchangeable sets are ready. Add a few more wanted sets or invite another collector in your city to improve local liquidity.','Explore more sets','browse')}</div>`);
+  bindMatchCardActions(app());
+  for(let offset=0;offset<ids.length;offset+=50){
+    if(!current())return;
+    await loadSharedMatchHistory(ids.slice(offset,offset+50),uid,token,S.sharedHistoryGeneration);
+  }
 }
-function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium" data-requested-item="${attr(m.requested_item)}"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div><div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small><div class="bc-owner-proof"><div class="bc-owner-proof-preview" data-owner-proof-preview>Loading owner photo</div><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div><details class="bc-match-parts"><summary>Owner's parts declaration</summary><p class="bc-small" data-match-parts-status>Loading owner declaration</p></details>${ownerGalleryMarkup(m.requested_item)}</div></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
+function matchCard(m,i){const p=S.profiles[m.match_user]||{},offerImage=imageSetNumber(m.offered_set),requestImage=imageSetNumber(m.requested_set);return `<article class="bc-card bc-match bc-match-premium" data-requested-item="${attr(m.requested_item)}"><div class="bc-match-top"><div class="bc-match-person"><div class="bc-mini-avatar">${avatar(p)}</div><div><b>${esc(p.display_name||'Collector')}</b><div class="bc-small">${esc(p.city||S.profile?.city||'')}</div>${reputationTrustContext(m.match_user)}</div></div>${pill('Reciprocal match','green')}</div>${sharedHistoryMarkup(m.match_user)}<div class="bc-match-visuals"><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(offerImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.offered_set)}"><div hidden>🧱</div></div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><div class="bc-match-exchange-mark" aria-hidden="true">⇄</div><div class="bc-match-set"><div class="bc-match-set-image"><img src="https://images.brickset.com/sets/images/${attr(requestImage)}.jpg" alt="" loading="lazy" data-set-image="${attr(m.requested_set)}"><div hidden>🧱</div></div><span>You build next</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small><div class="bc-owner-proof"><div class="bc-owner-proof-preview" data-owner-proof-preview>Loading owner photo</div><div class="bc-small">Owner photos · inspect the physical set in person before exchange</div><details class="bc-match-parts"><summary>Owner's parts declaration</summary><p class="bc-small" data-match-parts-status>Loading owner declaration</p></details>${ownerGalleryMarkup(m.requested_item)}</div></div></div><div class="bc-match-proof"><b>Two collections. One great exchange.</b><span>Both of you independently want the other collector’s available set.</span></div><div class="bc-match-actions"><button class="bc-btn primary" data-propose="${i}">View & propose</button><button class="bc-btn" data-message-person="${attr(m.match_user)}">Message ${esc((p.display_name||'collector').split(' ')[0])}</button></div></article>`}
 async function showProposal(i){
   const epoch=logoutEpoch,uid=S.user?.id,m=S.matches[i],current=()=>epoch===logoutEpoch&&!logoutLocked&&S.user?.id===uid;
   if(!m||!current())return;await loadPeerReputation(m.match_user);if(!current())return;
-  const p=S.profiles[m.match_user]||{};const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill green">Reciprocal match</span><h2 style="margin-top:8px">Propose an exchange with ${esc(p.display_name||'this collector')}</h2><p class="bc-muted">Meet locally. Inspect both sets. Exchange only when you are both happy.</p></div><button class="bc-close" data-close>×</button></div><div class="bc-proposal-steps" aria-label="Proposal steps"><span class="done"><b>1</b>Your set</span><span class="done"><b>2</b>Their set</span><span class="current"><b>3</b>Terms</span></div><div class="bc-proposal-pair"><div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><i>⇄</i><div><span>You request</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div>${reputationTrustContext(m.match_user)}<form class="bc-form" id="bc-proposal"><div class="bc-field"><label>How long would you like to exchange?</label><select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></div><div class="bc-field"><label>Optional message</label><textarea class="bc-textarea" name="message">Hi! We have a reciprocal BrickCircle match. Would you like to meet locally, inspect both sets and exchange them temporarily?</textarea></div><div class="bc-notice warn"><b>Meet. Inspect. Exchange.</b><br>The proposal creates one shared case for meetup, inspection, handoff, return and messages.</div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Not now</button><button type="submit" class="bc-btn primary">Send proposal</button></div></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);$('#bc-proposal',o).onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),btn=$('button[type="submit"]',e.currentTarget),days=Number(f.get('days')),message=String(f.get('message')||''),intent={offered_item_id:m.offered_item,requested_item_id:m.requested_item,duration_days:days,message};if(btn.disabled||!current())return;btn.disabled=true;btn.textContent='Sending…';const {data,error}=await canonicalRpc('create_exchange_case',{p_offered_item_id:m.offered_item,p_requested_item_id:m.requested_item,p_duration_days:days,p_message:message},intent);if(!current())return;if(error||data?.ok===false){fail(error||new Error('Could not send the proposal.'));btn.disabled=false;btn.textContent='Send proposal';return}closeOverlay();await refreshCore();if(!current())return;navigate('exchange',data.case?.id);toast(data?.idempotent?'Your existing proposal is open.':'Exchange proposal sent.');track('exchange_proposal_sent',{match_user:m.match_user,duration_days:days})}
+  const p=S.profiles[m.match_user]||{};const o=modal(`<div class="bc-modal-head"><div><span class="bc-pill green">Reciprocal match</span><h2 style="margin-top:8px">Propose an exchange with ${esc(p.display_name||'this collector')}</h2><p class="bc-muted">Meet locally. Inspect both sets. Exchange only when you are both happy.</p></div><button class="bc-close" data-close>×</button></div><div class="bc-proposal-steps" aria-label="Proposal steps"><span class="done"><b>1</b>Your set</span><span class="done"><b>2</b>Their set</span><span class="current"><b>3</b>Terms</span></div><div class="bc-proposal-pair"><div><span>You offer</span><strong>${esc(m.offered_name)}</strong><small>Set ${esc(m.offered_set)}</small></div><i>⇄</i><div><span>You request</span><strong>${esc(m.requested_name)}</strong><small>Set ${esc(m.requested_set)}</small></div></div>${sharedHistoryMarkup(m.match_user)}${reputationTrustContext(m.match_user)}<form class="bc-form" id="bc-proposal"><div class="bc-field"><label>How long would you like to exchange?</label><select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></div><div class="bc-field"><label>Optional message</label><textarea class="bc-textarea" name="message">Hi! We have a reciprocal BrickCircle match. Would you like to meet locally, inspect both sets and exchange them temporarily?</textarea></div><div class="bc-notice warn"><b>Meet. Inspect. Exchange.</b><br>The proposal creates one shared case for meetup, inspection, handoff, return and messages.</div><div class="bc-form-actions"><button type="button" class="bc-btn" data-close>Not now</button><button type="submit" class="bc-btn primary">Send proposal</button></div></form>`);$$('[data-close]',o).forEach(b=>b.onclick=closeOverlay);bindSharedHistoryActions(o);$('#bc-proposal',o).onsubmit=async e=>{e.preventDefault();const f=new FormData(e.currentTarget),btn=$('button[type="submit"]',e.currentTarget),days=Number(f.get('days')),message=String(f.get('message')||''),intent={offered_item_id:m.offered_item,requested_item_id:m.requested_item,duration_days:days,message};if(btn.disabled||!current())return;btn.disabled=true;btn.textContent='Sending…';const {data,error}=await canonicalRpc('create_exchange_case',{p_offered_item_id:m.offered_item,p_requested_item_id:m.requested_item,p_duration_days:days,p_message:message},intent);if(!current())return;if(error||data?.ok===false){fail(error||new Error('Could not send the proposal.'));btn.disabled=false;btn.textContent='Send proposal';return}closeOverlay();await refreshCore();if(!current())return;navigate('exchange',data.case?.id);toast(data?.idempotent?'Your existing proposal is open.':'Exchange proposal sent.');track('exchange_proposal_sent',{match_user:m.match_user,duration_days:days})}
 }
 
 async function renderExchanges(token,legacy='exchanges'){
@@ -1802,7 +1928,7 @@ function showNotifications(){
   if(!S.user)return showAuth();
   clearNotificationPresentation();
   const unread=S.notifications.filter(notification=>!notification.read_at).length;
-  const o=drawer(`<div class="bc-drawer-head"><div><h2>Notifications</h2><div class="bc-small">${unread?`${unread} unread`:'You’re caught up'}</div></div><button class="bc-close" data-close>×</button></div>${betaPWAEnabled()?'<button class="bc-btn" data-enable-push style="margin-bottom:10px">Enable system notifications</button>':''}${unread?'<button class="bc-btn" data-read-all style="margin:0 0 10px 8px">Mark all read</button>':''}<div>${S.notifications.length?S.notifications.map(notification=>`<button class="bc-notification ${notification.read_at?'':'unread'}" type="button" data-note="${attr(notification.id)}" style="display:block;width:100%;text-align:left;background:${notification.read_at?'#fff':'#fff9df'}"><b>${esc(notification.title||String(notification.kind||'Update').replace(/_/g,' '))}</b><div>${esc(notification.body||'')}</div><small>${fmtDateTime(notification.created_at)}${isProposalNotification(notification)?' · View proposal':isReciprocalMatchNotification(notification)?' · View match':''}</small></button>`).join(''):'<div class="bc-empty"><div class="bc-empty-icon">🔔</div><h3>No notifications yet</h3></div>'}</div>`);
+  const o=drawer(`<div class="bc-drawer-head"><div><h2>Notifications</h2><div class="bc-small">${unread?`${unread} unread`:'You’re caught up'}</div></div><button class="bc-close" data-close>×</button></div>${betaPWAEnabled()?'<button class="bc-btn" data-enable-push style="margin-bottom:10px">Enable system notifications</button>':''}${unread?'<button class="bc-btn" data-read-all style="margin:0 0 10px 8px">Mark all read</button>':''}<div>${S.notifications.length?S.notifications.map(notification=>{const copy=notificationDisplayCopy(notification);return `<button class="bc-notification ${notification.read_at?'':'unread'}" type="button" data-note="${attr(notification.id)}" style="display:block;width:100%;text-align:left;background:${notification.read_at?'#fff':'#fff9df'}"><b>${esc(copy.title)}</b><div>${esc(copy.body)}</div><small>${fmtDateTime(notification.created_at)}${isProposalNotification(notification)?' · View proposal':isReciprocalMatchNotification(notification)?` · ${esc(copy.label)}`:''}</small></button>`}).join(''):'<div class="bc-empty"><div class="bc-empty-icon">🔔</div><h3>No notifications yet</h3></div>'}</div>`);
   $('[data-close]',o).onclick=()=>o.closest('.bc-drawer-overlay').remove();
   $('[data-enable-push]',o)?.addEventListener('click',()=>{o.closest('.bc-drawer-overlay').remove();window.bcWebPush?.open(S.user)});
   $('[data-read-all]',o)?.addEventListener('click',async()=>{const {error}=await db.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',S.user.id).is('read_at',null);if(error)return fail(error);await refreshCore();shell();await renderRoute();showNotifications()});
@@ -2834,8 +2960,13 @@ function renderInlineProposal(peerId){
     bindMatchOptions();
     return;
   }
-  host.innerHTML=`${optionsMarkup}${pending?`<dialog class="bc-collector-sheet" aria-label="Propose an exchange"><div class="bc-collector-sheet-head"><h2>Propose an exchange</h2><button class="bc-btn" type="button" data-close-proposal aria-label="Close exchange proposal">×</button></div><form class="bc-card bc-pad bc-form" id="bc-inline-proposal" data-proposal-uid="${attr(pending.uid)}" data-proposal-peer="${attr(pending.peerId)}" data-proposal-offered="${attr(pending.offered)}" data-proposal-requested="${attr(pending.requested)}"><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p><label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form></dialog>`:''}`;
-  bindMatchOptions();
+  host.innerHTML=`${optionsMarkup}${pending?`<dialog class="bc-collector-sheet" aria-label="Propose an exchange"><div class="bc-collector-sheet-head"><h2>Propose an exchange</h2><button class="bc-btn" type="button" data-close-proposal aria-label="Close exchange proposal">×</button></div><form class="bc-card bc-pad bc-form" id="bc-inline-proposal" data-proposal-uid="${attr(pending.uid)}" data-proposal-peer="${attr(pending.peerId)}" data-proposal-offered="${attr(pending.offered)}" data-proposal-requested="${attr(pending.requested)}"><p>${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.offered_name||'Your set')} ⇄ ${esc(matches.find(m=>m.offered_item===pending.offered&&m.requested_item===pending.requested)?.requested_name||'Their set')}</p>${sharedHistoryMarkup(peerId)}<label>Duration <select class="bc-select" name="days"><option value="30">30 days</option><option value="60" selected>60 days</option><option value="90">90 days</option></select></label><label>Message <textarea class="bc-textarea" name="message" maxlength="4000">Would you like to meet locally and inspect our sets?</textarea></label><button class="bc-btn primary" type="submit">Send proposal</button></form></dialog>`:''}`;
+  bindMatchOptions();bindSharedHistoryActions(host);
+  const history=sharedHistoryStatus(peerId);
+  if((!history||history.status==='loading'&&history.requestToken!==S.renderToken)&&S.user?.id===collectorFocus?.uid){
+    const historyGeneration=S.sharedHistoryUid===S.user.id?S.sharedHistoryGeneration:resetSharedHistory(S.user.id);
+    loadSharedMatchHistory([peerId],S.user.id,S.renderToken,historyGeneration);
+  }
   const dialog=$('dialog',host),form=$('#bc-inline-proposal',host);
   if(dialog){
     const close=$('[data-close-proposal]',dialog);

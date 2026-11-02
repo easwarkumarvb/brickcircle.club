@@ -3,6 +3,23 @@ export type PushNotification={id:string;user_id:string;kind:string;title:string|
 export type PushSubscription={id:string;endpoint:string;p256dh:string;auth:string};
 export type PushPayload={type:'reciprocal_match'|'exchange_proposal';title:string;body:string;url:string;entity_id:string};
 
+function reciprocalMatchCopy(notification:PushNotification){
+  const metadata=notification.metadata,hasCount=metadata&&Object.prototype.hasOwnProperty.call(metadata,'shared_exchange_count');
+  const count=hasCount?Number(metadata.shared_exchange_count):NaN;
+  if(Number.isInteger(count)&&count>0)return {
+    title:notification.title||'A past exchange is a match again',
+    body:notification.body||`You and a collector have exchanged before (${count} shared ${count===1?'exchange':'exchanges'}).`
+  };
+  if(Number.isInteger(count)&&count===0)return {
+    title:notification.title||'You have a new local BrickCircle match',
+    body:notification.body||'A collector nearby wants one of your sets and has one you want.'
+  };
+  return {
+    title:'Local match',
+    body:'A nearby collector has a reciprocal LEGO match with you.'
+  };
+}
+
 export function payloadFor(notification:PushNotification):PushPayload|null{
   if(notification.kind==='request_received'&&notification.entity_type==='exchange_request')return {
     type:'exchange_proposal',
@@ -11,13 +28,10 @@ export function payloadFor(notification:PushNotification):PushPayload|null{
     url:`/v2.html#exchanges/${notification.entity_id}`,
     entity_id:String(notification.entity_id||'')
   };
-  if(notification.kind==='reciprocal_match'&&notification.entity_type==='reciprocal_match')return {
-    type:'reciprocal_match',
-    title:'You have a new local BrickCircle match',
-    body:String(notification.body||'A collector nearby wants one of your sets and has one you want.').slice(0,240),
-    url:'/v2.html#matches',
-    entity_id:String(notification.entity_id||'')
-  };
+  if(notification.kind==='reciprocal_match'&&notification.entity_type==='reciprocal_match'){
+    const copy=reciprocalMatchCopy(notification);
+    return {type:'reciprocal_match',title:String(copy.title).slice(0,180),body:String(copy.body).slice(0,240),url:'/v2.html#matches',entity_id:String(notification.entity_id||'')};
+  }
   return null;
 }
 

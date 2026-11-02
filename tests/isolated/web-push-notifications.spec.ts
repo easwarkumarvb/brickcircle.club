@@ -18,7 +18,7 @@ test('durable reciprocal notification badge still opens Matches and marks the ro
   await page.evaluate(()=>(window as any).__bcIsolated.emitNotification({id:'match-note-1',user_id:'00000000-0000-4000-8000-000000000007',kind:'reciprocal_match',title:'You have a new local BrickCircle match',body:'A nearby collector has a reciprocal LEGO match with you.',actor_user_id:'00000000-0000-4000-8000-000000000099',entity_type:'reciprocal_match',entity_id:'match-event-1',metadata:{route:'#matches'},read_at:null,created_at:'2026-09-07T09:00:00.000Z'}));
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveText('1');
   await page.locator('[data-open="notifications"]').click();
-  await expect(page.locator('[data-note="match-note-1"]')).toContainText('View match');
+  await expect(page.locator('[data-note="match-note-1"]')).toContainText('Local match');
   await page.locator('[data-note="match-note-1"]').dispatchEvent('click');
   await expect(page).toHaveURL(/#matches$/);
   await expect(page.locator('[data-open="notifications"] .bc-badge')).toHaveCount(0);

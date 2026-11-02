@@ -14,6 +14,18 @@ test('Brevo payload uses the verified BrickCircle sender, reply-to and determini
   expect(message.htmlContent).toContain(`/v2.html#exchanges/${notification.entity_id}`);
 });
 
+test('reciprocal email subject and both body fallbacks preserve repeat-aware producer copy',()=>{
+  const repeat={...notification,kind:'reciprocal_match',entity_type:'reciprocal_match',entity_id:'match-1',title:'A past exchange is a match again',body:'You and Ramya have exchanged before (2 shared exchanges). Latest shared exchange: May 3, 2026.'};
+  const message=buildBrevoMessage(repeat,'member@example.com');
+  expect(message.subject).toBe(repeat.title);
+  expect(message.textContent).toContain(repeat.body);
+  expect(message.htmlContent).toContain(repeat.body);
+  const fallback=buildBrevoMessage({...repeat,title:null,body:null},'member@example.com');
+  expect(fallback.subject).toBe('BrickCircle update');
+  expect(fallback.textContent).toContain('You have an important BrickCircle update.');
+  expect(fallback.htmlContent).toContain('You have an important BrickCircle update.');
+});
+
 test('only explicit high-value durable notification kinds are email-enabled',()=>{
   expect([...SUPPORTED_EMAIL_KINDS]).toEqual(expect.arrayContaining(['reciprocal_match','request_received','exchange_accepted','exchange_declined','exchange_cancelled','meetup_proposed','swap_started','return_meetup_proposed','return_overdue','return_dispute','return_completed']));
   expect(SUPPORTED_EMAIL_KINDS.has('review_received')).toBe(false);

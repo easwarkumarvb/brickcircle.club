@@ -2,10 +2,10 @@ name: Isolated person conversation PostgreSQL
 on:
   workflow_dispatch:
   push:
-    branches: ['dev/person-first-conversations']
-    paths: ['supabase/migrations/*person_first_conversation*', 'qa/person_conversation*', '.github/workflows/person-conversation-read-model.yml']
+    branches: ['dev/person-first-conversations','dev/repeat-match-history-20261102']
+    paths: ['supabase/migrations/*person_first_conversation*', 'supabase/migrations/*repeat_exchange_match_history*', 'supabase/tests/repeat_exchange_match_history.sql', 'qa/person_conversation*', '.github/workflows/person-conversation-read-model.yml']
   pull_request:
-    paths: ['supabase/migrations/*person_first_conversation*', 'qa/person_conversation*', '.github/workflows/person-conversation-read-model.yml']
+    paths: ['supabase/migrations/*person_first_conversation*', 'supabase/migrations/*repeat_exchange_match_history*', 'supabase/tests/repeat_exchange_match_history.sql', 'qa/person_conversation*', '.github/workflows/person-conversation-read-model.yml']
 permissions:
   contents: read
 jobs:
@@ -44,3 +44,7 @@ jobs:
         run: psql "$DSN" -v ON_ERROR_STOP=1 -f qa/person_conversation_projection_test.sql
       - name: Concurrent read and incoming message serialization
         run: python3 qa/person_conversation_race_test.py
+      - name: Apply repeat-match history and notification migration
+        run: psql "$DSN" -1 -v ON_ERROR_STOP=1 -f supabase/migrations/20261102080225_repeat_exchange_match_history.sql
+      - name: Participant-only repeat history and rediscovery notification regressions
+        run: psql "$DSN" -v ON_ERROR_STOP=1 -f supabase/tests/repeat_exchange_match_history.sql

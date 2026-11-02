@@ -115,7 +115,8 @@
       "dev/admin-signout-verification-20261101": false,
       "dev/admin-revoked-session-response-20261101": false,
       "dev/search-discoverability-20261102": false,
-      "dev/saturn-hero-framing-20261102": false
+      "dev/saturn-hero-framing-20261102": false,
+      "dev/repeat-match-history-20261102": false
     }
   }
 }
