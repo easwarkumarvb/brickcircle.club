@@ -10,6 +10,15 @@ test('proposal and reciprocal match payloads use safe canonical deep links',()=>
   expect(payloadFor({...proposal,kind:'exchange_accepted'})).toBeNull();
 });
 
+test('reciprocal push copy distinguishes known repeats, first discoveries and legacy unknown metadata',()=>{
+  const repeat=payloadFor({...proposal,kind:'reciprocal_match',entity_type:'reciprocal_match',entity_id:'match-repeat',title:'A past exchange is a match again',body:'You and Ramya have exchanged before (2 shared exchanges).',metadata:{shared_exchange_count:2}});
+  expect(repeat).toMatchObject({title:'A past exchange is a match again',body:'You and Ramya have exchanged before (2 shared exchanges).'});
+  const first=payloadFor({...proposal,kind:'reciprocal_match',entity_type:'reciprocal_match',title:'You have a new local BrickCircle match',body:'A nearby collector has a reciprocal match.',metadata:{shared_exchange_count:0}});
+  expect(first).toMatchObject({title:'You have a new local BrickCircle match',body:'A nearby collector has a reciprocal match.'});
+  const legacy=payloadFor({...proposal,kind:'reciprocal_match',entity_type:'reciprocal_match',title:'You have a new local BrickCircle match',metadata:{}});
+  expect(legacy).toMatchObject({title:'Local match',body:'A nearby collector has a reciprocal LEGO match with you.'});
+});
+
 test('delivery claim deduplicates repeated dispatch for the same device',async()=>{
   const claims=new Set<string>();let sends=0;
   const deps={claim:async(n:string,s:string)=>{const key=`${n}:${s}`;if(claims.has(key))return false;claims.add(key);return true},send:async()=>{sends++;return 201},success:async()=>{},gone:async()=>{},failure:async()=>{}};

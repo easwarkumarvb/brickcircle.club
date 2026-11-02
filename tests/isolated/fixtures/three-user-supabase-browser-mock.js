@@ -33,14 +33,21 @@ data.directMessages||=[];data.reviews||=[];data.photoAngles||=[];
 data.issues||=[];data.issueResponses||=[];data.supportRequests||=[];data.peerReviews||=[];
 let actorKey=localStorage.getItem(ACTOR)||'easwar';
 let signedOut=false;
+let repeatFixtureOptions={};
+try{repeatFixtureOptions=JSON.parse(sessionStorage.getItem('bc_repeat_history_test')||'{}')}catch(_){}
 const active=()=>actors[actorKey];
 const user=()=>({id:active().id,email:active().email,created_at:NOW,app_metadata:{provider:'email'},identities:[{provider:'email'}]});
 const persist=()=>localStorage.setItem(STORE,JSON.stringify(data));
 const state={
-  actors,sets,rpcCalls:[],rpcArgs:[],lostResponses:new Set(),get actor(){return actorKey},get data(){return data},
-  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;state.rpcArgs.length=0;state.lostResponses.clear();localStorage.setItem(ACTOR,actorKey);persist()},
+  actors,sets,rpcCalls:[],rpcArgs:[],lostResponses:new Set(),
+  failedRpcs:new Set(repeatFixtureOptions.fail?['shared_exchange_history']:[]),
+  rpcDelays:repeatFixtureOptions.delay?{shared_exchange_history:1200}:{},
+  get actor(){return actorKey},get data(){return data},
+  reset(){data=fresh();actorKey='easwar';state.rpcCalls.length=0;state.rpcArgs.length=0;state.lostResponses.clear();state.failedRpcs.clear();state.rpcDelays={};localStorage.setItem(ACTOR,actorKey);persist()},
   persist,
   loseNextResponse(name){state.lostResponses.add(name)},
+  failRpc(name){state.failedRpcs.add(name)},
+  delayRpc(name,ms){state.rpcDelays[name]=ms},
   switchActor(next){if(!actors[next])throw new Error(`Unknown actor ${next}`);actorKey=next;signedOut=false;localStorage.setItem(ACTOR,next)}
 };
 window.__bcThreeUser=state;
@@ -164,6 +171,20 @@ function findMatches(){
   }}
   return matches;
 }
+function sharedHistoryRows(peerId){
+  return data.exchanges.filter(row=>{
+    const participants=[row.user_a,row.user_b];
+    return participants.includes(active().id)&&participants.includes(peerId)&&
+      (row.state==='COMPLETED'||(row.handoff_at&&['ACTIVE','EARLY_RETURN','RETURN_PLANNING','RETURN_INSPECTION','DISPUTED'].includes(row.state)));
+  }).map(row=>{
+    const mineIsA=row.user_a===active().id;
+    const offered=data.collection.find(item=>item.id===(mineIsA?row.item_a:row.item_b));
+    const requested=data.collection.find(item=>item.id===(mineIsA?row.item_b:row.item_a));
+    const offeredSet=sets.find(item=>item.set_number===offered?.set_number);
+    const requestedSet=sets.find(item=>item.set_number===requested?.set_number);
+    return {case_id:row.id,state:row.state,occurred_at:row.state==='COMPLETED'?row.completed_at||null:row.handoff_at||null,sort_at:row.completed_at||row.handoff_at||row.created_at,offered_item:offered?.id,offered_set:offered?.set_number,offered_name:offeredSet?.name||offered?.set_number,requested_item:requested?.id,requested_set:requested?.set_number,requested_name:requestedSet?.name||requested?.set_number};
+  }).sort((a,b)=>String(b.sort_at).localeCompare(String(a.sort_at))||String(b.case_id).localeCompare(String(a.case_id)));
+}
 function restoreItemAvailability(exchange,side){
   const item=data.collection.find(row=>row.id===exchange[`item_${side}`]);
   if(!item)return;
@@ -181,9 +202,21 @@ const db={
   rpc:async(name,args)=>{
     state.rpcCalls.push(name);
     state.rpcArgs.push({name,args:{...args}});
+    if(state.rpcDelays[name])await new Promise(resolve=>setTimeout(resolve,state.rpcDelays[name]));
+    if(state.failedRpcs.has(name))return {data:null,error:{code:'XX000',message:`${name} unavailable`,status:503}};
     if(name==='bc_exchange_capabilities')return releaseCapabilityMissing?{data:null,error:{code:'PGRST202',message:'Function not found in schema cache'}}:{data:{contract_version:2,canonical_cases:true},error:null};
     if(name==='bc_search_lego_sets'){const query=String(args?.p_query||'').toLowerCase().replace(/-1$/,'');return {data:sets.filter(set=>`${set.name} ${set.set_number.replace(/-1$/,'')} ${set.theme}`.toLowerCase().includes(query)),error:null}}
     if(name==='find_matches')return {data:findMatches(),error:null};
+    if(name==='shared_exchange_history'){
+      const peerIds=[...new Set(args?.p_peer_ids||[])].filter(peerId=>peerId!==active().id);
+      const limit=Math.max(1,Math.min(10,Number(args?.p_limit)||3));
+      return {data:peerIds.map(peerId=>{const rows=sharedHistoryRows(peerId);return {peer_id:peerId,shared_count:rows.length,latest_at:rows[0]?.occurred_at||null,recent:rows.slice(0,limit),has_more:rows.length>limit}}),error:null};
+    }
+    if(name==='shared_exchange_history_page'){
+      const rows=sharedHistoryRows(args?.p_peer_id).filter(row=>!args?.p_before_sort_at||row.sort_at<args.p_before_sort_at||(row.sort_at===args.p_before_sort_at&&row.case_id<args.p_before_case_id));
+      const limit=Math.max(1,Math.min(50,Number(args?.p_limit)||20)),selected=rows.slice(0,limit+1);
+      return {data:selected.slice(0,limit).map((row,index)=>({...row,has_more:selected.length>limit})),error:null};
+    }
     if(name==='set_exchange_item_availability'){
       const item=data.collection.find(row=>row.id===args.p_item_id&&row.user_id===active().id);
       if(!item)return {data:null,error:{message:'Set not found'}};
