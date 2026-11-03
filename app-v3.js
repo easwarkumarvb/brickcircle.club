@@ -1585,6 +1585,55 @@ async function renderExchanges(token,legacy='exchanges'){
   const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();page(`<div class="bc-page-head"><div><h1>Exchanges</h1><p>Every exchange shows one clear stage and the next action to keep it moving.</p></div><div class="bc-head-actions">${active.length?pill(`${active.length} active`,'green'):''}${pending.length?pill(`${pending.length} needs attention`,'gold'):''}</div></div><div class="bc-tabs"><button class="bc-tab ${S.exchangeTab==='active'?'active':''}" data-extab="active">Active · ${active.length}</button><button class="bc-tab ${S.exchangeTab==='requests'?'active':''}" data-extab="requests">Needs action · ${pending.length}</button><button class="bc-tab ${S.exchangeTab==='completed'?'active':''}" data-extab="completed">Past · ${history.length}</button></div><div id="bc-exchange-body"></div>`);$$('[data-extab]').forEach(b=>b.onclick=()=>{S.exchangeTab=b.dataset.extab;renderExchangeBody()});renderExchangeBody();
 }
 function renderExchangeBody(){const host=$('#bc-exchange-body');if(!host)return;const active=activeExchanges(),pending=pendingRequests(),history=exchangeHistory();if(S.exchangeTab==='requests'){host.innerHTML=pending.length?`<div class="bc-exchange-list">${pending.map(requestCard).join('')}</div>`:empty('📨','No pending proposals','New proposals you send or receive will appear here.','Find matches','matches');$$('[data-request-action]',host).forEach(b=>b.onclick=()=>respondRequest(b.dataset.requestId,b.dataset.requestAction))}else if(S.exchangeTab==='completed'){host.innerHTML=history.length?`<div class="bc-exchange-list">${history.map(exchangeCard).join('')}</div>`:empty('✓','No exchange history yet','Completed and closed exchange cases remain visible here.','Find a match','matches')}else{host.innerHTML=active.length?`<div class="bc-exchange-list">${active.map(exchangeCard).join('')}</div>`:empty('🤝','No active exchanges','Accept a reciprocal proposal and your meetup → handoff → return journey will live here.','See matches','matches')}$$('[data-exchange]',host).forEach(b=>b.onclick=()=>navigate('exchange',b.dataset.exchange));bindCommon(host)}
+function proposalDeadlineSummaryText(e){
+  const deadline=Date.parse(e?.response_deadline),remaining=deadline-Date.now();
+  if(!Number.isFinite(deadline))return 'Deadline unavailable';
+  if(remaining<=0)return 'Response deadline passed';
+  const seconds=Math.max(1,Math.ceil(remaining/1000)),minutes=Math.floor(seconds/60),hours=Math.floor(minutes/60);
+  return hours?`${hours}h ${minutes%60}m remaining to respond`:`${minutes}m ${seconds%60}s remaining to respond`;
+}
+function canResendProposal(e){return e?.proposer_id===S.user?.id&&['PROPOSED','EXPIRED'].includes(e.state)&&Number.isFinite(Date.parse(e.response_deadline))&&Date.parse(e.response_deadline)<=Date.now()}
+function proposalDecisionNudge(e){
+  if(Number.isFinite(Date.parse(e.response_deadline))&&Date.parse(e.response_deadline)<=Date.now())return e.proposer_id===S.user?.id?'You can resend this invite with a fresh 48-hour response window.':'The proposer can resend this invite.';
+  return e.recipient_id===S.user?.id?'Your decision: accept, decline, or suggest another duration before the deadline.':'Waiting for the other collector to decide before the deadline.';
+}
+function proposalDeadlineMarkup(e){
+  if(!['PROPOSED','EXPIRED'].includes(e.state))return '';
+  const date=new Date(e.response_deadline),valid=Number.isFinite(Date.parse(e.response_deadline));
+  return `<div data-proposal-clock="${attr(e.id)}"><p>Respond by <time>${valid?esc(date.toLocaleString(undefined,{dateStyle:'full',timeStyle:'long'})):'Deadline unavailable'}</time></p><p data-proposal-remaining>${esc(proposalDeadlineSummaryText(e))}</p><p data-proposal-nudge>${esc(proposalDecisionNudge(e))}</p><button type="button" class="bc-btn primary" data-resend-proposal="${attr(e.id)}" ${canResendProposal(e)?'':'hidden'}>Resend invite</button></div>`;
+}
+// Update only deadline text and controls. Counter and message draft nodes stay intact.
+setInterval(()=>{
+  $$('[data-proposal-clock]').forEach(clock=>{
+    const e=S.exchanges.find(row=>row.id===clock.dataset.proposalClock);if(!e)return;
+    const elapsed=Number.isFinite(Date.parse(e.response_deadline))&&Date.parse(e.response_deadline)<=Date.now();
+    $('[data-proposal-remaining]',clock).textContent=proposalDeadlineSummaryText(e);
+    $('[data-proposal-nudge]',clock).textContent=proposalDecisionNudge(e);
+    $('[data-resend-proposal]',clock).hidden=!canResendProposal(e);
+    if(elapsed){
+      const scope=clock.closest('.bc-exchange-hero')?app():clock.closest('[data-request-card],.bc-conversation-guide,dialog,#bc-overlay');
+      scope?.querySelectorAll('[data-case-action="accept"],[data-case-action="counter"],[data-request-action="accept"],[data-request-action="counter"],[data-thread-case-action="accept"],[data-thread-case-action="counter"]').forEach(button=>button.disabled=true);
+      const terms=scope?.querySelector('.bc-proposal-terms');
+      if(e.state==='PROPOSED'&&terms&&!terms.querySelector('[data-response-deadline-passed]'))terms.insertAdjacentHTML('beforeend',proposalDeadlineNoticeMarkup());
+    }
+  });
+},1000);
+const proposalResends=new Set();
+document.addEventListener('click',async event=>{
+  const button=event.target.closest?.('[data-resend-proposal]');if(!button||button.hidden||button.disabled)return;
+  const uid=S.user?.id,epoch=authEpoch,e=S.exchanges.find(row=>row.id===button.dataset.resendProposal);if(!canResendProposal(e)||proposalResends.has(e.id))return;
+  const surfaceRoute=location.hash,surfaceToken=S.renderToken,surfaceThread=$('#bc-msg-chat')?.bcThread;
+  const surfacePeer=collectorFocus?.peerId,surfaceCase=collectorFocus?.caseId;
+  const sameSurface=()=>uid===S.user?.id&&epoch===authEpoch&&!logoutLocked&&location.hash===surfaceRoute&&S.renderToken===surfaceToken&&$('#bc-msg-chat')?.bcThread===surfaceThread&&collectorFocus?.peerId===surfacePeer&&collectorFocus?.caseId===surfaceCase;
+  proposalResends.add(e.id);button.disabled=true;
+  try{
+    const intent={case_id:e.id,version:e.state_version,action:'resend'};
+    const {error,data}=await canonicalRpc('resend_exchange_case_invite',{p_case_id:e.id,p_expected_version:e.state_version,p_payload:{}},intent);
+    if(uid!==S.user?.id||epoch!==authEpoch||logoutLocked)return;
+    if(error||data?.ok===false){if(sameSurface())fail(error||new Error(data.message),'Could not resend the invite. Refresh and try again.');return}
+    await refreshCore();if(!sameSurface())return;if(routeName()==='exchanges')renderExchangeBody();else await reloadCaseView(e.id);toast('Invite resent. They have 48 hours to respond.');
+  }catch(error){if(sameSurface())fail(error,'Could not resend the invite. Refresh and try again.')}finally{proposalResends.delete(e.id);if(button.isConnected)button.disabled=false}
+});
 function requestCard(r){const incoming=r.recipient_id===S.user.id,other=otherId(r),p=S.profiles[other]||{},offer=itemName(r.item_a),want=itemName(r.item_b),focused=routeId()===r.id,deadlinePassed=proposalResponseDeadlinePassed(r);return `<article class="bc-card bc-pad bc-request" data-request-card="${attr(r.id)}" ${focused?'style="outline:3px solid #f3c623;outline-offset:2px"':''}><div><div>${pill(incoming?'Incoming proposal':'Proposal sent',incoming?'gold':'blue')}</div><h3>${esc(offer)} ⇄ ${esc(want)}</h3><div class="bc-ex-meta">With ${esc(p.display_name||'Collector')} · responds by ${fmtDateTime(r.response_deadline)}</div>${caseProposalTermsMarkup(r)}</div><div class="bc-request-actions">${incoming?`<button class="bc-btn primary" data-request-action="accept" data-request-id="${r.id}"${!validProposalDuration(r)||deadlinePassed?' disabled':''}>Accept</button><button class="bc-btn" data-request-action="decline" data-request-id="${r.id}">Decline</button><button class="bc-btn" data-request-action="counter" data-request-id="${r.id}"${deadlinePassed?' disabled':''}>Counter</button>`:`<button class="bc-btn danger" data-request-action="withdraw" data-request-id="${r.id}">Withdraw proposal</button>`}<button class="bc-btn" data-exchange="${r.id}">Open case</button></div></article>`}
 async function respondRequest(id,action){
   const exchange=S.exchanges.find(row=>row.id===id);if(!exchange)return;
@@ -1629,11 +1678,11 @@ function proposalDeadlineNoticeMarkup(){return `<div class="bc-notice warn" role
 function blockProposalResponseAction(e,button=null){if(!proposalResponseDeadlinePassed(e))return false;const context=button?.closest('#bc-counter,[data-request-card],.bc-mobile-next,.bc-conversation-guide,dialog.bc-collector-sheet,#bc-overlay');if(context){context.querySelectorAll('[data-request-action="accept"],[data-request-action="counter"],[data-case-action="accept"],[data-case-action="counter"],[data-thread-case-action="accept"],[data-thread-case-action="counter"],#bc-counter button[type="submit"]').forEach(action=>action.disabled=true);const terms=context.querySelector('.bc-proposal-terms');if(terms&&!terms.querySelector('[data-response-deadline-passed]'))terms.insertAdjacentHTML('beforeend',proposalDeadlineNoticeMarkup());if(!terms&&!context.querySelector('[data-response-deadline-passed]'))context.insertAdjacentHTML('afterbegin',proposalDeadlineNoticeMarkup())}toast(proposalDeadlineGuidance());return true}
 function exchangeDurationLabel(e){const days=exchangeDurationDays(e);return days===null?'Duration unavailable':`${days} days`}
 function caseProposalTermsMarkup(e){
-  if(e.state!=='PROPOSED')return '';
+  if(!['PROPOSED','EXPIRED'].includes(e.state))return '';
   const days=exchangeDurationDays(e),valid=validProposalDuration(e),proposer=e.proposer_id===S.user.id?'you':S.profiles[e.proposer_id]?.display_name||'your partner';
   const duration=days===null?'Temporary exchange period unavailable':`Temporary exchange period: ${days} days`;
   const readiness=valid?'The period starts only after you both confirm physical handoff.':'Refresh the exchange before accepting; its current duration is unavailable or cannot be accepted.';
-  return `<section class="bc-proposal-terms" aria-label="Current proposal terms"><h3>Current proposal</h3><p class="bc-proposal-duration">${esc(duration)}</p><p class="bc-small">Proposed by ${esc(proposer)}. ${esc(readiness)}</p>${proposalResponseDeadlinePassed(e)?proposalDeadlineNoticeMarkup():''}${e.opening_message?`<div class="bc-proposal-message"><b>Proposal message</b><p>${esc(e.opening_message)}</p></div>`:''}</section>`;
+  return `<section class="bc-proposal-terms" aria-label="Current proposal terms"><h3>Current proposal</h3>${proposalDeadlineMarkup(e)}<p class="bc-proposal-duration">${esc(duration)}</p><p class="bc-small">Proposed by ${esc(proposer)}. ${esc(readiness)}</p>${proposalResponseDeadlinePassed(e)?proposalDeadlineNoticeMarkup():''}${e.opening_message?`<div class="bc-proposal-message"><b>Proposal message</b><p>${esc(e.opening_message)}</p></div>`:''}</section>`;
 }
 function safetyChecklistMarkup({mineAcknowledged=false,partnerAcknowledged=false,showAcknowledgement=false}={}){
   const status=showAcknowledgement?'':mineAcknowledged
@@ -3025,7 +3074,7 @@ function collectorCaseSummaryMarkup(peerId,selected){
   const groups=[...(messageIndexByUid.get(S.user?.id)?.cases.values()||[])].filter(g=>g.case&&otherId(g.case)===peerId);
   if(!groups.length)return '';
   const current=groups.find(g=>g.caseId===selected)||groups.find(g=>!terminalCaseStates.has(g.case.state))||groups[0],e=current.case,next=caseNextAction(e);
-  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}" aria-haspopup="dialog">${collectorSetPairImages(g.case)}<span class="bc-collector-case-title">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small class="bc-collector-case-started">${collectorStartedMarkup(g.case)}</small><small class="bc-collector-case-state">${esc(exchangeStageLabel(g.case))}${terminalCaseStates.has(g.case.state)?' · Read-only':''}${g.caseId===current.caseId?'<span class="bc-collector-selected">Selected</span>':''}<span class="bc-collector-case-open">Open exchange ↗</span></small></button>`).join('')}</div><div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}" aria-haspopup="dialog" aria-label="Open exchange details">${next.action?'Review next step':'Open exchange'}</button></div>`;
+  return `<div class="bc-collector-case-chips" aria-label="Exchanges with this collector">${groups.map(g=>`<button class="bc-btn bc-collector-case-chip" type="button" data-view-collector-case="${attr(g.caseId)}" aria-pressed="${g.caseId===current.caseId}" aria-haspopup="dialog">${collectorSetPairImages(g.case)}<span class="bc-collector-case-title">${esc(itemName(g.case.item_a))} ⇄ ${esc(itemName(g.case.item_b))}</span><small class="bc-collector-case-started">${collectorStartedMarkup(g.case)}</small><small class="bc-collector-case-state">${esc(exchangeStageLabel(g.case))}${terminalCaseStates.has(g.case.state)?' · Read-only':''}${g.caseId===current.caseId?'<span class="bc-collector-selected">Selected</span>':''}<span class="bc-collector-case-open">Open exchange ↗</span></small></button>`).join('')}</div>${proposalDeadlineMarkup(e)}<div class="bc-collector-next-step"><span>${esc(next.label||exchangeStageLabel(e))}${e.return_due_at?` · Return by ${esc(fmtDate(e.return_due_at))}`:''}</span><button class="bc-btn${next.action?' primary':''}" type="button" data-view-collector-case="${attr(e.id)}" aria-haspopup="dialog" aria-label="Open exchange details">${next.action?'Review next step':'Open exchange'}</button></div>`;
 }
 function openCollectorCaseSheet(peerId,caseId){
   selectCollectorCase(peerId,caseId);

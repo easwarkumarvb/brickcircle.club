@@ -102,3 +102,13 @@ test('browser and release assets contain no Brevo endpoint or credential hook',a
   expect(shipped).not.toContain('api.brevo.com');
   expect(shipped).not.toContain('send-notification-email');
 });
+
+
+test('proposal reminder and resend emails retain canonical case action links',()=>{
+  for(const kind of ['proposal_reminder','exchange_proposed']){
+    expect(SUPPORTED_EMAIL_KINDS.has(kind)).toBe(true);
+    const message=buildBrevoMessage({...notification,kind,metadata:{exchange_case_id:'case-deadline'},body:'Accept, decline, or counter before the deadline.'},'member@example.com');
+    expect(message.textContent).toContain('/v2.html#exchange/case-deadline');
+    expect(message.htmlContent).toContain('Accept, decline, or counter');
+  }
+});

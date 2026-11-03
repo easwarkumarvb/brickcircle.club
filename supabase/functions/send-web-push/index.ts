@@ -35,6 +35,12 @@ Deno.serve(async(req:Request)=>{
   if(notificationError)return json({error:'Could not load notification'},500);
   if(!notification)return json({error:'Notification not found'},404);
 
+  if(notification.kind==='proposal_reminder'){
+    const {data:current,error}=await db.rpc('exchange_proposal_notification_current',{p_notification_id:notificationId});
+    if(error)return json({error:'Could not validate reminder'},500);
+    if(!current)return json({ok:true,suppressed:true});
+    notification.body=`Accept, decline, or counter before ${notification.metadata?.response_deadline}. About ${Math.max(1,Math.ceil((Date.parse(notification.metadata?.response_deadline)-Date.now())/60000))} minutes remain.`;
+  }
   const {data:subscriptions,error:subscriptionError}=await db.from('push_subscriptions').select('id,endpoint,p256dh,auth').eq('user_id',notification.user_id).is('disabled_at',null).limit(20);
   if(subscriptionError)return json({error:'Could not load subscriptions'},500);
 

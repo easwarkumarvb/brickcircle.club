@@ -42,8 +42,15 @@ Deno.serve(async(req:Request)=>{
   for(const delivery of (deliveries||[]) as EmailDelivery[]){
     const outcome=await dispatchNotificationEmail(delivery,{
       loadNotification:async(id)=>{
-        const {data,error}=await db.from('notifications').select('id,user_id,kind,title,body,entity_type,entity_id').eq('id',id).maybeSingle();
+        const {data,error}=await db.from('notifications').select('id,user_id,kind,title,body,entity_type,entity_id,metadata').eq('id',id).maybeSingle();
         if(error)throw error;
+        if(data?.kind==='proposal_reminder'){
+          const {data:current,error:validityError}=await db.rpc('exchange_proposal_notification_current',{p_notification_id:id});
+          if(validityError)throw validityError;
+          if(!current)return null;
+          const deadline=Date.parse(data.metadata?.response_deadline);
+          data.body=`Accept, decline, or counter before ${data.metadata?.response_deadline}. About ${Math.max(1,Math.ceil((deadline-Date.now())/60000))} minutes remain.`;
+        }
         return data as EmailNotification|null;
       },
       resolveRecipientEmail:async(userId)=>{

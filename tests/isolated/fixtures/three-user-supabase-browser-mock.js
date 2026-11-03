@@ -241,6 +241,15 @@ const db={
       if(state.lostResponses.delete(name))return {data:null,error:{message:'Network response was lost after commit',status:0}};
       return {data:{ok:true,case:exchange,idempotent:false},error:null};
     }
+    if(name==='resend_exchange_case_invite'){
+      const exchange=data.exchanges.find(row=>row.id===args.p_case_id);
+      if(!exchange||exchange.proposer_id!==active().id)return {data:null,error:{message:'Only the proposer can resend'}};
+      if(data.events.some(row=>row.case_id===exchange.id&&row.idempotency_key===args.p_idempotency_key))return {data:{ok:true,case:exchange,idempotent:true},error:null};
+      if(!['PROPOSED','EXPIRED'].includes(exchange.state)||Date.parse(exchange.response_deadline)>Date.now())return {data:null,error:{message:'Invite cannot be resent'}};
+      exchange.state='PROPOSED';exchange.state_version++;exchange.response_deadline=new Date(Date.now()+48*3600000).toISOString();
+      data.events.push({id:`event-${data.events.length+1}`,case_id:exchange.id,event_type:'proposal_resent',idempotency_key:args.p_idempotency_key,created_at:NOW});
+      persist();return {data:{ok:true,case:exchange},error:null};
+    }
     if(name==='exchange_case_transition'){
       const exchange=data.exchanges.find(row=>row.id===args.p_case_id&&(row.user_a===active().id||row.user_b===active().id));
       if(!exchange)return {data:null,error:{message:'Exchange case not found'}};

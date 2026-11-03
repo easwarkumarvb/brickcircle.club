@@ -45,3 +45,8 @@ test('untrusted endpoints never reach delivery claims or the network sender',asy
   }
   expect(claims).toBe(0);expect(sends).toBe(0);
 });
+
+
+test('proposal reminders and resends reuse actionable case push payloads',()=>{
+  for(const kind of ['proposal_reminder','exchange_proposed'])expect(payloadFor({...proposal,kind,metadata:{exchange_case_id:'case-deadline'},body:'2 minutes remain. Accept, decline, or counter.'})).toMatchObject({type:'exchange_proposal',url:'/v2.html#exchange/case-deadline',body:'2 minutes remain. Accept, decline, or counter.'});
+});
