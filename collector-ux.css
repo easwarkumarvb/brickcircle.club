@@ -47,42 +47,78 @@ html.bc-collector .bc-first-match-coach h2{font-size:17px!important;margin:3px 0
 html.bc-collector .bc-first-match-steps{gap:6px!important;margin-top:10px!important}
 html.bc-collector .bc-first-match-steps>*{padding:8px!important;background:#f3f5f8!important;border-radius:9px!important}
 html.bc-collector .bc-catalogue-tools{background:#fff!important;border:1px solid #dde3eb!important;border-radius:18px!important;padding:16px!important;box-shadow:0 5px 18px #17202d08!important;backdrop-filter:none!important;position:static!important}
+/* Primary brick colours make catalogue search the clear starting point. */
 html.bc-collector .bc-search-field{
   grid-column:1/-1;
   display:grid;
-  gap:7px;
+  gap:10px;
   min-width:0;
-  padding:12px;
-  background:#f2f7fc;
-  border:1px solid #c8d8e8;
-  border-radius:14px;
+  padding:16px;
+  background:#ffd500;
+  border:3px solid #0055bf;
+  border-radius:16px;
+  box-shadow:0 5px 0 #004391;
 }
-html.bc-collector .bc-search-label{color:#17202d;font-size:14px;font-weight:800}
+html.bc-collector .bc-search-label{
+  display:flex;
+  align-items:center;
+  gap:9px;
+  color:#a91422;
+  font-size:18px;
+  font-weight:900;
+  line-height:1.35;
+}
+html.bc-collector .bc-search-label::before{
+  content:"";
+  width:12px;
+  height:12px;
+  flex:0 0 12px;
+  border-radius:2px;
+  background:currentColor;
+}
 html.bc-collector .bc-search-control{position:relative;min-width:0}
 html.bc-collector .bc-search-control .bc-search-input{
   min-width:0!important;
-  min-height:50px!important;
-  padding:11px 12px 11px 44px!important;
+  min-height:60px!important;
+  padding:13px 14px 13px 50px!important;
   background:#fff!important;
-  border:1px solid #58738d!important;
+  color:#17202d!important;
+  font-size:18px!important;
+  font-weight:650;
+  border:3px solid #0055bf!important;
   border-radius:12px!important;
-  box-shadow:0 1px 2px #17202d0d!important;
+  box-shadow:none!important;
 }
+html.bc-collector .bc-search-input::placeholder{color:#526171;opacity:1}
 html.bc-collector .bc-search-control .bc-search-input:focus{
-  border-color:#0759a6!important;
-  box-shadow:0 0 0 3px rgba(7,89,166,.16)!important;
+  border-color:#a91422!important;
+  outline:3px solid #a91422;
+  outline-offset:3px;
+  box-shadow:0 0 0 3px #fff!important;
 }
 html.bc-collector .bc-search-icon{
   position:absolute;
   top:50%;
-  left:14px;
-  width:19px;
-  height:19px;
-  color:#526579;
+  left:16px;
+  width:23px;
+  height:23px;
+  color:#0055bf;
   pointer-events:none;
   transform:translateY(-50%);
 }
-html.bc-collector .bc-search-field .bc-name-search-help{display:block!important;margin:0;color:#526171}
+html.bc-collector .bc-search-field:focus-within .bc-search-icon{color:#a91422}
+html.bc-collector .bc-search-field .bc-name-search-help{
+  display:block!important;
+  margin:0;
+  color:#263445;
+  font-weight:600;
+  line-height:1.5;
+}
+@media(max-width:540px){
+  html.bc-collector .bc-search-field{padding:12px}
+  html.bc-collector .bc-search-label{font-size:16px}
+  html.bc-collector .bc-search-control .bc-search-input{min-height:56px!important;font-size:16px!important}
+}
 html.bc-collector .bc-discovery-label{
   margin-top:12px;
   padding-top:11px;
