@@ -110,7 +110,7 @@ html.bc-collector .bc-search-field:focus-within .bc-search-icon{color:#a91422}
 html.bc-collector .bc-search-field .bc-name-search-help{
   display:block!important;
   margin:0;
-  color:#263445;
+  color:#263445!important;
   font-weight:600;
   line-height:1.5;
 }
