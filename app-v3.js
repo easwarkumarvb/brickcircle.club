@@ -1600,7 +1600,7 @@ function proposalDecisionNudge(e){
 function proposalDeadlineMarkup(e){
   if(!['PROPOSED','EXPIRED'].includes(e.state))return '';
   const date=new Date(e.response_deadline),valid=Number.isFinite(Date.parse(e.response_deadline));
-  return `<div data-proposal-clock="${attr(e.id)}"><p>Respond by <time>${valid?esc(date.toLocaleString(undefined,{dateStyle:'full',timeStyle:'long'})):'Deadline unavailable'}</time></p><p data-proposal-remaining>${esc(proposalDeadlineSummaryText(e))}</p><p data-proposal-nudge>${esc(proposalDecisionNudge(e))}</p><button type="button" class="bc-btn primary" data-resend-proposal="${attr(e.id)}" ${canResendProposal(e)?'':'hidden'}>Resend invite</button></div>`;
+  return `<div data-proposal-clock="${attr(e.id)}"><p>Respond by <time>${valid?esc(date.toLocaleString(undefined,{dateStyle:'full',timeStyle:'long'})):'Deadline unavailable'}</time></p><p data-proposal-remaining>${esc(proposalDeadlineSummaryText(e))}</p><p data-proposal-nudge>${esc(proposalDecisionNudge(e))}</p><button type="button" class="bc-btn${canResendProposal(e)?' primary':''}" data-resend-proposal="${attr(e.id)}" ${canResendProposal(e)?'':'hidden'}>Resend invite</button></div>`;
 }
 // Update only deadline text and controls. Counter and message draft nodes stay intact.
 setInterval(()=>{
@@ -1609,7 +1609,7 @@ setInterval(()=>{
     const elapsed=Number.isFinite(Date.parse(e.response_deadline))&&Date.parse(e.response_deadline)<=Date.now();
     $('[data-proposal-remaining]',clock).textContent=proposalDeadlineSummaryText(e);
     $('[data-proposal-nudge]',clock).textContent=proposalDecisionNudge(e);
-    $('[data-resend-proposal]',clock).hidden=!canResendProposal(e);
+    const resend=$('[data-resend-proposal]',clock),eligible=canResendProposal(e);resend.hidden=!eligible;resend.classList.toggle('primary',eligible);
     if(elapsed){
       const scope=clock.closest('.bc-exchange-hero')?app():clock.closest('[data-request-card],.bc-conversation-guide,dialog,#bc-overlay');
       scope?.querySelectorAll('[data-case-action="accept"],[data-case-action="counter"],[data-request-action="accept"],[data-request-action="counter"],[data-thread-case-action="accept"],[data-thread-case-action="counter"]').forEach(button=>button.disabled=true);
