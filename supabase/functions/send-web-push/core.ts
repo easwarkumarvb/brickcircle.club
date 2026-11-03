@@ -21,6 +21,10 @@ function reciprocalMatchCopy(notification:PushNotification){
 }
 
 export function payloadFor(notification:PushNotification):PushPayload|null{
+  if(['proposal_reminder','exchange_proposed'].includes(notification.kind)&&notification.metadata?.exchange_case_id)return {
+    type:'exchange_proposal',title:notification.title||'Exchange proposal waiting',body:notification.body||'Accept, decline, or counter before the deadline.',
+    url:`/v2.html#exchange/${encodeURIComponent(String(notification.metadata.exchange_case_id))}`,entity_id:String(notification.metadata.exchange_case_id)
+  };
   if(notification.kind==='request_received'&&notification.entity_type==='exchange_request')return {
     type:'exchange_proposal',
     title:'New exchange proposal',

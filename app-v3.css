@@ -147,3 +147,6 @@
 
 /* Let browser-driven scrolling settle before pointer interaction; explicit UI scrolls may opt into smooth motion. */
 html{scroll-behavior:auto}
+
+/* A pending invite exposes resend only after its response deadline. */
+[data-resend-proposal][hidden]{display:none!important}
