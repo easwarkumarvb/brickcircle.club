@@ -255,7 +255,7 @@ html.bc-collector .bc-auth-shell{padding:18px 40px 14px}
 html.bc-collector .bc-auth-head{margin-bottom:8px!important}
 html.bc-collector .bc-auth-modal .bc-form{gap:4px;margin-top:6px}
 html.bc-collector .bc-auth-modal .bc-social-consent{padding:5px 8px;font-size:12px;line-height:1.4}
-@media(max-width:600px){html.bc-collector .bc-auth-shell{padding:8px 14px 6px}html.bc-collector .bc-auth-head{padding-top:18px;margin-bottom:4px!important}html.bc-collector .bc-auth-head h2{margin-bottom:4px!important}.bc-auth-motto{margin-bottom:4px}.bc-auth-modal .bc-form{gap:3px;margin-top:6px}.bc-auth-modal .bc-consent{padding:4px;line-height:1.3}.bc-auth-legal{font-size:10px;line-height:1.3}}
+@media(max-width:600px){html.bc-collector .bc-auth-shell{padding:8px 14px 2px}html.bc-collector .bc-auth-head{padding-top:18px;margin-bottom:4px!important}html.bc-collector .bc-auth-head h2{margin-bottom:4px!important}.bc-auth-motto{margin-bottom:4px}.bc-auth-modal .bc-form{gap:3px;margin-top:6px}.bc-auth-modal .bc-consent{padding:4px;line-height:1.3}.bc-auth-legal{font-size:10px;line-height:1.3}}
 
 /* Person-first conversations: compact context, one permanent composer. */
 .bc-collector-case-chips{display:flex;gap:8px;overflow-x:auto;padding:8px 0;max-width:100%;scrollbar-width:thin}
