@@ -47,90 +47,73 @@ html.bc-collector .bc-first-match-coach h2{font-size:17px!important;margin:3px 0
 html.bc-collector .bc-first-match-steps{gap:6px!important;margin-top:10px!important}
 html.bc-collector .bc-first-match-steps>*{padding:8px!important;background:#f3f5f8!important;border-radius:9px!important}
 html.bc-collector .bc-catalogue-tools{background:#fff!important;border:1px solid #dde3eb!important;border-radius:18px!important;padding:16px!important;box-shadow:0 5px 18px #17202d08!important;backdrop-filter:none!important;position:static!important}
-/* Primary brick colours make catalogue search the clear starting point. */
+/* A focused search panel with restrained primary-colour accents. */
 html.bc-collector .bc-search-field{
-  grid-column:1/-1;
-  display:grid;
-  gap:10px;
-  min-width:0;
-  padding:16px;
-  background:#ffd500;
-  border:3px solid #0055bf;
-  border-radius:16px;
-  box-shadow:0 5px 0 #004391;
+  grid-column:1/-1;position:relative;display:grid;gap:12px;min-width:0;
+  padding:24px;background:linear-gradient(120deg,#102b48 0%,#174f83 100%);
+  border:1px solid #1b527f;border-radius:22px;
+  box-shadow:0 10px 26px #102b4818;
+}
+html.bc-collector .bc-search-field::before{
+  content:"";position:absolute;right:24px;top:-1px;width:78px;height:5px;
+  border-radius:0 0 5px 5px;
+  background:linear-gradient(to right,#e93d45 0 33.33%,#ffd500 33.33% 66.66%,#51a8ff 66.66% 100%);
 }
 html.bc-collector .bc-search-label{
-  display:flex;
-  align-items:center;
-  gap:9px;
-  color:#a91422;
-  font-size:18px;
-  font-weight:900;
-  line-height:1.35;
+  display:flex;align-items:center;gap:10px;color:#fff;
+  font-size:20px;font-weight:800;line-height:1.35;letter-spacing:-.3px;
 }
 html.bc-collector .bc-search-label::before{
-  content:"";
-  width:12px;
-  height:12px;
-  flex:0 0 12px;
-  border-radius:2px;
-  background:currentColor;
+  content:"";width:12px;height:12px;flex:0 0 12px;border-radius:4px;
+  background:#ffd500;box-shadow:inset 0 1px 1px #ffffff80,0 2px 0 #b48c00;
 }
 html.bc-collector .bc-search-control{position:relative;min-width:0}
 html.bc-collector .bc-search-control .bc-search-input{
-  min-width:0!important;
-  min-height:60px!important;
-  padding:13px 14px 13px 50px!important;
-  background:#fff!important;
-  color:#17202d!important;
-  font-size:18px!important;
-  font-weight:650;
-  border:3px solid #0055bf!important;
-  border-radius:12px!important;
-  box-shadow:none!important;
+  width:100%;min-width:0!important;min-height:64px!important;
+  padding:16px 18px 16px 54px!important;background:#fff!important;color:#172b43!important;
+  font-size:18px!important;font-weight:500;border:2px solid #dce8f4!important;
+  border-radius:16px!important;box-shadow:0 3px 10px #061e3420!important;
+  transition:border-color .15s ease,box-shadow .15s ease;
 }
-html.bc-collector .bc-search-input::placeholder{color:#526171;opacity:1}
+html.bc-collector .bc-search-input::placeholder{color:#5b6f83;opacity:1}
 html.bc-collector .bc-search-control .bc-search-input:focus{
-  border-color:#a91422!important;
-  outline:3px solid #a91422;
-  outline-offset:3px;
-  box-shadow:0 0 0 3px #fff!important;
+  border-color:#ffd500!important;outline:3px solid #ffd500;outline-offset:3px;
+  box-shadow:0 0 0 6px #102b48!important;
 }
 html.bc-collector .bc-search-icon{
-  position:absolute;
-  top:50%;
-  left:16px;
-  width:23px;
-  height:23px;
-  color:#0055bf;
-  pointer-events:none;
-  transform:translateY(-50%);
+  position:absolute;top:50%;left:19px;width:23px;height:23px;color:#1764a6;
+  pointer-events:none;transform:translateY(-50%);
 }
-html.bc-collector .bc-search-field:focus-within .bc-search-icon{color:#a91422}
+html.bc-collector .bc-search-field:focus-within .bc-search-icon{color:#103e68}
 html.bc-collector .bc-search-field .bc-name-search-help{
-  display:block!important;
-  margin:0;
-  color:#263445!important;
-  font-weight:600;
-  line-height:1.5;
+  display:block!important;margin:0;color:#d7e7f7!important;
+  font-size:13px;font-weight:450;line-height:1.5;
 }
 @media(max-width:540px){
-  html.bc-collector .bc-search-field{padding:12px}
-  html.bc-collector .bc-search-label{font-size:16px}
-  html.bc-collector .bc-search-control .bc-search-input{min-height:56px!important;font-size:16px!important}
+  html.bc-collector .bc-search-field{padding:18px 16px;gap:11px;border-radius:18px}
+  html.bc-collector .bc-search-field::before{right:18px;width:60px}
+  html.bc-collector .bc-search-label{font-size:18px}
+  html.bc-collector .bc-search-control .bc-search-input{
+    min-height:58px!important;font-size:16px!important;padding-left:46px!important;border-radius:13px!important;
+  }
+  html.bc-collector .bc-search-icon{left:15px;width:21px;height:21px}
+  html.bc-collector .bc-search-field .bc-name-search-help{font-size:12px}
 }
 html.bc-collector .bc-discovery-label{
   margin-top:12px;
   padding-top:11px;
   border-top:1px solid #e8edf2;
-  color:#667385;
-  font-size:12px;
+  color:#52657a;
+  font-size:11px;
   font-weight:750;
+  letter-spacing:.09em;
+  text-transform:uppercase;
 }
 html.bc-collector .bc-discovery-chips{padding-top:7px}
 html.bc-collector .bc-discovery-chips{flex-wrap:wrap!important;gap:7px!important;overflow:visible!important}
-html.bc-collector .bc-pop-chip{min-height:44px!important;background:#f3f5f8!important;color:#556171!important;border:1px solid #e3e8ef!important;border-radius:10px!important;font-size:12px!important;font-weight:650!important}
-html.bc-collector .bc-pop-chip[aria-pressed="true"]{background:#17202d!important;color:#fff!important;border-color:#17202d!important}
+html.bc-collector .bc-pop-chip{min-height:44px!important;background:#fff!important;color:#344d67!important;border:1px solid #d9e4ef!important;border-radius:999px!important;font-size:12px!important;font-weight:650!important;padding:9px 15px!important;transition:background .15s ease,border-color .15s ease}
+html.bc-collector .bc-pop-chip:hover{background:#edf5fd!important;border-color:#94bce1!important}
+html.bc-collector .bc-pop-chip[aria-pressed="true"]{background:#0759a6!important;color:#fff!important;border-color:#0759a6!important;box-shadow:0 3px 8px #0759a61a!important}
 html.bc-collector .bc-set-grid{grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:18px!important}
 html.bc-collector .bc-set-card{background:#fff!important;border:1px solid #dde3eb!important;border-radius:18px!important;padding:14px!important;box-shadow:0 5px 18px #17202d08!important;overflow:hidden}
 html.bc-collector .bc-set-card-open{width:100%!important}
