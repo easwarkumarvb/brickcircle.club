@@ -5,6 +5,7 @@ test('Google auth uses the supported OAuth contract and stays on loopback',async
   expect(new URL(origin).hostname).toBe('127.0.0.1');
   await page.goto('/v2.html?isolated=signed-out');
   await page.locator('[data-auth]').first().click();
+  await page.locator('[name="social_adult_confirmation"]').check();
   await page.locator('[data-oauth="google"]').click();
   await expect(page).toHaveURL(`${origin}/v2.html?isolated=oauth-complete`);
   const options=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('bc_isolated_oauth')||'null'));
