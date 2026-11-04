@@ -29,6 +29,7 @@ test('failed Google sign-in restores the decorated action and permits retry',asy
   await page.evaluate(()=>{
     (window as any).supabase.createClient().auth.signInWithOAuth=async()=>({error:{message:'Google temporarily unavailable'}});
   });
+  await page.locator('[name="social_adult_confirmation"]').check();
   const button=page.getByRole('button',{name:'Continue with Google',exact:true});
   await button.click();
   await expect(button).toBeEnabled();
@@ -40,6 +41,38 @@ test('failed Google sign-in restores the decorated action and permits retry',asy
   await expect(page.getByRole('dialog')).toBeVisible();
   await button.click();
   await expect(button).toBeEnabled();
+});
+
+test('social adult consent gates Google OAuth and resets when the dialog reopens',async({page})=>{
+  await openAuth(page);
+  const consent=page.locator('[name="social_adult_confirmation"]');
+  const button=page.getByRole('button',{name:'Continue with Google',exact:true});
+  const message='Please confirm that you are at least 18 years old before continuing with social sign-in.';
+  await expect(consent).not.toBeChecked();
+  await expect(page.getByRole('dialog')).toContainText('I confirm that I am at least 18 years old and legally able to participate in BrickCircle exchanges.');
+  await button.click();
+  await expect(page.locator('#bc-auth-provider-error')).toHaveText(message);
+  await expect(consent).toBeFocused();
+  await expect(consent).toHaveAttribute('aria-describedby','bc-auth-provider-error');
+  expect(await page.evaluate(()=>window.__bcIsolated.authCalls.filter((call:any)=>call.method==='signInWithOAuth'))).toHaveLength(0);
+
+  await page.evaluate(()=>{
+    const auth=(window as any).supabase.createClient().auth;
+    auth.signInWithOAuth=async(options:any)=>{(window as any).__bcIsolated.authCalls.push({method:'signInWithOAuth',options});return {error:{message:'Google temporarily unavailable'}}};
+  });
+  await consent.check();
+  await button.click();
+  await expect(page.locator('#bc-auth-provider-error')).toHaveText('Google temporarily unavailable');
+  expect(await page.evaluate(()=>window.__bcIsolated.authCalls.filter((call:any)=>call.method==='signInWithOAuth'))).toHaveLength(1);
+
+  await consent.uncheck();
+  await button.click();
+  await expect(page.locator('#bc-auth-provider-error')).toHaveText(message);
+  expect(await page.evaluate(()=>window.__bcIsolated.authCalls.filter((call:any)=>call.method==='signInWithOAuth'))).toHaveLength(1);
+
+  await page.getByRole('button',{name:'Close sign-in'}).click();
+  await page.getByRole('button',{name:'Join BrickCircle',exact:true}).click();
+  await expect(page.locator('[name="social_adult_confirmation"]')).not.toBeChecked();
 });
 
 for(const path of ['/','/v2.html'])for(const width of [320,360,375,390,430,768,1280])test(`collector auth fits both modes at ${width}px on ${path}`,async({page})=>{

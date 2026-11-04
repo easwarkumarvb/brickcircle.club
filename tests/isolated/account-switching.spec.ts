@@ -126,7 +126,7 @@ for(const action of ['oauth','reset','recovery'])test(`stale ${action} completio
     if(action==='recovery'){auth.updateUser=()=>new Promise(resolve=>s.releaseAction=()=>resolve({error:null}));s.emitAuth('PASSWORD_RECOVERY',{user:s.accountA})}
     else{w.bcAuth();auth[action==='oauth'?'signInWithOAuth':'resetPasswordForEmail']=()=>new Promise(resolve=>s.releaseAction=()=>resolve({data:{url:location.origin+'/should-not-navigate'},error:null}))}
   },action);
-  if(action==='oauth')await page.locator('[data-oauth="google"]').click();
+  if(action==='oauth'){await page.locator('[name="social_adult_confirmation"]').check();await page.locator('[data-oauth="google"]').click()}
   else if(action==='reset'){page.once('dialog',dialog=>dialog.accept('injected@example.invalid'));await page.getByRole('button',{name:'Forgot password?'}).click()}
   else{await expect(page.locator('#bc-password-recovery')).toBeVisible();await page.locator('#bc-password-recovery [name="password"]').fill('injected-password');await page.locator('#bc-password-recovery [name="confirm"]').fill('injected-password');await page.locator('#bc-password-recovery button[type="submit"]').click()}
   await page.evaluate(()=>{(window as any).bcSwitchAccount()});await expect(page.locator('#bc-logout-status')).toContainText('Confirming');

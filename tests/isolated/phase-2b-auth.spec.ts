@@ -46,6 +46,7 @@ test('email account creation uses the canonical client and onboarding metadata',
 test('Google OAuth keeps the callback on the BrickCircle loopback origin',async({page})=>{
   await page.goto('/v2.html?isolated=signed-out');
   await page.locator('[data-auth]').first().click();
+  await page.locator('[name="social_adult_confirmation"]').check();
   await page.locator('[data-oauth="google"]').click();
   const options=await page.evaluate(()=>JSON.parse(sessionStorage.getItem('bc_isolated_oauth')||'null'));
   expect(options).toMatchObject({
