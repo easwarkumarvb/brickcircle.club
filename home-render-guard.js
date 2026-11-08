@@ -11,7 +11,7 @@
   const isHome=()=>((location.hash||'#home').slice(1)||'home')==='home';
   const isLegacyHome=value=>{
     const text=String(value??'');
-    return text.includes('V2.1 · LIVE PRODUCTION')&&text.includes('Your LEGO collection.');
+    return text.includes('V2.1 · LIVE PRODUCTION')&&text.includes('Your LEGO® collection.');
   };
   Object.defineProperty(app,'innerHTML',{
     configurable:true,

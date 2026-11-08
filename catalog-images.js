@@ -1,4 +1,4 @@
-/* BrickCircle LEGO image renderer — Catalogue + My Collection.
+/* BrickCircle LEGO® image renderer — Catalogue + My Collection.
    Uses resilient external image loading with retry/fallback so mobile beta users do not see broken images. */
 (()=>{
   const IMAGE_BASE='https://images.brickset.com/sets/images/';
@@ -17,7 +17,7 @@
   const proxied=set=>`https://images.weserv.nl/?url=${encodeURIComponent(`images.brickset.com/sets/images/${set}-1.jpg`)}&w=900&fit=contain&output=jpg`;
 
   function placeholder(box,set,name){
-    box.innerHTML=`<div class="bc-set-placeholder" role="img" aria-label="LEGO set ${esc(set)} image unavailable"><div class="bc-mini-bricks"><i></i><i></i><i></i><i></i></div><strong>LEGO ${esc(set)}</strong><span>${esc(name||'Collector set')}</span><small>Image temporarily unavailable</small></div>`;
+    box.innerHTML=`<div class="bc-set-placeholder" role="img" aria-label="LEGO® set ${esc(set)} image unavailable"><div class="bc-mini-bricks"><i></i><i></i><i></i><i></i></div><strong>LEGO® ${esc(set)}</strong><span>${esc(name||'Collector set')}</span><small>Image temporarily unavailable</small></div>`;
     box.classList.add('bc-image-box');
   }
 
@@ -43,7 +43,7 @@
       box.dataset.bcImageReady='1';
       box.classList.add('bc-image-box');
       const img=document.createElement('img');
-      img.className='bc-set-image';img.alt=`LEGO set ${set}${name?' — '+name:''}`;img.loading='lazy';img.decoding='async';img.src=direct(set);
+      img.className='bc-set-image';img.alt=`LEGO® set ${set}${name?' — '+name:''}`;img.loading='lazy';img.decoding='async';img.src=direct(set);
       box.replaceChildren(img);wire(img,box,set,name);
     });
   }

@@ -15,7 +15,7 @@ function toast(msg){let e=document.querySelector('.bc-auth-hotfix-toast');if(!e)
 document.addEventListener('submit',async e=>{
   const form=e.target;if(!(form instanceof HTMLFormElement)||form.id!=='bc-onboard')return;
   e.preventDefault();e.stopImmediatePropagation();
-  const btn=qs('button[type="submit"],button',form);const old=btn?.textContent||'Continue to add my LEGO sets';
+  const btn=qs('button[type="submit"],button',form);const old=btn?.textContent||'Continue to add my LEGO® sets';
   try{
     if(btn){btn.disabled=true;btn.textContent='Saving…'}
     const {data:{user}}=await withTimeout(db.auth.getUser(),8000);if(!user)throw new Error('Your sign-in session was not found. Please sign in again.');
@@ -23,7 +23,7 @@ document.addEventListener('submit',async e=>{
     if(!patch.display_name||!patch.country||!patch.city)throw new Error('Please complete your name, country and city.');
     let result=await withTimeout(db.from('profiles').upsert(patch,{onConflict:'id'}).select('id').maybeSingle(),12000);
     if(result.error)throw result.error;
-    document.getElementById('bc-overlay')?.remove();toast('Profile saved — now add the LEGO sets you own.');
+    document.getElementById('bc-overlay')?.remove();toast('Profile saved — now add the LEGO® sets you own.');
     history.replaceState({},'',location.pathname+'#browse');
     await sleep(150);location.reload();
   }catch(err){console.error('BrickCircle onboarding save',err);toast(err?.message||'Could not save your profile. Please try again.');if(btn){btn.disabled=false;btn.textContent=old}}

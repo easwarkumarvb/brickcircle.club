@@ -11,7 +11,7 @@ const remember=id=>{try{sessionStorage.setItem(seenKey(id),'1')}catch(_){}};
 function esc(value){return String(value??'').replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]))}
 function eligible(row){return !!row&&!row.read_at&&KINDS.has(row.kind)}
 function presentation(row){
-  if(row.kind==='reciprocal_match')return {label:'New local match',fallback:'A nearby collector has a reciprocal LEGO match with you.',action:'View matches',route:'#matches'};
+  if(row.kind==='reciprocal_match')return {label:'New local match',fallback:'A nearby collector has a reciprocal LEGO® match with you.',action:'View matches',route:'#matches'};
   if(row.kind==='exchange_accepted')return {label:'Exchange accepted',fallback:'Your BrickCircle exchange has been accepted.',action:'Open exchanges',route:'#exchanges'};
   if(row.kind==='exchange_declined')return {label:'Proposal declined',fallback:'Your BrickCircle proposal was declined.',action:'Open exchanges',route:'#exchanges'};
   if(row.kind==='exchange_cancelled')return {label:'Proposal cancelled',fallback:'Your BrickCircle exchange was cancelled.',action:'Open exchanges',route:'#exchanges'};
