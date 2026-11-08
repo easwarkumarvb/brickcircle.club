@@ -12,7 +12,7 @@ function relabelNavigation(){
   });
   document.querySelectorAll('[data-nav="sets"]').forEach(el=>{
     if(el.closest('.bc-mobile-nav')) return;
-    if(el.tagName==='BUTTON' && el.closest('.bc-desktop-nav')) setText(el,'My LEGO');
+    if(el.tagName==='BUTTON' && el.closest('.bc-desktop-nav')) setText(el,'My LEGO®');
   });
 }
 
