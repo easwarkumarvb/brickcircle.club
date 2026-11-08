@@ -142,12 +142,12 @@ function runSearch(query){
 
 function positioningMarkup(){
   return `<section class="bc-catalogue-positioning" data-bc-catalogue-positioning>
-    <strong>Almost every LEGO® set belongs in BrickCircle.</strong>
+    <strong>Almost every LEGO™ set belongs in BrickCircle.</strong>
     <p>Search the full catalogue by set number, model name or theme. We highlight iconic and complex builds because they create great exchange experiences — but membership is not limited to Technic.</p>
     <div class="bc-catalogue-stats" aria-label="Catalogue coverage">
       <span class="bc-catalogue-stat">${ACTIVE_CATALOGUE_COUNT.toLocaleString()} active sets</span>
       <span class="bc-catalogue-stat">${THEME_COUNT.toLocaleString()} themes</span>
-      <span class="bc-catalogue-stat">Any legitimate LEGO® set welcome</span>
+      <span class="bc-catalogue-stat">Any legitimate LEGO™ set welcome</span>
     </div>
   </section>`;
 }
@@ -157,20 +157,20 @@ function iconicMarkup(){
     const sourceAttribute=index<ICONIC_EAGER_COUNT?`src="${directImage(number)}"`:`data-src="${directImage(number)}"`;
     const loading=index<ICONIC_EAGER_COUNT?'eager':'lazy';
     const priority=index<3?'high':'auto';
-    return `<button class="bc-iconic-card" type="button" data-bc-iconic-set="${number}" data-bc-iconic-group="${group}" aria-label="Explore ${esc(name)}, LEGO® set ${number}">
-      <span class="bc-iconic-visual"><img ${sourceAttribute} data-bc-iconic-image data-set="${number}" data-stage="0" alt="${esc(name)} LEGO® set ${number}" width="320" height="210" loading="${loading}" fetchpriority="${priority}" decoding="async"></span>
+    return `<button class="bc-iconic-card" type="button" data-bc-iconic-set="${number}" data-bc-iconic-group="${group}" aria-label="Explore ${esc(name)}, LEGO™ set ${number}">
+      <span class="bc-iconic-visual"><img ${sourceAttribute} data-bc-iconic-image data-set="${number}" data-stage="0" alt="${esc(name)} LEGO™ set ${number}" width="320" height="210" loading="${loading}" fetchpriority="${priority}" decoding="async"></span>
       <span class="bc-iconic-copy"><b>${esc(name)}</b><span>${esc(GROUP_LABELS[group])}</span><small>Set ${number}</small></span>
     </button>`;
   }).join('');
   return `<section class="bc-iconic-discovery" data-bc-iconic-discovery>
     <div class="bc-iconic-head"><div><h2>Iconic sets worth experiencing</h2><p>Swipe or scroll through 50 collector favourites, then choose one to search the full catalogue.</p></div><span class="bc-iconic-count">50 sets · images load as needed</span></div>
     <div class="bc-discovery-groups" aria-label="Filter iconic sets">${DISCOVERY_GROUPS.map(([key,label],index)=>`<button class="bc-discovery-group" type="button" data-bc-iconic-filter="${key}" aria-pressed="${index===0?'true':'false'}">${esc(label)}</button>`).join('')}</div>
-    <div class="bc-iconic-grid" aria-label="Iconic LEGO® set gallery">${cards}</div>
+    <div class="bc-iconic-grid" aria-label="Iconic LEGO™ set gallery">${cards}</div>
   </section>`;
 }
 
 function missingMarkup(){
-  return `<section class="bc-catalogue-missing" data-bc-catalogue-missing><b>Can’t find your set?</b><p>First search the exact LEGO® set number. BrickCircle currently carries ${TOTAL_CATALOGUE_COUNT.toLocaleString()} catalogue records, so most official sets should already be here. A dedicated “request a missing set” submission path is the next catalogue step.</p></section>`;
+  return `<section class="bc-catalogue-missing" data-bc-catalogue-missing><b>Can’t find your set?</b><p>First search the exact LEGO™ set number. BrickCircle currently carries ${TOTAL_CATALOGUE_COUNT.toLocaleString()} catalogue records, so most official sets should already be here. A dedicated “request a missing set” submission path is the next catalogue step.</p></section>`;
 }
 
 function enhanceBrowse(){
@@ -215,8 +215,8 @@ function enhanceBrowse(){
 
   const input=document.getElementById('bc-q');
   if(input){
-    input.placeholder='Search any LEGO® set — number, model or theme (e.g. 42143, Ferrari, Catamaran)';
-    input.setAttribute('aria-label','Search the BrickCircle LEGO® catalogue by set number, model name or theme');
+    input.placeholder='Search any LEGO™ set — number, model or theme (e.g. 42143, Ferrari, Catamaran)';
+    input.setAttribute('aria-label','Search the BrickCircle LEGO™ catalogue by set number, model name or theme');
   }
 }
 
