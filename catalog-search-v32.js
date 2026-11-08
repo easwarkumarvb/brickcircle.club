@@ -19,11 +19,11 @@
     if(!browse())return;
     const q=document.getElementById('bc-q');if(!q)return;
     q.placeholder='Search product name, set number or theme — e.g. McLaren, Ferrari, Saturn V';
-    q.setAttribute('aria-label','Search LEGO® products by product name, set number or theme');
+    q.setAttribute('aria-label','Search LEGO™ products by product name, set number or theme');
     const tools=q.closest('.bc-catalogue-tools')||q.parentElement;
     if(tools&&!tools.querySelector('.bc-name-search-help')){
       const help=document.createElement('div');help.className='bc-name-search-help bc-small';help.style.cssText='margin-top:7px;color:#667085';
-      help.textContent='Tip: type any part of the LEGO® product name. “McLaren” will show every McLaren set in the catalogue.';
+      help.textContent='Tip: type any part of the LEGO™ product name. “McLaren” will show every McLaren set in the catalogue.';
       tools.appendChild(help);
     }
   }
@@ -43,14 +43,14 @@
     const direct=bricksetUrl(row.set_number);
     const alternate=/^https?:\/\//i.test(row.image_url||'')?String(row.image_url):'';
     const priority=index<8;
-    return `<div class="bc-set-image"><img src="${esc(direct)}" alt="LEGO® ${esc(row.name)} — set ${esc(row.set_number)}" loading="${priority?'eager':'lazy'}" ${priority?'fetchpriority="high"':''} decoding="async" data-cs-image="1" data-cs-set-number="${esc(row.set_number)}" data-cs-alternate="${esc(alternate)}"><div class="bc-set-placeholder" hidden>🧱</div></div>`;
+    return `<div class="bc-set-image"><img src="${esc(direct)}" alt="LEGO™ ${esc(row.name)} — set ${esc(row.set_number)}" loading="${priority?'eager':'lazy'}" ${priority?'fetchpriority="high"':''} decoding="async" data-cs-image="1" data-cs-set-number="${esc(row.set_number)}" data-cs-alternate="${esc(alternate)}"><div class="bc-set-placeholder" hidden>🧱</div></div>`;
   }
 
   function card(row,index=99){
     const owned=state.owned.has(row.set_number),wanted=state.wanted.has(row.set_number);
     return `<article class="bc-set-card bc-name-search-card" data-cs-set="${esc(row.set_number)}">
       ${image(row,index)}
-      <div style="margin-top:9px"><span class="bc-pill">${esc(row.theme||'LEGO®')}</span></div>
+      <div style="margin-top:9px"><span class="bc-pill">${esc(row.theme||'LEGO™')}</span></div>
       <h3>${esc(row.name||row.set_number)}</h3>
       <div class="bc-set-meta">Set ${esc(row.set_number)}${row.year?' · '+esc(row.year):''}${row.piece_count?' · '+Number(row.piece_count).toLocaleString()+' pieces':''}</div>
       <div class="bc-small" style="margin-top:6px">${money(row.estimated_value)}</div>
@@ -95,7 +95,7 @@
   async function runSearch(raw){
     const q=String(raw||'').trim();state.query=q;if(!q)return;
     const seq=++state.seq,grid=document.getElementById('bc-set-grid'),status=document.getElementById('bc-cat-status');
-    if(grid)grid.innerHTML='<div class="bc-loading" style="grid-column:1/-1"><div><div class="bc-spinner"></div>Searching LEGO® products…</div></div>';
+    if(grid)grid.innerHTML='<div class="bc-loading" style="grid-column:1/-1"><div><div class="bc-spinner"></div>Searching LEGO™ products…</div></div>';
     if(status)status.textContent=`Searching for “${q}”…`;
     const theme=document.getElementById('bc-theme')?.value||null,yearRaw=document.getElementById('bc-year')?.value||'',year=yearRaw?Number(yearRaw):null;
     try{
