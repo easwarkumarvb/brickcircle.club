@@ -27,7 +27,7 @@
     const due=ex[0].return_due_at?new Date(ex[0].return_due_at):null;
     if(!due)return {title:`${ex.length} active temporary swap${ex.length===1?'':'s'}`,text:'A return date is pending. Open Returns to plan the hand-back.',overdue:false};
     const days=Math.ceil((due-Date.now())/86400000),overdue=days<0;
-    return overdue?{title:`Return overdue by ${Math.abs(days)} day${Math.abs(days)===1?'':'s'}`,text:'Arrange the return meetup now. Both LEGO® sets stay reserved until the return is completed.',overdue:true}:{title:`Return due in ${days} day${days===1?'':'s'}`,text:`${ex.length} temporary swap${ex.length===1?' is':'s are'} still active. Schedule or review the return meetup.`,overdue:false};
+    return overdue?{title:`Return overdue by ${Math.abs(days)} day${Math.abs(days)===1?'':'s'}`,text:'Arrange the return meetup now. Both LEGO™ sets stay reserved until the return is completed.',overdue:true}:{title:`Return due in ${days} day${days===1?'':'s'}`,text:`${ex.length} temporary swap${ex.length===1?' is':'s are'} still active. Schedule or review the return meetup.`,overdue:false};
   }
   function addDesktopNav(count){
     document.querySelectorAll('.xnav,.bcprof-nav').forEach(nav=>{
