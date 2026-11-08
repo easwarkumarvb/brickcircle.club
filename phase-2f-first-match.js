@@ -12,7 +12,7 @@ document.head.appendChild(style);
 
 const labels=['OWN','WANT','EXCHANGEABLE','MATCH'];
 const guidance={
-  own:'Add 3 LEGO® sets you own so BrickCircle has enough supply signals to work with.',
+  own:'Add 3 LEGO™ sets you own so BrickCircle has enough supply signals to work with.',
   want:'Add 3 sets you genuinely want to experience.',
   exchangeable:'Make 1 owned set available so it can participate in reciprocal matching.',
   match:'Your collection is ready. Explore more sets while BrickCircle looks for reciprocal overlap.'
