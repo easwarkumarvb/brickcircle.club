@@ -39,7 +39,7 @@
     const google=!!settings.google, apple=!!settings.apple;
     modal().innerHTML=`<div class="modalback"><div class="modalbox"><button class="close" onclick="window.bcSocialClose()">×</button>
       <h2>Join BrickCircle</h2>
-      <p class="muted">Start exchanging LEGO sets with collectors near you. Social sign-in takes only a few seconds.</p>
+      <p class="muted">Start exchanging LEGO® sets with collectors near you. Social sign-in takes only a few seconds.</p>
       <div style="display:grid;gap:10px;margin:18px 0">
         <button class="primary" style="padding:13px" ${google?'':'disabled'} onclick="window.bcSocialOAuth('google')">Continue with Google</button>
         <button style="padding:13px;background:#000;color:#fff;border-radius:9px;border:1px solid #000" ${apple?'':'disabled'} onclick="window.bcSocialOAuth('apple')">Continue with Apple</button>
