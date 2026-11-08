@@ -1,7 +1,7 @@
 {
-  "name": "BrickCircle \u2014 LEGO Set Exchange",
+  "name": "BrickCircle \u2014 LEGO® Set Exchange",
   "short_name": "BrickCircle",
-  "description": "Buy Less. Build More. Catalogue your LEGO sets, find reciprocal collector matches nearby, and build more through community exchanges.",
+  "description": "Buy Less. Build More. Catalogue your LEGO® sets, find reciprocal collector matches nearby, and build more through community exchanges.",
   "id": "/v2.html",
   "start_url": "/v2.html?source=pwa#home",
   "scope": "/",
