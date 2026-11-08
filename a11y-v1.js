@@ -20,9 +20,9 @@
     document.querySelectorAll('.bc-field').forEach(nameField);
     document.querySelectorAll('[role="dialog"]').forEach(nameDialog);
     document.querySelectorAll('.bc-close').forEach(b=>{if(!b.getAttribute('aria-label'))b.setAttribute('aria-label','Close dialog')});
-    const q=document.getElementById('bc-q');if(q&&!q.getAttribute('aria-label'))q.setAttribute('aria-label','Search LEGO sets by set number, name or theme');
-    const theme=document.getElementById('bc-theme');if(theme&&!theme.getAttribute('aria-label'))theme.setAttribute('aria-label','Filter LEGO sets by theme');
-    const year=document.getElementById('bc-year');if(year&&!year.getAttribute('aria-label'))year.setAttribute('aria-label','Filter LEGO sets by year');
+    const q=document.getElementById('bc-q');if(q&&!q.getAttribute('aria-label'))q.setAttribute('aria-label','Search LEGO® sets by set number, name or theme');
+    const theme=document.getElementById('bc-theme');if(theme&&!theme.getAttribute('aria-label'))theme.setAttribute('aria-label','Filter LEGO® sets by theme');
+    const year=document.getElementById('bc-year');if(year&&!year.getAttribute('aria-label'))year.setAttribute('aria-label','Filter LEGO® sets by year');
     document.querySelectorAll('textarea[placeholder]:not([aria-label])').forEach(x=>x.setAttribute('aria-label',x.getAttribute('placeholder')||'Message'));
     document.querySelectorAll('input[placeholder]:not([aria-label])').forEach(x=>x.setAttribute('aria-label',x.getAttribute('placeholder')||'Input'));
   }
