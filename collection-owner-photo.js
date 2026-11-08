@@ -50,11 +50,11 @@ function refreshAfterPhoto(){if(!window.__bcIsolated)setTimeout(()=>location.rel
 function photoPicker({title,copy,onSave,saveLabel='Add to My Sets'}){
   const o=overlay(`<div class="bc-modal-head"><div><h2>${esc(title)}</h2><p class="bc-muted">${esc(copy)}</p></div><button class="bc-close" type="button" data-photo-close>×</button></div>
     <form class="bc-form" id="bc-owner-photo-form">
-      <div class="bc-field"><label>Photo of your finished LEGO® set <b>(required)</b></label>
+      <div class="bc-field"><label>Photo of your finished LEGO™ set <b>(required)</b></label>
         <input class="bc-input" id="bc-owner-photo-input" type="file" accept="image/jpeg,image/png,image/webp" required>
         <div class="bc-small">Use your phone camera or gallery. JPEG, PNG or WebP · max 8 MB.</div>
       </div>
-      <div id="bc-owner-photo-preview" style="display:none"><img alt="Selected assembled LEGO® set" style="width:100%;max-height:330px;object-fit:contain;border-radius:12px"></div>
+      <div id="bc-owner-photo-preview" style="display:none"><img alt="Selected assembled LEGO™ set" style="width:100%;max-height:330px;object-fit:contain;border-radius:12px"></div>
       <div class="bc-notice"><b>Why this is required</b><br>This photo helps the other collector understand the visible condition and apparent completeness of your physical set. Final inspection still happens in person.</div>
       <div class="bc-form-actions"><button type="button" class="bc-btn" data-photo-close>Cancel</button><button class="bc-btn primary" type="submit" disabled>${esc(saveLabel)}</button></div>
     </form>`);
@@ -134,7 +134,7 @@ async function hydrateOwnerPhotos(){
       const {data}=await client.from('collection_items').select('owner_photo_path').eq('id',itemId).eq('user_id',user.id).limit(1);
       const path=data?.[0]?.owner_photo_path;if(!path)continue;
       const url=await signedUrl(path),img=row.querySelector('.bc-myset-visual img');
-      if(img&&url){img.src=url;img.removeAttribute('data-set-image');img.alt='Owner photo of assembled LEGO® set';row.dataset.ownerPhotoHydrated='1'}
+      if(img&&url){img.src=url;img.removeAttribute('data-set-image');img.alt='Owner photo of assembled LEGO™ set';row.dataset.ownerPhotoHydrated='1'}
     }catch(_){ }
   }
 }
@@ -159,7 +159,7 @@ async function hydrateCounterpartyPhotos(){
       const path=data?.[0]?.owner_photo_path;if(error||!path)continue;
       const url=await signedUrl(path);if(!url)continue;
       const wrap=document.createElement('div');wrap.className='bc-owner-proof';wrap.style.marginTop='10px';
-      wrap.innerHTML=`<img src="${esc(url)}" alt="Owner photo of assembled LEGO® set ${esc(setNumber)}" loading="lazy" style="width:100%;max-height:220px;object-fit:contain;border-radius:12px"><div class="bc-small" style="margin-top:5px">Owner photo · inspect the physical set in person before exchange</div>`;
+      wrap.innerHTML=`<img src="${esc(url)}" alt="Owner photo of assembled LEGO™ set ${esc(setNumber)}" loading="lazy" style="width:100%;max-height:220px;object-fit:contain;border-radius:12px"><div class="bc-small" style="margin-top:5px">Owner photo · inspect the physical set in person before exchange</div>`;
       requested.appendChild(wrap);card.dataset.counterpartyPhotoHydrated='1';
     }catch(_){ }
   }
