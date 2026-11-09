@@ -165,6 +165,7 @@
   }
   function badge(value) { const label = String(value ?? 'Unknown').replaceAll('_',' '); return `<span class="badge ${['visible','resolved','COMPLETED'].includes(value)?'good':['open','hidden'].includes(value)?'warn':''}">${esc(label)}</span>`; }
   async function beginMFA() {
+    if($('mfa-dialog').open) return;
     const generation=++mfaGeneration;
     mfaFactor=null; mfaNew=false; $('mfa-setup').hidden=true; $('mfa-status').textContent='Preparing secure verification…'; $('verify-mfa').disabled=true;
     $('mfa-dialog').showModal();
@@ -527,7 +528,12 @@
     if(event==='SIGNED_OUT') purge('Signed out. Sign in to your administrator account.');
     else if(lastUserId&&session?.user?.id&&lastUserId!==session.user.id) purge('Account changed. Refresh to verify administrator access.');
     else if(lastUserId&&session?.access_token) {
-      try { if(JSON.parse(atob(session.access_token.split('.')[1].replaceAll('-','+').replaceAll('_','/'))).aal !== 'aal2') purge('Authenticator verification is required to access the admin console.'); } catch { lockWrites(); }
+      try {
+        if(JSON.parse(atob(session.access_token.split('.')[1].replaceAll('-','+').replaceAll('_','/'))).aal !== 'aal2' && !$('mfa-dialog').open) {
+          purge('Authenticator verification is required to access the admin console.');
+          beginMFA();
+        }
+      } catch { lockWrites(); }
     }
     else if(session?.user?.id) lastUserId=session.user.id;
   });
