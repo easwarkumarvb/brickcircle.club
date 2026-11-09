@@ -40,7 +40,7 @@ export function createHandler(createClient, env) {
       'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'};
     if (origin && allowed.has(origin)) headers['Access-Control-Allow-Origin'] = origin;
-    const response = (status, body) => new Response(JSON.stringify(body?.error && !body.code ? {...body, code:({400:'validation',401:'unauthenticated',403:'forbidden',404:'not_found',409:'conflict'}[status] || 'unavailable')} : body), {status, headers});
+    const response = (status, body) => new Response(JSON.stringify(body?.error && !body.code ? {...body, code:({400:'validation',401:'unauthenticated',403:'forbidden',404:'not_found',409:'conflict',429:'rate_limited'}[status] || 'unavailable')} : body), {status, headers});
     if (origin && !allowed.has(origin)) return response(403, {error: 'Origin not allowed.'});
     if (req.method === 'OPTIONS') return new Response(null, {status: 204, headers});
     if (!['GET', 'POST'].includes(req.method)) return response(405, {error: 'Method not allowed.'});
@@ -119,6 +119,7 @@ export function createHandler(createClient, env) {
       } else return response(400, {error: 'Unknown operation.'});
       if (result.error) {
         const code = result.error.code;
+        if (code === 'PT429') return response(429, {error: 'Too many admin requests. Retry within the next minute.'});
         if (code === 'PT403') return response(403, {error: 'Authenticator verification required.', code: 'mfa_required'});
         if (code === '42501') return response(403, {error: 'Administrator access or active session required.'});
         if (code === 'PT409') return response(409, {error: 'Record changed or request ID reused. Refresh and review the latest record.'});
