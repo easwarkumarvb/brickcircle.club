@@ -435,6 +435,43 @@ function navigate(page,id=''){
   location.hash=next;
 }
 
+const BC_SHARE_URL='https://www.brickcircle.club/';
+const BC_SHARE_MESSAGE='Discover BrickCircle, a local community for adult LEGO™ collectors to share more builds. Buy Less. Build More.';
+function openBrickCircleShareDialog(trigger=document.activeElement){
+  document.getElementById('bc-share-dialog')?.remove();
+  const shareUrl=encodeURIComponent(BC_SHARE_URL);
+  const shareText=encodeURIComponent(BC_SHARE_MESSAGE);
+  const dialog=document.createElement('dialog');
+  dialog.id='bc-share-dialog';
+  dialog.className='bc-share-dialog';
+  const nativeShare=typeof navigator.share==='function'?'<button class="bc-share-native" type="button" data-share-native><span aria-hidden="true">↗</span> Share from this device</button>':'';
+  dialog.innerHTML='<div class="bc-share-dialog-head"><div><span class="bc-share-kicker">SPREAD THE WORD</span><h2 id="bc-share-title">Share BrickCircle</h2></div><button class="bc-share-close" type="button" data-share-close aria-label="Close share dialog">×</button></div><p>Know someone who loves building? Invite them to discover a local community for adult LEGO™ collectors.</p>'+nativeShare+'<div class="bc-share-services" aria-label="Share using a social network"><a class="bc-share-service whatsapp" href="https://api.whatsapp.com/send?text='+shareText+'%20'+shareUrl+'" target="_blank" rel="noopener noreferrer" aria-label="Share on WhatsApp"><span aria-hidden="true">◉</span><b>WhatsApp</b></a><a class="bc-share-service facebook" href="https://www.facebook.com/sharer/sharer.php?u='+shareUrl+'&quote='+shareText+'" target="_blank" rel="noopener noreferrer" aria-label="Share on Facebook"><span aria-hidden="true">f</span><b>Facebook</b></a><a class="bc-share-service linkedin" href="https://www.linkedin.com/sharing/share-offsite/?url='+shareUrl+'" target="_blank" rel="noopener noreferrer" aria-label="Share on LinkedIn"><span aria-hidden="true">in</span><b>LinkedIn</b></a><a class="bc-share-service reddit" href="https://www.reddit.com/submit?url='+shareUrl+'&title='+shareText+'" target="_blank" rel="noopener noreferrer" aria-label="Share on Reddit"><span aria-hidden="true">●</span><b>Reddit</b></a><a class="bc-share-service x" href="https://twitter.com/intent/tweet?text='+shareText+'&url='+shareUrl+'" target="_blank" rel="noopener noreferrer" aria-label="Share on X"><span aria-hidden="true">𝕏</span><b>X</b></a></div><div class="bc-share-copy-row"><label for="bc-share-url">Website link</label><div><input id="bc-share-url" type="text" readonly value="'+BC_SHARE_URL+'"><button class="bc-share-copy" type="button" data-share-copy>Copy link</button></div></div><p class="bc-share-status" data-share-status role="status" aria-live="polite"></p>';
+  document.body.appendChild(dialog);
+  const close=()=>dialog.close();
+  dialog.querySelector('[data-share-close]').addEventListener('click',close);
+  dialog.addEventListener('click',event=>{if(event.target===dialog)close()});
+  dialog.addEventListener('close',()=>{dialog.remove();if(trigger?.isConnected)trigger.focus()},{once:true});
+  dialog.querySelector('[data-share-copy]').addEventListener('click',async()=>{
+    const status=dialog.querySelector('[data-share-status]');
+    try{
+      await navigator.clipboard.writeText(BC_SHARE_URL);
+      status.textContent='Link copied. Share it with a fellow builder!';
+    }catch{
+      const input=dialog.querySelector('#bc-share-url');
+      input.focus();input.select();
+      const copied=document.execCommand('copy');
+      status.textContent=copied?'Link copied. Share it with a fellow builder!':'Copy was unavailable. Select and copy the website link above.';
+    }
+  });
+  dialog.querySelector('[data-share-native]')?.addEventListener('click',async()=>{
+    const status=dialog.querySelector('[data-share-status]');
+    try{await navigator.share({title:'BrickCircle',text:BC_SHARE_MESSAGE,url:BC_SHARE_URL});close()}
+    catch(error){if(error?.name!=='AbortError')status.textContent='Sharing could not be opened. Choose a social network below.'}
+  });
+  if(typeof dialog.showModal==='function')dialog.showModal();else dialog.setAttribute('open','');
+  dialog.querySelector('[data-share-close]').focus();
+}
+
 function shell(){
   if(logoutLocked)return;
   let root=document.getElementById('bc-root');if(!root){root=document.createElement('div');root.id='bc-root';document.body.appendChild(root)}
@@ -442,13 +479,14 @@ function shell(){
   const mobile=mobileRoutes.map(([p,i,l])=>`<button data-nav="${p}" class="${routeName()===p?'active':''}" aria-label="${l}" ${routeName()===p?'aria-current="page"':''}><span>${i}</span>${l}</button>`).join('');
   const unread=S.notifications.filter(n=>!n.read_at).length;
   const identity=S.profile||{};
-  root.innerHTML=`<header class="bc-topbar"><div class="bc-topbar-in"><button class="bc-logo" data-nav="home" aria-label="BrickCircle home"><img src="/assets/brickcircle-brand-2026-256.png" alt=""><span class="bc-brand-copy"><strong>BrickCircle</strong><small>Buy Less. Build More.</small></span></button><nav class="bc-desktop-nav" aria-label="Primary navigation">${nav}</nav><div class="bc-top-actions">${S.user?`<button class="bc-icon-btn" data-open="inbox" aria-label="Messages">💬</button><button class="bc-icon-btn" data-open="notifications" aria-label="Notifications">🔔${unread?`<span class="bc-badge">${unread>9?'9+':unread}</span>`:''}</button>${S.user.id===OWNER_USER_ID?'<a class="bc-owner-admin-link" href="/admin.html" aria-label="Open BrickCircle admin dashboard">Admin</a>':''}<button class="bc-avatar-btn" data-nav="profile" aria-label="Profile and account controls">${avatar(identity)}</button><button class="bc-top-signout" type="button" data-signout-top>Log out</button>`:`<button class="bc-signin" data-auth>Join / Sign in</button>`}</div></div></header><main id="bc-main" class="bc-main">${loading()}</main><nav class="bc-mobile-nav" aria-label="Mobile navigation">${mobile}</nav>`;
+  root.innerHTML=`<header class="bc-topbar"><div class="bc-topbar-in"><button class="bc-logo" data-nav="home" aria-label="BrickCircle home"><img src="/assets/brickcircle-brand-2026-256.png" alt=""><span class="bc-brand-copy"><strong>BrickCircle</strong><small>Buy Less. Build More.</small></span></button><nav class="bc-desktop-nav" aria-label="Primary navigation">${nav}</nav><div class="bc-top-actions"><button class="bc-share-trigger" type="button" data-share-open aria-label="Share BrickCircle"><span aria-hidden="true">↗</span><b>Share</b></button>${S.user?`<button class="bc-icon-btn" data-open="inbox" aria-label="Messages">💬</button><button class="bc-icon-btn" data-open="notifications" aria-label="Notifications">🔔${unread?`<span class="bc-badge">${unread>9?'9+':unread}</span>`:''}</button>${S.user.id===OWNER_USER_ID?'<a class="bc-owner-admin-link" href="/admin.html" aria-label="Open BrickCircle admin dashboard">Admin</a>':''}<button class="bc-avatar-btn" data-nav="profile" aria-label="Profile and account controls">${avatar(identity)}</button><button class="bc-top-signout" type="button" data-signout-top>Log out</button>`:`<button class="bc-signin" data-auth>Join / Sign in</button>`}</div></div></header><main id="bc-main" class="bc-main">${loading()}</main><nav class="bc-mobile-nav" aria-label="Mobile navigation">${mobile}</nav>`;
   const signout=$('[data-signout-top]',root);
   if(signout){signout.textContent='Sign out';const menu=document.createElement('details');menu.className='bc-account-menu';menu.innerHTML='<summary aria-label="Account menu">Account ▾</summary><div><button type="button" data-switch-account>Use another account</button></div>';signout.before(menu);menu.lastElementChild.appendChild(signout)}
   wireAvatars(root);bindShell(root);
 }
 function bindShell(root=document){
   $$('[data-nav]',root).forEach(b=>b.onclick=()=>navigate(b.dataset.nav));
+  $$('[data-share-open]').forEach(b=>b.onclick=()=>openBrickCircleShareDialog(b));
   $$('[data-auth]',root).forEach(b=>b.onclick=showAuth);
   $$('[data-signout-top]',root).forEach(b=>b.onclick=signOut);
   $$('[data-switch-account]',root).forEach(b=>b.onclick=()=>signOut(true));

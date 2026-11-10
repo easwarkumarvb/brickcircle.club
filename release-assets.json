@@ -1,5 +1,5 @@
 {
-  "release": "20261104-refined-catalogue-search-r1",
+  "release": "20261110-social-sharing-r1",
   "shell": [
     "/",
     "/v2.html",
@@ -10,6 +10,7 @@
     "/zen-ux-v1.css",
     "/ux-mobile-v2.css",
     "/collector-ux.css",
+    "/cookie-consent.js",
     "/analytics.js",
     "/product-analytics.js",
     "/observability-v26.js",
