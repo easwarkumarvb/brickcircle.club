@@ -5,7 +5,7 @@ const client=fs.readFileSync('app-v3.js','utf8');
 const migration=fs.readFileSync('supabase/migrations/20260908093000_require_collection_owner_photo.sql','utf8');
 const html=fs.readFileSync('v2.html','utf8');
 
-assert.match(client,/Photo of your finished LEGO set/);
+assert.match(client,/Photo of your finished LEGO™ set/);
 // Captured files live in picker state, not input.files; custom validation is required.
 assert.match(client,/id="bc-owner-photo-input" type="file" accept="image\/jpeg,image\/png,image\/webp" hidden/);
 assert.match(client,/const file=selected,error=ownerPhotoValidation\(file\)/);
