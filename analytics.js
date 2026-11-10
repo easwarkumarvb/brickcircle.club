@@ -17,8 +17,10 @@
   }
   window.bcAnalyticsPage=safePage;
   function loadAnalytics(){
-    if(loaded||window.bcAnalyticsConsent!=='granted')return;
-    loaded=true;window['ga-disable-'+GA_ID]=false;
+    if(window.bcAnalyticsConsent!=='granted')return;
+    window['ga-disable-'+GA_ID]=false;
+    if(loaded){try{window.gtag('event','page_view',safePage())}catch(_){}return;}
+    loaded=true;
     window.dataLayer=window.dataLayer||[];
     window.gtag=window.gtag||function(){window.dataLayer.push(arguments);};
     window.gtag('js',new Date());
