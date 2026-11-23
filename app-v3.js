@@ -3,7 +3,7 @@
 'use strict';
 const SUPABASE_URL='https://nsxtromjdpdscknadxez.supabase.co';
 const SUPABASE_KEY='sb_publishable_JJhVbgjGblHrnKuPOsJkxQ_zRoQNlIL';
-const SUPPORT_EMAIL='support@brickcircle.club';
+const SUPPORT_EMAIL='hello@brickcircle.club';
 let lastHiddenAt=0,lastVisibleAt=Date.now(),lastRoute='';
 let hiddenTransitionGeneration=0,consumedResumeGeneration=0,resumeValidationFlight=null;
 async function resilientAuthLock(name,acquireTimeout,fn){
@@ -17,7 +17,7 @@ async function resilientAuthLock(name,acquireTimeout,fn){
 // its URL. This remains in memory only and is never analytics/log context.
 const initialAuthUrl=new URL(location.href);
 const db=window.supabase?.createClient?.(SUPABASE_URL,SUPABASE_KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true,lock:resilientAuthLock}});
-if(!db){document.body.innerHTML='<main style="padding:30px;font-family:system-ui">BrickCircle could not start. Please refresh. If the problem continues, email <a href="mailto:support@brickcircle.club">support@brickcircle.club</a>.</main>';return;}
+if(!db){document.body.innerHTML='<main style="padding:30px;font-family:system-ui">BrickCircle could not start. Please refresh. If the problem continues, email <a href="mailto:hello@brickcircle.club">hello@brickcircle.club</a>.</main>';return;}
 window.BC_SUPABASE=db;
 window.BC_V3=true;
 
@@ -2027,7 +2027,7 @@ function showNotifications(){
 /* --- Messages: conversation list + direct/case threads --- */
 const BETA_FEEDBACK_RELEASE='20261019-private-feedback-r1';
 const BETA_FEEDBACK_SCREENS={messages:'Messages',conversation:'Conversation'};
-const BETA_FEEDBACK_SUPPORT='support@brickcircle.club';
+const BETA_FEEDBACK_SUPPORT='hello@brickcircle.club';
 function betaFeedbackReport(screen,description=''){
   const allowedScreen=Object.prototype.hasOwnProperty.call(BETA_FEEDBACK_SCREENS,screen)?screen:'messages';
   const text=String(description).slice(0,1000).trim();
