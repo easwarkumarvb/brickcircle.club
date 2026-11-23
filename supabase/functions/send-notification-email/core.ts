@@ -26,7 +26,7 @@ export function buildBrevoMessage(notification:EmailNotification,email:string,or
   const url=notificationUrl(notification,origin);
   return {
     sender:{name:'BrickCircle',email:'notifications@brickcircle.club'},
-    replyTo:{name:'BrickCircle Support',email:'support@brickcircle.club'},
+    replyTo:{name:'BrickCircle Support',email:'hello@brickcircle.club'},
     to:[{email}],
     subject:title,
     textContent:`${title}\n\n${body}\n\nOpen BrickCircle: ${url}\n\nBrickCircle.club · Local, in-person LEGO exchanges`,

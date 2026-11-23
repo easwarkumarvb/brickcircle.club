@@ -8,7 +8,7 @@ const delivery:EmailDelivery={id:'40000000-0000-4000-8000-000000000004',notifica
 test('Brevo payload uses the verified BrickCircle sender, reply-to and deterministic idempotency key',()=>{
   const message=buildBrevoMessage(notification,'recipient@example.com');
   expect(message.sender).toEqual({name:'BrickCircle',email:'notifications@brickcircle.club'});
-  expect(message.replyTo).toEqual({name:'BrickCircle Support',email:'support@brickcircle.club'});
+  expect(message.replyTo).toEqual({name:'BrickCircle Support',email:'hello@brickcircle.club'});
   expect(message.to).toEqual([{email:'recipient@example.com'}]);
   expect(message.headers['Idempotency-Key']).toBe(`brickcircle-notification-${notification.id}`);
   expect(message.htmlContent).toContain(`/v2.html#exchanges/${notification.entity_id}`);
