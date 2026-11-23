@@ -36,7 +36,7 @@ test('Messages feedback is explicit, accessible, copyable and excludes private b
   let dialog=page.getByRole('dialog',{name:'Report a problem'});
   await expect(dialog).toBeVisible();
   await expect(dialog.getByLabel('Description (optional)')).toHaveValue('');
-  await expect(dialog).toContainText('support@brickcircle.club');
+  await expect(dialog).toContainText('hello@brickcircle.club');
   await expect(dialog).toContainText('Avoid sensitive information');
   await expect(dialog.locator('input[type="file"]')).toHaveCount(0);
   await page.keyboard.press('Escape');
@@ -53,7 +53,7 @@ test('Messages feedback is explicit, accessible, copyable and excludes private b
   const send=dialog.getByRole('link',{name:'Open email'});
   await expect(description).toHaveValue('');
   const emptyBody=await send.getAttribute('href');
-  expect(emptyBody).toContain('mailto:support@brickcircle.club');
+  expect(emptyBody).toContain('mailto:hello@brickcircle.club');
   expect(decodeURIComponent(emptyBody||'')).toContain('Release: 20261019-private-feedback-r1');
   expect(decodeURIComponent(emptyBody||'')).toContain('Screen: Conversation');
   for(const secret of secrets)expect(decodeURIComponent(emptyBody||'')).not.toContain(secret);
