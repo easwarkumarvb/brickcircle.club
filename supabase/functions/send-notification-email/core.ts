@@ -3,7 +3,7 @@ export const MAX_EMAIL_ATTEMPTS=3;
 export const SUPPORTED_EMAIL_KINDS=new Set([
   'reciprocal_match','request_received','exchange_accepted','exchange_declined',
   'exchange_cancelled','meetup_proposed','swap_started','return_meetup_proposed',
-  'return_overdue','return_dispute','return_completed','proposal_reminder','exchange_proposed'
+  'return_overdue','return_dispute','return_completed','proposal_reminder','exchange_proposed','registration_alert'
 ]);
 
 export type EmailDelivery={id:string;notification_id:string;recipient_user_id:string;notification_kind:string;attempt_count:number};
@@ -14,6 +14,7 @@ export type SendResult={ok:boolean;status:number|null;messageId?:string;error?:s
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,(character)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character] as string));
 
 export function notificationUrl(notification:EmailNotification,origin='https://brickcircle.club'){
+  if(notification.kind==='registration_alert')return `${origin}/admin.html`;
   if(notification.metadata?.exchange_case_id)return `${origin}/v2.html#exchange/${encodeURIComponent(String(notification.metadata.exchange_case_id))}`;
   if(notification.kind==='reciprocal_match')return `${origin}/v2.html#matches`;
   if(notification.entity_type==='exchange_request'&&notification.entity_id)return `${origin}/v2.html#exchanges/${notification.entity_id}`;
