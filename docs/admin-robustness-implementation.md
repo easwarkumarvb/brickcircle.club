@@ -10,7 +10,7 @@ Build on the existing /admin.html console. The admin is a last-resort platform o
 Collectors retain control of proposals, terms, acceptance, meetups, handoffs and returns.
 Do not add forced exchange completion/cancellation, custody transfers, fault adjudication,
 compensation, rating edits, broad private-message access or routine lifecycle arbitration.
-Support remains reachable at support@brickcircle.club.
+Support remains reachable at hello@brickcircle.club.
 
 The existing console already provides MFA, a trusted admin allowlist, live-session checks,
 member lookup, catalogue visibility, exchange events, internal support triage and audit records.
