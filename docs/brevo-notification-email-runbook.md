@@ -9,7 +9,7 @@ This channel is additive. `public.notifications` remains authoritative for in-ap
 - Generate a separate high-entropy value for `EMAIL_DELIVERY_WEBHOOK_SECRET`.
 - `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are supplied to deployed Supabase Edge Functions. Never expose any of these values in browser code or repository files.
 
-The worker always sends as `BrickCircle <notifications@brickcircle.club>` with Reply-To `BrickCircle Support <support@brickcircle.club>`. Recipient addresses are resolved with `auth.admin.getUserById()` from the queued recipient user ID; webhook payloads cannot provide or override them.
+The worker always sends as `BrickCircle <notifications@brickcircle.club>` with Reply-To `BrickCircle Support <hello@brickcircle.club>`. Recipient addresses are resolved with `auth.admin.getUserById()` from the queued recipient user ID; webhook payloads cannot provide or override them.
 
 ## Asynchronous invocation
 
