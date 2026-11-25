@@ -1,26 +1,27 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
-import {buildBrevoMessage,dispatchNotificationEmail,isTransientEmailFailure,retryDelaySeconds,SUPPORTED_EMAIL_KINDS,type EmailDelivery,type EmailNotification} from '../../supabase/functions/send-notification-email/core';
+import {buildNotificationEmail,dispatchNotificationEmail,isTransientEmailFailure,retryDelaySeconds,SUPPORTED_EMAIL_KINDS,type EmailDelivery,type EmailNotification} from '../../supabase/functions/send-notification-email/core';
 
 const notification:EmailNotification={id:'10000000-0000-4000-8000-000000000001',user_id:'20000000-0000-4000-8000-000000000002',kind:'request_received',title:'New exchange proposal',body:'A collector proposed an exchange.',entity_type:'exchange_request',entity_id:'30000000-0000-4000-8000-000000000003'};
 const delivery:EmailDelivery={id:'40000000-0000-4000-8000-000000000004',notification_id:notification.id,recipient_user_id:notification.user_id,notification_kind:notification.kind,attempt_count:1};
 
-test('Brevo payload uses the verified BrickCircle sender, reply-to and deterministic idempotency key',()=>{
-  const message=buildBrevoMessage(notification,'recipient@example.com');
-  expect(message.sender).toEqual({name:'BrickCircle',email:'notifications@brickcircle.club'});
-  expect(message.replyTo).toEqual({name:'BrickCircle Support',email:'hello@brickcircle.club'});
-  expect(message.to).toEqual([{email:'recipient@example.com'}]);
-  expect(message.headers['Idempotency-Key']).toBe(`brickcircle-notification-${notification.id}`);
-  expect(message.htmlContent).toContain(`/v2.html#exchanges/${notification.entity_id}`);
+test('GoDaddy SMTP message uses the BrickCircle sender, reply-to and stable message ID',()=>{
+  const message=buildNotificationEmail(notification,'recipient@example.com');
+  expect(message.from).toEqual({name:'BrickCircle',address:'hello@brickcircle.club'});
+  expect(message.replyTo).toBe('hello@brickcircle.club');
+  expect(message.to).toBe('recipient@example.com');
+  expect(message.messageId).toBe(`<notification-${notification.id}@brickcircle.club>`);
+  expect(message.headers['X-BrickCircle-Notification-ID']).toBe(notification.id);
+  expect(message.html).toContain(`/v2.html#exchanges/${notification.entity_id}`);
 });
 
 test('reciprocal email subject and both body fallbacks preserve repeat-aware producer copy',()=>{
   const repeat={...notification,kind:'reciprocal_match',entity_type:'reciprocal_match',entity_id:'match-1',title:'A past exchange is a match again',body:'You and Ramya have exchanged before (2 shared exchanges). Latest shared exchange: May 3, 2026.'};
-  const message=buildBrevoMessage(repeat,'member@example.com');
+  const message=buildNotificationEmail(repeat,'member@example.com');
   expect(message.subject).toBe(repeat.title);
-  expect(message.textContent).toContain(repeat.body);
-  expect(message.htmlContent).toContain(repeat.body);
-  const fallback=buildBrevoMessage({...repeat,title:null,body:null},'member@example.com');
+  expect(message.text).toContain(repeat.body);
+  expect(message.html).toContain(repeat.body);
+  const fallback=buildNotificationEmail({...repeat,title:null,body:null},'member@example.com');
   expect(fallback.subject).toBe('BrickCircle update');
   expect(fallback.textContent).toContain('You have an important BrickCircle update.');
   expect(fallback.htmlContent).toContain('You have an important BrickCircle update.');
@@ -38,7 +39,7 @@ test('recipient is resolved from the queued Auth user and request input cannot s
   await dispatchNotificationEmail(delivery,{
     loadNotification:async()=>notification,
     resolveRecipientEmail:async(userId)=>{resolvedUser=userId;return 'auth-owner@example.com'},
-    send:async(message)=>{sentTo=message.to[0].email;return {ok:true,status:201,messageId:'brevo-1'}},
+    send:async(message)=>{sentTo=message.to;return {ok:true,messageId:'smtp-1'}},
     sent:async()=>{},retry:async()=>{},permanentFailure:async()=>{}
   });
   expect(resolvedUser).toBe(notification.user_id);
@@ -53,7 +54,7 @@ test('every supported kind resolves its recipient from the source notification o
     await dispatchNotificationEmail({...delivery,notification_kind:kind},{
       loadNotification:async()=>event,
       resolveRecipientEmail:async(userId)=>{resolvedUser=userId;return `${kind}@example.com`},
-      send:async(message)=>{sentTo=message.to[0].email;return {ok:true,status:201,messageId:`brevo-${kind}`}},
+      send:async(message)=>{sentTo=message.to;return {ok:true,messageId:`smtp-${kind}`}},
       sent:async()=>{},retry:async()=>{},permanentFailure:async()=>{}
     });
     expect(resolvedUser).toBe(event.user_id);
@@ -61,29 +62,29 @@ test('every supported kind resolves its recipient from the source notification o
   }
 });
 
-test('transient Brevo failure is queued for bounded retry without removing the in-app source',async()=>{
+test('transient SMTP failure is queued for bounded retry without removing the in-app source',async()=>{
   let retry:{error:string;delay:number}|null=null;let sourceLoads=0;
   const result=await dispatchNotificationEmail(delivery,{
     loadNotification:async()=>{sourceLoads++;return notification},
     resolveRecipientEmail:async()=> 'member@example.com',
-    send:async()=>({ok:false,status:503,error:'provider unavailable'}),
+    send:async()=>({ok:false,transient:true,error:'SMTP server temporarily unavailable'}),
     sent:async()=>{},
     retry:async(_row,_email,error,delay)=>{retry={error,delay}},
     permanentFailure:async()=>{throw new Error('must not permanently fail on first transient error')}
   });
   expect(result).toEqual({sent:false,permanent:false});
-  expect(retry).toEqual({error:'provider unavailable',delay:60});
+  expect(retry).toEqual({error:'SMTP server temporarily unavailable',delay:60});
   expect(sourceLoads).toBe(1);
   expect(notification.id).toBe(delivery.notification_id);
 });
 
 test('third attempt and permanent provider errors stop retrying',async()=>{
   let permanent=0,retries=0;
-  const deps={loadNotification:async()=>notification,resolveRecipientEmail:async()=> 'member@example.com',send:async()=>({ok:false,status:503,error:'still down'}),sent:async()=>{},retry:async()=>{retries++},permanentFailure:async()=>{permanent++}};
+  const deps={loadNotification:async()=>notification,resolveRecipientEmail:async()=> 'member@example.com',send:async()=>({ok:false,transient:true,error:'still down'}),sent:async()=>{},retry:async()=>{retries++},permanentFailure:async()=>{permanent++}};
   await dispatchNotificationEmail({...delivery,attempt_count:3},deps);
-  await dispatchNotificationEmail(delivery,{...deps,send:async()=>({ok:false,status:400,error:'bad request'})});
+  await dispatchNotificationEmail(delivery,{...deps,send:async()=>({ok:false,transient:false,error:'mailbox rejected recipient'})});
   expect(permanent).toBe(2);expect(retries).toBe(0);
-  expect(isTransientEmailFailure(429)).toBe(true);expect(isTransientEmailFailure(400)).toBe(false);
+  expect(isTransientEmailFailure({ok:false,transient:true})).toBe(true);expect(isTransientEmailFailure({ok:false,transient:false})).toBe(false);
   expect([retryDelaySeconds(1),retryDelaySeconds(2),retryDelaySeconds(3)]).toEqual([60,300,1800]);
 });
 
@@ -95,11 +96,11 @@ test('mismatched or unsupported source rows cannot be emailed',async()=>{
   expect(sends).toBe(0);expect(permanent).toBe(2);
 });
 
-test('browser and release assets contain no Brevo endpoint or credential hook',async()=>{
+test('browser and release assets contain no SMTP credential or endpoint',async()=>{
   const assets=await Promise.all(['app-v3.js','v2.html','catalogue-cache-sw.js','release-assets.json'].map(path=>readFile(path,'utf8')));
   const shipped=assets.join('\n');
-  expect(shipped).not.toContain('BREVO_API_KEY');
-  expect(shipped).not.toContain('api.brevo.com');
+  expect(shipped).not.toContain('GODADDY_SMTP_PASSWORD');
+  expect(shipped).not.toContain('smtpout.secureserver.net');
   expect(shipped).not.toContain('send-notification-email');
 });
 
@@ -107,8 +108,8 @@ test('browser and release assets contain no Brevo endpoint or credential hook',a
 test('proposal reminder and resend emails retain canonical case action links',()=>{
   for(const kind of ['proposal_reminder','exchange_proposed']){
     expect(SUPPORTED_EMAIL_KINDS.has(kind)).toBe(true);
-    const message=buildBrevoMessage({...notification,kind,metadata:{exchange_case_id:'case-deadline'},body:'Accept, decline, or counter before the deadline.'},'member@example.com');
-    expect(message.textContent).toContain('/v2.html#exchange/case-deadline');
-    expect(message.htmlContent).toContain('Accept, decline, or counter');
+    const message=buildNotificationEmail({...notification,kind,metadata:{exchange_case_id:'case-deadline'},body:'Accept, decline, or counter before the deadline.'},'member@example.com');
+    expect(message.text).toContain('/v2.html#exchange/case-deadline');
+    expect(message.html).toContain('Accept, decline, or counter');
   }
 });
