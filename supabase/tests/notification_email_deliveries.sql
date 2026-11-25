@@ -72,7 +72,7 @@ select pg_temp.assert_true((select count(*)=1 from public.notification_email_del
 update public.notification_email_deliveries set status='retry',next_attempt_at=pg_catalog.now()-interval '1 second' where status='processing';
 select pg_temp.assert_true((select count(*)=1 from public.claim_notification_email_deliveries(1,null)),'transient failure can be retried');
 select pg_temp.assert_true((select count(*)=1 from public.notification_email_deliveries where status='processing' and attempt_count=2),'retry increments attempt count once');
-update public.notification_email_deliveries set status='permanent_failure',recipient_email='first@example.com',last_error='Brevo HTTP 400' where status='processing';
+update public.notification_email_deliveries set status='permanent_failure',recipient_email='first@example.com',last_error='SMTP 550 recipient rejected' where status='processing';
 select pg_temp.assert_true((select count(*)=13 from public.notifications),'email failure never deletes or changes the in-app source');
 reset role;
 
