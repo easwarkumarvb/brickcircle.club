@@ -1,5 +1,8 @@
 # Marketplace notification email runbook
 
+For new member registration alerts to `hello@brickcircle.club`, use the
+separate [admin registration email runbook](admin-registration-email-runbook.md).
+
 This channel is additive. `public.notifications` remains authoritative for in-app notifications. The database trigger only creates a server-owned delivery row for an explicit allowlist of high-value marketplace events; it does not call Brevo inside the marketplace transaction.
 
 ## Required secrets and sender setup
