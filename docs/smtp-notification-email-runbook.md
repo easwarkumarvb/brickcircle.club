@@ -12,7 +12,7 @@ Configure these Supabase Edge Function secrets in each project:
 - `GODADDY_SMTP_PASSWORD`: the password for that mailbox.
 - `EMAIL_DELIVERY_WEBHOOK_SECRET`: a separate high-entropy webhook secret used by the server-to-server delivery trigger.
 
-The SMTP credentials are shared by `send-notification-email` and `send-registration-email`. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; never expose those or the SMTP credentials in browser code or the repository. No Brevo account, API key, or sender verification is used by these workers.
+The SMTP credentials are shared by `send-notification-email` and `send-registration-email`. Supabase supplies `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`; never expose those or the SMTP credentials in browser code or the repository. The workers send directly through the GoDaddy mailbox rather than a transactional email API provider.
 
 The mailbox must be enabled for authenticated SMTP sending. If the GoDaddy mailbox uses a different product, such as Microsoft 365, confirm its SMTP endpoint and port before deployment; the worker currently targets the Titan endpoint.
 
