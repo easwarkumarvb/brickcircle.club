@@ -23,7 +23,9 @@ both `hello@brickcircle.club`. Configure these Supabase Function secrets:
 - `EMAIL_DELIVERY_WEBHOOK_SECRET`: a separate high-entropy webhook secret.
 
 The SMTP host (`smtpout.secureserver.net`) and port (465) are fixed in the
-function. Never put any of these values in the repository or browser code.
+function. These mailbox secrets are shared with marketplace email notifications
+in the same Supabase project. Never put any of these values in the repository or
+browser code.
 
 1. Deploy `send-registration-email` with JWT verification disabled:
    `supabase functions deploy send-registration-email --no-verify-jwt`. It

@@ -186,7 +186,7 @@ The automated path verifies:
 - completed item lock release, owner-review status and collector rating update.
 - durable `notifications` records, unique dedupe keys and exactly one server-only `notification_email_deliveries` row for every queue-eligible case notification.
 
-The harness does not invoke Brevo, Web Push delivery, cron/reminder jobs, or any real notification credential. `notifications` remains the durable push source; `push_delivery_log` records actual asynchronous delivery attempts rather than a separate queue. Real provider delivery and scheduled reminder/expiry execution therefore remain separate staging gates.
+The harness does not invoke GoDaddy SMTP, Web Push delivery, cron/reminder jobs, or any real notification credential. `notifications` remains the durable push source; `push_delivery_log` records actual asynchronous delivery attempts rather than a separate queue. Real provider delivery and scheduled reminder/expiry execution therefore remain separate staging gates.
 
 #### Hosted failure recovery
 

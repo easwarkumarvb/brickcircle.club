@@ -1,6 +1,7 @@
 import {readBoundedJSON,RequestBodyError} from '../_shared/bounded-json.mjs';
 import {createClient} from 'npm:@supabase/supabase-js@2.57.4';
-import {dispatchNotificationEmail,type BrevoMessage,type EmailDelivery,type EmailNotification} from './core.ts';
+import nodemailer from 'npm:nodemailer@^9';
+import {dispatchNotificationEmail,type NotificationEmailMessage,type EmailDelivery,type EmailNotification} from './core.ts';
 
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{'content-type':'application/json'}});
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -21,8 +22,9 @@ Deno.serve(async(req:Request)=>{
 
   const supabaseUrl=Deno.env.get('SUPABASE_URL');
   const serviceRoleKey=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  const brevoKey=Deno.env.get('BREVO_API_KEY');
-  if(!supabaseUrl||!serviceRoleKey||!brevoKey)return json({error:'Email worker is not configured'},503);
+  const smtpUsername=Deno.env.get('GODADDY_SMTP_USERNAME');
+  const smtpPassword=Deno.env.get('GODADDY_SMTP_PASSWORD');
+  if(!supabaseUrl||!serviceRoleKey||!smtpUsername||!smtpPassword)return json({error:'Email worker is not configured'},503);
 
   let input;
   try { input=await readBoundedJSON(req); } catch(error) { return json({error:error instanceof RequestBodyError?error.message:'Invalid JSON.'},error instanceof RequestBodyError?error.status:400); }
@@ -30,6 +32,7 @@ Deno.serve(async(req:Request)=>{
   if(requestedId&&!uuid.test(requestedId))return json({error:'Invalid delivery id'},400);
 
   const db=createClient(supabaseUrl,serviceRoleKey,{auth:{persistSession:false,autoRefreshToken:false}});
+  const smtp=nodemailer.createTransport({host:'smtpout.secureserver.net',port:465,secure:true,auth:{user:smtpUsername,pass:smtpPassword},connectionTimeout:10000,greetingTimeout:10000,socketTimeout:15000});
   const {data:deliveries,error:claimError}=await db.rpc('claim_notification_email_deliveries',{p_limit:requestedId?1:20,p_delivery_id:requestedId||null});
   if(claimError)return json({error:'Could not claim email deliveries'},500);
 
@@ -58,12 +61,20 @@ Deno.serve(async(req:Request)=>{
         if(error)throw error;
         return data.user?.email||null;
       },
-      send:async(message:BrevoMessage)=>{
+      send:async(message:NotificationEmailMessage)=>{
         try{
-          const response=await fetch('https://api.brevo.com/v3/smtp/email',{method:'POST',headers:{'content-type':'application/json','api-key':brevoKey},body:JSON.stringify(message)});
-          const provider=await response.json().catch(()=>({}));
-          return {ok:response.ok,status:response.status,messageId:String(provider?.messageId||'')||undefined,error:String(provider?.message||provider?.code||'')||undefined};
-        }catch(error){return {ok:false,status:null,error:String(error instanceof Error?error.message:error)}}
+          const info=await smtp.sendMail(message);
+          const accepted=(info.accepted||[]).some((recipient)=>String(typeof recipient==='string'?recipient:recipient.address).toLowerCase()===message.to.toLowerCase());
+          const response=String(info.response||'');
+          const responseCode=Number(response.match(/^(\d{3})/)?.[1]);
+          return {ok:accepted,transient:!accepted&&responseCode>=400&&responseCode<500,messageId:String(info.messageId||'')||undefined,error:accepted?undefined:response||'SMTP server did not accept recipient'};
+        }catch(error){
+          const details=error as {code?:string;responseCode?:number;response?:string;message?:string};
+          const networkCodes=new Set(['ETIMEDOUT','ECONNECTION','ESOCKET','EHOSTUNREACH','ECONNRESET','ECONNREFUSED','ETLS']);
+          const responseCode=Number(details?.responseCode);
+          const transient=(responseCode>=400&&responseCode<500)||networkCodes.has(String(details?.code||''));
+          return {ok:false,transient,error:String(details?.response||details?.message||error).slice(0,1000)};
+        }
       },
       sent:async(row,email,messageId)=>updateDelivery(row.id,{status:'sent',recipient_email:email,provider_message_id:messageId,last_error:null,sent_at:new Date().toISOString(),updated_at:new Date().toISOString()}),
       retry:async(row,email,error,delaySeconds)=>updateDelivery(row.id,{status:'retry',recipient_email:email,last_error:error,next_attempt_at:new Date(Date.now()+delaySeconds*1000).toISOString(),updated_at:new Date().toISOString()}),
@@ -72,5 +83,6 @@ Deno.serve(async(req:Request)=>{
     if(outcome.sent)sent++;else if(outcome.permanent)permanentFailures++;else retrying++;
   }
 
+  smtp.close();
   return json({ok:true,claimed:(deliveries||[]).length,sent,retrying,permanent_failures:permanentFailures});
 });
