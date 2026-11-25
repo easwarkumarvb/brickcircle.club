@@ -13,11 +13,17 @@ The outbox and claim function are unavailable to browser roles.
 
 ## Setup
 
-The existing transactional email setup must have a verified
-`notifications@brickcircle.club` Brevo sender and the `BREVO_API_KEY` and
-`EMAIL_DELIVERY_WEBHOOK_SECRET` Supabase Function secrets configured. The
-registration worker reuses those secrets; do not add either key to the repo or
-browser code.
+The registration worker sends through GoDaddy Professional Email powered by
+Titan using SMTP over implicit TLS on port 465. The sender and recipient are
+both `hello@brickcircle.club`. Configure these Supabase Function secrets:
+
+- `GODADDY_SMTP_USERNAME`: the GoDaddy mailbox address, normally
+  `hello@brickcircle.club`.
+- `GODADDY_SMTP_PASSWORD`: that mailbox's password.
+- `EMAIL_DELIVERY_WEBHOOK_SECRET`: a separate high-entropy webhook secret.
+
+The SMTP host (`smtpout.secureserver.net`) and port (465) are fixed in the
+function. Never put any of these values in the repository or browser code.
 
 1. Deploy `send-registration-email` with JWT verification disabled:
    `supabase functions deploy send-registration-email --no-verify-jwt`. It
@@ -37,9 +43,14 @@ browser code.
 ## Verify in staging
 
 Register a new staging account and confirm that one outbox row is created and
-reaches `sent`, with a Brevo message ID. Confirm the email arrives at
+reaches `sent`, with the SMTP message ID recorded. Confirm the email arrives at
 `hello@brickcircle.club`. Then confirm a second delivery request does not send a
 duplicate email. Do not use a real member account for this check.
+
+SMTP does not provide the same idempotency guarantee as an email API. If the
+SMTP server accepts a message but the function loses the connection before
+recording success, a later retry could deliver a duplicate. The stable message
+ID and delivery header make such duplicates easier to identify.
 
 Monitor counts and the oldest due time by status. Investigate
 `permanent_failure`, a growing due backlog, or repeated webhook authorization
