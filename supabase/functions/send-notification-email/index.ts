@@ -66,7 +66,7 @@ Deno.serve(async(req:Request)=>{
           const info=await smtp.sendMail(message);
           const accepted=(info.accepted||[]).some((recipient)=>String(typeof recipient==='string'?recipient:recipient.address).toLowerCase()===message.to.toLowerCase());
           const response=String(info.response||'');
-          const responseCode=Number(response.match(/^(\\d{3})/)?.[1]);
+          const responseCode=Number(response.match(/^(\d{3})/)?.[1]);
           return {ok:accepted,transient:!accepted&&responseCode>=400&&responseCode<500,messageId:String(info.messageId||'')||undefined,error:accepted?undefined:response||'SMTP server did not accept recipient'};
         }catch(error){
           const details=error as {code?:string;responseCode?:number;response?:string;message?:string};
