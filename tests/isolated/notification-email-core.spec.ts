@@ -23,8 +23,8 @@ test('reciprocal email subject and both body fallbacks preserve repeat-aware pro
   expect(message.html).toContain(repeat.body);
   const fallback=buildNotificationEmail({...repeat,title:null,body:null},'member@example.com');
   expect(fallback.subject).toBe('BrickCircle update');
-  expect(fallback.textContent).toContain('You have an important BrickCircle update.');
-  expect(fallback.htmlContent).toContain('You have an important BrickCircle update.');
+  expect(fallback.text).toContain('You have an important BrickCircle update.');
+  expect(fallback.html).toContain('You have an important BrickCircle update.');
 });
 
 test('only explicit high-value durable notification kinds are email-enabled',()=>{
@@ -78,7 +78,7 @@ test('transient SMTP failure is queued for bounded retry without removing the in
   expect(notification.id).toBe(delivery.notification_id);
 });
 
-test('third attempt and permanent provider errors stop retrying',async()=>{
+test('third attempt and permanent SMTP errors stop retrying',async()=>{
   let permanent=0,retries=0;
   const deps={loadNotification:async()=>notification,resolveRecipientEmail:async()=> 'member@example.com',send:async()=>({ok:false,transient:true,error:'still down'}),sent:async()=>{},retry:async()=>{retries++},permanentFailure:async()=>{permanent++}};
   await dispatchNotificationEmail({...delivery,attempt_count:3},deps);
